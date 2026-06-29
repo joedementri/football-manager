@@ -4,6 +4,8 @@ A static, browser-based recreation of the **FIFA 15 Manager Career Mode** menu s
 built to run on GitHub Pages. This first pass is **visual/layout only** — the look, menus,
 and screen-to-screen paging are in place, but there is no game logic yet.
 
+## https://joedementri.github.io/football-manager/
+
 ## Screens
 
 Five main screens plus an email overlay, all faithful to the original UI:
