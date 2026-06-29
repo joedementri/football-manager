@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FIFA 15 — Manager Career (Prototype)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@400;500;600;700&family=Saira:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/chrome.css" />
+  <link rel="stylesheet" href="css/screens.css" />
+</head>
+<body>
+
+  <!-- ================= SVG sprite (inlined for file:// + Pages) ============ -->
+  <svg class="svg-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="ic-share" viewBox="0 0 24 24">
+      <path d="M14 3v3.2C7.5 6.8 4 11 3 17c2.3-3 5.6-4.4 11-4.4V16l7-6.5L14 3z"/>
+    </symbol>
+    <symbol id="ic-news" viewBox="0 0 24 24">
+      <path d="M3 5h15v14H5a2 2 0 0 1-2-2V5zm2 3h8v2H5V8zm0 4h8v2H5v-2zm0 4h6v2H5v-2zM19 8h2v9a2 2 0 0 1-2 2V8z"/>
+    </symbol>
+    <symbol id="ic-alert" viewBox="0 0 24 24">
+      <path d="M12 2 2 20h20L12 2zm-1 6h2v6h-2V8zm0 8h2v2h-2v-2z"/>
+    </symbol>
+    <symbol id="ic-cart" viewBox="0 0 24 24">
+      <path d="M3 4h2l2.6 11.2A2 2 0 0 0 9.5 17H18a2 2 0 0 0 1.9-1.4L22 8H7M9 21a1 1 0 1 0 .001.001M18 21a1 1 0 1 0 .001.001"/>
+    </symbol>
+    <symbol id="ic-advance" viewBox="0 0 24 24">
+      <path d="M4 7l6 5-6 5V7zm8 0l6 5-6 5V7z"/>
+    </symbol>
+    <symbol id="ic-arrow-up" viewBox="0 0 24 24">
+      <path d="M12 5l6 8h-4v6h-4v-6H6l6-8z"/>
+    </symbol>
+    <symbol id="ic-envelope" viewBox="0 0 24 24">
+      <path d="M2 5h20v14H2V5zm2 2v.4l8 5 8-5V7l-8 5-8-5z"/>
+    </symbol>
+    <symbol id="ic-envelope-open" viewBox="0 0 24 24">
+      <path d="M12 3 2 9v10h20V9L12 3zm0 2.3 6.5 3.9L12 13 5.5 9.2 12 5.3z"/>
+    </symbol>
+    <symbol id="kit" viewBox="0 0 24 24">
+      <path d="M8 3 4 6l2 3 1-1v12h10V8l1 1 2-3-4-3-2 2H10L8 3z"/>
+    </symbol>
+    <!-- crests (multi-colour) -->
+    <symbol id="crest-pompey" viewBox="0 0 48 56">
+      <path d="M4 4h40v30c0 12-13 18-20 22C17 52 4 46 4 34V4z" fill="#1c4fa0"/>
+      <path d="M24 16a9 9 0 1 0 6 15.6A7 7 0 1 1 24 16z" fill="#f2c14e"/>
+      <path d="m31 17 1.4 3 3.3.3-2.5 2.2.8 3.2-2.9-1.7-2.9 1.7.8-3.2-2.5-2.2 3.3-.3 1.4-3z" fill="#f2c14e"/>
+    </symbol>
+    <symbol id="crest-a" viewBox="0 0 48 56">
+      <path d="M4 4h40v30c0 12-13 18-20 22C17 52 4 46 4 34V4z" fill="#9c2a2a"/>
+      <path d="M24 12l3 7h7l-5.5 4.5L30 31l-6-4-6 4 1.5-7.5L14 19h7l3-7z" fill="#f0e3b0"/>
+    </symbol>
+    <symbol id="crest-b" viewBox="0 0 48 56">
+      <path d="M4 4h40v30c0 12-13 18-20 22C17 52 4 46 4 34V4z" fill="#2f7d46"/>
+      <circle cx="24" cy="26" r="10" fill="#fff"/>
+      <path d="M24 18v16M16 26h16" stroke="#2f7d46" stroke-width="3"/>
+    </symbol>
+    <symbol id="crest-c" viewBox="0 0 48 56">
+      <path d="M4 4h40v30c0 12-13 18-20 22C17 52 4 46 4 34V4z" fill="#243a66"/>
+      <path d="M14 18h20v6H14zM14 28h20v6H14z" fill="#e6b13a"/>
+    </symbol>
+    <symbol id="crest-d" viewBox="0 0 48 56">
+      <path d="M4 4h40v30c0 12-13 18-20 22C17 52 4 46 4 34V4z" fill="#3a3f47"/>
+      <circle cx="24" cy="25" r="9" fill="#cfd6dd"/>
+    </symbol>
+  </svg>
+
+  <div id="viewport">
+    <div id="stage">
+
+      <!-- =====================  HEADER  ============================ -->
+      <header class="header">
+        <div class="header__id">
+          <svg class="crest"><use href="#crest-pompey"></use></svg>
+          <div class="header__names">
+            <span class="header__club">Portsmouth</span>
+            <span class="header__manager">Bob Jackson</span>
+          </div>
+        </div>
+
+        <div class="header__right">
+          <div class="statusbar">
+            <div class="stat-xp">
+              <span class="level-badge">49</span>
+              <span class="xp">218,045/224,093</span> XP
+            </div>
+            <div class="stat-coins"><span class="coin"></span> 35,020</div>
+            <div class="notif-icons">
+              <span class="notif" data-dot><svg class="icon"><use href="#ic-share"></use></svg></span>
+              <span class="notif"><svg class="icon"><use href="#ic-news"></use></svg></span>
+              <span class="notif" data-dot><svg class="icon"><use href="#ic-alert"></use></svg></span>
+              <span class="notif" data-dot><svg class="icon"><use href="#ic-cart"></use></svg></span>
+            </div>
+          </div>
+          <svg class="crest crest--sm" style="width:44px;height:44px"><use href="#crest-a"></use></svg>
+          <span class="gamertag">RS</span>
+        </div>
+      </header>
+
+      <!-- =====================  TAB BAR  =========================== -->
+      <nav class="tabbar" id="tabbar">
+        <button class="tab is-active" data-screen="central">Central</button>
+        <button class="tab" data-screen="squad">Squad</button>
+        <button class="tab" data-screen="transfers">Transfers</button>
+        <button class="tab" data-screen="office">Office</button>
+        <button class="tab" data-screen="season">Season</button>
+      </nav>
+
+      <!-- =====================  CENTRAL  =========================== -->
+      <section class="screen screen--central is-active" data-screen="central">
+        <div class="feature c-advance">
+          <div class="c-advance__top">
+            <div class="c-advance__head">
+              <span class="c-advance__a">A</span>
+              <span class="c-advance__title">ADVANCE</span>
+            </div>
+            <span class="c-advance__month">JUL 2014</span>
+          </div>
+          <div class="daystrip">
+            <div class="day is-now"><span class="dow">WED</span><span class="dom">16</span><svg class="adv-ico"><use href="#ic-advance"></use></svg></div>
+            <div class="day"><span class="dow">THU</span><span class="dom">17</span><svg class="adv-ico"><use href="#ic-advance"></use></svg></div>
+            <div class="day"><span class="dow">FRI</span><span class="dom">18</span><svg class="adv-ico"><use href="#ic-advance"></use></svg></div>
+            <div class="day"><span class="dow">SAT</span><span class="dom">19</span><svg class="adv-ico"><use href="#ic-advance"></use></svg></div>
+            <div class="day"><span class="dow">SUN</span><span class="dom">20</span><svg class="adv-ico"><use href="#ic-advance"></use></svg></div>
+          </div>
+        </div>
+
+        <div class="tile c-news">
+          <div class="c-news__thumb"></div>
+          <div class="c-news__head">ACCRINGTON FACE DIFFICULT SEASON</div>
+          <div class="c-news__date">Wednesday, July 16, 2014</div>
+          <div class="dots"><i class="on"></i><i></i><i></i><i></i><i></i></div>
+        </div>
+
+        <div class="tile c-gtn">
+          <div class="panel-title">GLOBAL TRANSFER NETWORK</div>
+          <div class="c-gtn__scout">
+            <span class="name">G. SHENTON</span>
+            <div class="counts">
+              <span class="c"><span class="pip green">+</span> 12 New</span>
+              <span class="c"><span class="pip blue">i</span> 0 Updates</span>
+            </div>
+          </div>
+          <div class="scout-list">
+            <div class="scout-row">
+              <span class="avatar"></span>
+              <span class="who"><b>James Wilson</b><span class="pos">ST <span class="flag" data-flag="eng"></span></span></span>
+              <svg class="crest club-crest"><use href="#crest-a"></use></svg>
+            </div>
+            <div class="scout-row">
+              <span class="avatar"></span>
+              <span class="who"><b>Darren Bent</b><span class="pos">ST <span class="flag" data-flag="eng"></span></span></span>
+              <svg class="crest club-crest"><use href="#crest-b"></use></svg>
+            </div>
+            <div class="scout-row">
+              <span class="avatar"></span>
+              <span class="who"><b>Daniel Nardiello</b><span class="pos">ST <span class="flag" data-flag="wal"></span></span></span>
+              <svg class="crest club-crest"><use href="#crest-c"></use></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="tile c-newsp">
+          <div class="panel-title">NEWS</div>
+          <div class="news-list">
+            <div class="news-item">Digby Declines Move to Newport County</div>
+            <div class="news-item r">LOSC Lille and Juventus in Llorente Talks</div>
+            <div class="news-item g">Lane Seeks To Grasp Loan Chance</div>
+          </div>
+        </div>
+
+        <div class="tile c-tables">
+          <div class="panel-title">TABLES</div>
+          <table class="tbl">
+            <thead><tr><th class="l">&nbsp;</th><th>PLD</th><th>PTS</th></tr></thead>
+            <tbody>
+              <tr><td class="team"><span class="pos">15</span><svg class="crest crest--xs"><use href="#crest-c"></use></svg> Northampton</td><td class="num">0</td><td class="num">0</td></tr>
+              <tr><td class="team"><span class="pos">16</span><svg class="crest crest--xs"><use href="#crest-b"></use></svg> Oxford United</td><td class="num">0</td><td class="num">0</td></tr>
+              <tr><td class="team"><span class="pos">17</span><svg class="crest crest--xs"><use href="#crest-a"></use></svg> Plymouth Argyle</td><td class="num">0</td><td class="num">0</td></tr>
+              <tr><td class="team"><span class="pos">18</span><svg class="crest crest--xs"><use href="#crest-pompey"></use></svg> Portsmouth</td><td class="num">0</td><td class="num">0</td></tr>
+              <tr><td class="team"><span class="pos">19</span><svg class="crest crest--xs"><use href="#crest-d"></use></svg> Shrewsbury</td><td class="num">0</td><td class="num">0</td></tr>
+              <tr><td class="team"><span class="pos">20</span><svg class="crest crest--xs"><use href="#crest-c"></use></svg> Southend United</td><td class="num">0</td><td class="num">0</td></tr>
+              <tr><td class="team"><span class="pos">21</span><svg class="crest crest--xs"><use href="#crest-a"></use></svg> Stevenage</td><td class="num">0</td><td class="num">0</td></tr>
+            </tbody>
+          </table>
+          <div class="dots"><i class="on"></i><i></i><i></i><i></i><i></i></div>
+        </div>
+      </section>
+
+      <!-- =====================  SQUAD  ============================= -->
+      <section class="screen screen--squad" data-screen="squad">
+        <div class="feature sq-formation">
+          <div class="sq-formation__name">PORTSMOUTH DEFAULT</div>
+          <div class="sq-formation__shape">4-5-1</div>
+          <div class="pitch">
+            <div class="pitch__surface"></div>
+            <!-- striker -->
+            <div class="jersey" style="left:50%;top:14%"><div class="jersey__rating">61</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Wallace</div></div>
+            <!-- midfield 5 -->
+            <div class="jersey" style="left:16%;top:36%"><div class="jersey__rating">59</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Pimentel</div></div>
+            <div class="jersey" style="left:38%;top:40%"><div class="jersey__rating">64</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Chorley</div></div>
+            <div class="jersey" style="left:54%;top:33%"><div class="jersey__rating">65</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Taylor</div></div>
+            <div class="jersey" style="left:70%;top:40%"><div class="jersey__rating">60</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">East</div></div>
+            <div class="jersey" style="left:84%;top:36%"><div class="jersey__rating">58</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Lodygin</div></div>
+            <!-- defence 4 -->
+            <div class="jersey" style="left:20%;top:62%"><div class="jersey__rating">61</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Butler</div></div>
+            <div class="jersey" style="left:40%;top:66%"><div class="jersey__rating">62</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Knight</div></div>
+            <div class="jersey" style="left:60%;top:66%"><div class="jersey__rating">62</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Edwards</div></div>
+            <div class="jersey" style="left:80%;top:62%"><div class="jersey__rating">60</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Whatmough</div></div>
+            <!-- gk -->
+            <div class="jersey gk" style="left:50%;top:86%"><div class="jersey__rating">74</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Docherty</div></div>
+          </div>
+        </div>
+
+        <div class="sq-tiles">
+          <div class="tile">
+            <div class="tile__title">Club<br>Squad</div>
+            <div class="tile__crest-row">
+              <span class="check">&#10003;</span>
+              <span class="club-name">Portsmouth</span>
+              <svg class="crest"><use href="#crest-pompey"></use></svg>
+            </div>
+          </div>
+          <div class="tile is-disabled">
+            <div class="tile__title">Natl<br>Squad</div>
+            <div class="tile__desc">You are not managing a NATL team right now</div>
+          </div>
+          <div class="tile has-photo">
+            <div class="tile__title">Squad<br>Report</div>
+            <div class="tile__desc">Info on your current squad</div>
+          </div>
+          <div class="tile has-photo">
+            <div class="tile__title">Natl Squad<br>Selection</div>
+            <div class="tile__desc">Only available for NATL Teams</div>
+          </div>
+          <div class="tile has-photo">
+            <div class="tile__title">Team<br>Sheets</div>
+            <div class="tile__desc">Edit existing team sheets and fully manage your team</div>
+          </div>
+          <div class="tile has-photo">
+            <div class="tile__title">Kit<br>Numbers</div>
+            <div class="tile__desc">Assign your players' kit numbers</div>
+            <div class="dots"><i class="on"></i><i></i><i></i></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================  TRANSFERS  ========================= -->
+      <section class="screen screen--transfers" data-screen="transfers">
+        <div class="tile tr-striker">
+          <div class="tr-striker__top">
+            <div>
+              <div class="tr-striker__title">STRIKER</div>
+              <div class="tr-striker__tags">Pacey, Prolific</div>
+            </div>
+            <div class="counts">
+              <span class="c"><span class="pip green">+</span> 5 New</span>
+              <span class="c"><span class="pip blue">i</span> 0 Updates</span>
+            </div>
+          </div>
+          <div class="pcards">
+            <div class="pcard"><span class="avatar"></span><div class="meta"><div class="nm">Brian Montenegro</div><div class="pos">ST <span class="flag" data-flag="par"></span></div></div><svg class="crest club-crest"><use href="#crest-c"></use></svg></div>
+            <div class="pcard"><span class="avatar"></span><div class="meta"><div class="nm">Dwight Gayle</div><div class="pos">ST <span class="flag" data-flag="eng"></span></div></div><svg class="crest club-crest"><use href="#crest-a"></use></svg></div>
+            <div class="pcard"><span class="avatar"></span><div class="meta"><div class="nm">Nouha Dicko</div><div class="pos">ST <span class="flag" data-flag="mli"></span></div></div><svg class="crest club-crest"><use href="#crest-d"></use></svg></div>
+            <div class="pcard"><span class="avatar"></span><div class="meta"><div class="nm">Mat&#283;j Vydra</div><div class="pos">ST <span class="flag" data-flag="cze"></span></div></div><svg class="crest club-crest"><use href="#crest-b"></use></svg></div>
+          </div>
+          <div class="dots"><i class="on"></i><i></i><i></i></div>
+        </div>
+
+        <div class="tile has-photo tr-search">
+          <div class="tile__title">Search<br>Players</div>
+          <div class="tile__desc">Search for a specific player you want to buy, loan or scout</div>
+          <div class="dots"><i class="on"></i><i></i><i></i></div>
+        </div>
+        <div class="tile has-photo tr-sell">
+          <div class="tile__title">Sell<br>Players</div>
+          <div class="tile__desc">Make players available for transfer or loan</div>
+          <div class="dots"><i class="on"></i><i></i><i></i></div>
+        </div>
+        <div class="tile has-photo tr-gtn">
+          <div class="tile__title">Global Transfer<br>Network</div>
+          <div class="tile__desc">Find players worldwide by building your transfer network</div>
+        </div>
+        <div class="tile is-gold tr-fin">
+          <div class="tile__title">Finances</div>
+          <div class="fin-line">Remaining Transfer Budget: <b>&pound;401,500</b></div>
+          <div class="fin-line">Weekly Wage Budget: <b>&pound;16,750</b></div>
+        </div>
+      </section>
+
+      <!-- =====================  OFFICE  ============================ -->
+      <section class="screen screen--office" data-screen="office">
+        <div class="tile of-inbox">
+          <div class="tile__title">Inbox</div>
+          <div class="empty">
+            <svg class="icon"><use href="#ic-envelope"></use></svg>
+            <span class="lbl">NO ITEMS AVAILABLE</span>
+          </div>
+        </div>
+        <div class="tile has-photo of-contracts">
+          <div class="tile__title">Contracts</div>
+          <div class="tile__desc">Manage the contracts of the players in your squad</div>
+        </div>
+        <div class="tile is-gold of-youth">
+          <div class="tile__title">Youth<br>Staff</div>
+          <div class="tile__desc">Find new talent for your youth squad</div>
+        </div>
+        <div class="tile has-photo of-career">
+          <div class="tile__title">My Career</div>
+          <div class="tile__desc">Your current career summary</div>
+          <div class="dots"><i class="on"></i><i></i></div>
+        </div>
+        <div class="tile has-photo of-funds">
+          <div class="tile__title">Request Funds</div>
+          <div class="tile__desc">Request additional funds from the Board</div>
+        </div>
+        <div class="tile has-photo of-jobs">
+          <div class="tile__title">Browse Jobs</div>
+          <div class="tile__desc">View job openings</div>
+          <div class="dots"><i class="on"></i><i></i><i></i></div>
+        </div>
+        <div class="tile has-photo of-settings">
+          <div class="tile__title">Settings</div>
+          <div class="tile__desc">Half length, difficulty &amp; more</div>
+        </div>
+      </section>
+
+      <!-- =====================  SEASON  ============================ -->
+      <section class="screen screen--season" data-screen="season">
+        <div class="tile is-gold se-cal">
+          <div class="tile__title">Calendar</div>
+          <div class="tile__desc">Your complete schedule and events</div>
+          <div class="cal-ico">
+            <i></i><i></i><i></i><i class="hi"></i><i></i><i></i><i></i>
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            <i></i><i></i><i class="hi"></i><i></i><i></i><i></i><i></i>
+            <i></i><i></i><i></i><i></i><i class="hi"></i><i></i><i></i>
+          </div>
+        </div>
+        <div class="tile has-photo se-leagues">
+          <div class="tile__title">Other Leagues</div>
+          <div class="tile__desc">Current league tables from around the world</div>
+        </div>
+        <div class="tile has-photo se-team">
+          <div class="tile__title">Team<br>Stats</div>
+          <div class="tile__desc">In-depth statistics for all the teams</div>
+        </div>
+        <div class="tile has-photo se-play">
+          <div class="tile__title">Player Stats</div>
+          <div class="tile__desc">In-depth statistics for all the players</div>
+        </div>
+        <div class="tile se-tables">
+          <div class="panel-title">TABLES</div>
+          <div class="cup">F.A. Cup</div>
+          <div class="round">Round 2</div>
+          <div class="trow"><svg class="crest crest--sm"><use href="#crest-pompey"></use></svg> Portsmouth</div>
+          <div class="trow"><svg class="crest crest--sm"><use href="#crest-a"></use></svg> Yeovil Town</div>
+        </div>
+        <div class="tile se-fixtures">
+          <div class="panel-title">FIXTURES</div>
+          <div class="fx"><svg class="crest crest--sm"><use href="#crest-a"></use></svg><span class="score">1-2</span><svg class="crest crest--sm"><use href="#crest-c"></use></svg></div>
+          <div class="fx"><svg class="crest crest--sm"><use href="#crest-b"></use></svg><span class="score">1-0</span><svg class="crest crest--sm"><use href="#crest-d"></use></svg></div>
+          <div class="fx"><svg class="crest crest--sm"><use href="#crest-c"></use></svg><span class="score">1-0</span><svg class="crest crest--sm"><use href="#crest-a"></use></svg></div>
+        </div>
+      </section>
+
+      <!-- =====================  EMAIL OVERLAY  ===================== -->
+      <div id="email-overlay">
+        <div class="email-tabs">
+          <button class="email-tab is-active">Emails <span class="badge">1</span></button>
+          <button class="email-tab">Player Conversations</button>
+          <button class="email-tab">Message Archive</button>
+        </div>
+        <div class="email-body">
+          <div class="email-list" id="email-list">
+            <div class="email-row" data-email="0">
+              <svg class="icon"><use href="#ic-envelope-open"></use></svg>
+              <div><div class="er-from">PORTSMOUTH BOARD</div><div class="er-subj">Domestic Cup Objective</div></div>
+              <div class="er-date">01/07/2014</div>
+            </div>
+            <div class="email-row" data-email="1">
+              <svg class="icon"><use href="#ic-envelope"></use></svg>
+              <div><div class="er-from">ASSISTANT MANAGER</div><div class="er-subj">[GTN] We should look for a striker</div></div>
+              <div class="er-date">30/06/2014</div>
+            </div>
+            <div class="email-row" data-email="2">
+              <svg class="icon"><use href="#ic-envelope-open"></use></svg>
+              <div><div class="er-from">ASSISTANT MANAGER</div><div class="er-subj">[Info] Westcarr Injury Update</div></div>
+              <div class="er-date">30/06/2014</div>
+            </div>
+            <div class="email-row is-sel" data-email="3">
+              <svg class="icon"><use href="#ic-envelope-open"></use></svg>
+              <div><div class="er-from">PORTSMOUTH BOARD</div><div class="er-subj">League Objective</div></div>
+              <div class="er-date">30/06/2014</div>
+            </div>
+          </div>
+
+          <div class="email-read" id="email-read">
+            <svg class="crest"><use href="#crest-pompey"></use></svg>
+            <div class="email-meta">
+              <div><span class="k">Date</span> 30/06/2014</div>
+              <div><span class="k">From</span> PORTSMOUTH BOARD</div>
+              <div><span class="k">To</span> Jackson, Bob</div>
+              <div><span class="k">Cc</span> Assistant Manager</div>
+              <div><span class="k">Subject</span> League Objective</div>
+            </div>
+            <div class="email-text">
+              <p>Dear Mr. Jackson,</p>
+              <p>The board is hopeful of a successful season. We look forward to seeing how your leadership and determination can get the best out of the players.</p>
+              <p>We will mostly judge you on your success in the league, and have decided that your season objective for the league campaign will be to win the league title.</p>
+              <p>If this objective can also be met via a cup competition, then succeeding through that medium but failing your league objective may not be enough to satisfy our criteria.</p>
+              <p>Best of luck for the season ahead.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- =====================  FOOTER PROMPTS  ==================== -->
+      <footer class="footer" id="footer-main">
+        <span class="prompt" data-prompt="select"><span class="btn-glyph a">A</span> Select</span>
+        <span class="prompt"><span class="btn-glyph b">B</span> Back</span>
+        <span class="prompt"><span class="btn-glyph x">X</span> Save</span>
+        <span class="prompt"><span class="btn-glyph y">Y</span> Email Inbox</span>
+      </footer>
+      <footer class="footer" id="footer-email" hidden>
+        <span class="prompt"><span class="btn-glyph b">B</span> Close Inbox</span>
+        <span class="prompt"><span class="btn-glyph x">X</span> Delete Message</span>
+        <span class="prompt"><span class="btn-glyph y">Y</span> Archive Message</span>
+      </footer>
+
+    </div>
+  </div>
+
+  <script src="js/stage.js"></script>
+  <script src="js/navigation.js"></script>
+</body>
+</html>

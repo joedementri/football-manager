@@ -1,0 +1,148 @@
+/* ===========================================================================
+   base.css — reset, design tokens, 16:9 stage scaling, backgrounds, fonts
+   =========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  /* Design resolution of the "TV" stage */
+  --stage-w: 1280px;
+  --stage-h: 720px;
+
+  /* Palette pulled from the FIFA 15 career-mode screens */
+  --gold: #f2c14e;
+  --gold-bright: #ffd457;
+  --gold-deep: #e0a92e;
+  --gold-text-dark: #2a2410;
+
+  --panel: #1b1f24;
+  --panel-2: #20262d;
+  --panel-3: #2a3views;            /* placeholder overwritten below */
+  --panel-line: #3a434d;
+  --tile: #181c21;
+  --tile-hi: #232a31;
+
+  --ink: #f4f6f8;
+  --ink-dim: #aeb6bf;
+  --ink-faint: #79828c;
+
+  --blue: #2f7fd1;
+  --blue-deep: #1d4f86;
+  --blue-jersey: #2b5fb0;
+
+  --red-dot: #e23b3b;
+  --green-ok: #4fb86b;
+
+  --header-skew: -18deg;
+
+  --font-cond: "Saira Condensed", "Oswald", "Arial Narrow", system-ui, sans-serif;
+  --font-ui: "Saira", "Segoe UI", system-ui, sans-serif;
+}
+
+/* fix the accidental token above */
+:root {
+  --panel-3: #2a313a;
+}
+
+html,
+body {
+  height: 100%;
+  width: 100%;
+  background: #000;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Viewport that centers the scaled stage and letterboxes the rest */
+#viewport {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+/* The fixed-size stage. stage.js sets --scale; we apply it via transform. */
+#stage {
+  position: relative;
+  width: var(--stage-w);
+  height: var(--stage-h);
+  transform: scale(var(--scale, 1));
+  transform-origin: center center;
+  overflow: hidden;
+  /* Background: dark vignette top -> faded pitch -> grass strip at the bottom */
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(70, 86, 104, 0.55), rgba(10, 14, 18, 0) 60%),
+    linear-gradient(180deg, #11161c 0%, #161c23 38%, #18242a 62%, #1c3322 82%, #2c5a30 100%);
+  font-family: var(--font-cond);
+}
+
+/* Faint stadium light streaks + grass texture overlays */
+#stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 40% at 50% 0%, rgba(255, 230, 170, 0.10), rgba(0, 0, 0, 0) 70%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.015) 0 60px,
+      rgba(0, 0, 0, 0.015) 60px 120px
+    );
+}
+
+/* Grass band along the bottom (where the button prompts sit) */
+#stage::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 120px;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(12, 40, 16, 0.0) 10%, rgba(16, 60, 22, 0.55) 100%),
+    repeating-linear-gradient(
+      78deg,
+      rgba(40, 120, 50, 0.18) 0 38px,
+      rgba(24, 84, 34, 0.18) 38px 76px
+    );
+}
+
+/* Hidden SVG sprite container */
+.svg-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* SVG monochrome symbols inherit their colour from CSS (multi-colour crests
+   define their own fills on child paths, so they're unaffected). */
+svg { fill: currentColor; }
+
+/* Generic icon sizing helper */
+.icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
+  vertical-align: middle;
+}
+
+/* Hint shown when the window is tiny */
+#rotate-hint {
+  position: fixed;
+  inset: 0;
+  display: none;
+}
