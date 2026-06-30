@@ -42,6 +42,12 @@
     <symbol id="kit" viewBox="0 0 24 24">
       <path d="M8 3 4 6l2 3 1-1v12h10V8l1 1 2-3-4-3-2 2H10L8 3z"/>
     </symbol>
+    <symbol id="ic-lock" viewBox="0 0 24 24">
+      <path d="M7 10V8a5 5 0 0 1 10 0v2h1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1h1zm2 0h6V8a3 3 0 0 0-6 0v2zm3 4a1.5 1.5 0 0 0-1 2.6V18h2v-1.4a1.5 1.5 0 0 0-1-2.6z"/>
+    </symbol>
+    <symbol id="ic-plus" viewBox="0 0 24 24">
+      <path d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7V4z"/>
+    </symbol>
     <!-- crests (multi-colour) -->
     <symbol id="crest-pompey" viewBox="0 0 48 56">
       <path d="M4 4h40v30c0 12-13 18-20 22C17 52 4 46 4 34V4z" fill="#1c4fa0"/>
@@ -127,7 +133,7 @@
           </div>
         </div>
 
-        <div class="tile c-news">
+        <div class="tile c-news is-link" data-open="news">
           <div class="c-news__thumb"></div>
           <div class="c-news__head">ACCRINGTON FACE DIFFICULT SEASON</div>
           <div class="c-news__date">Wednesday, July 16, 2014</div>
@@ -162,7 +168,7 @@
           </div>
         </div>
 
-        <div class="tile c-newsp">
+        <div class="tile c-newsp is-link" data-open="news">
           <div class="panel-title">NEWS</div>
           <div class="news-list">
             <div class="news-item">Digby Declines Move to Newport County</div>
@@ -191,59 +197,121 @@
 
       <!-- =====================  SQUAD  ============================= -->
       <section class="screen screen--squad" data-screen="squad">
-        <div class="feature sq-formation">
-          <div class="sq-formation__name">PORTSMOUTH DEFAULT</div>
-          <div class="sq-formation__shape">4-5-1</div>
-          <div class="pitch">
-            <div class="pitch__surface"></div>
-            <!-- striker -->
-            <div class="jersey" style="left:50%;top:14%"><div class="jersey__rating">61</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Wallace</div></div>
-            <!-- midfield 5 -->
-            <div class="jersey" style="left:16%;top:36%"><div class="jersey__rating">59</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Pimentel</div></div>
-            <div class="jersey" style="left:38%;top:40%"><div class="jersey__rating">64</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Chorley</div></div>
-            <div class="jersey" style="left:54%;top:33%"><div class="jersey__rating">65</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Taylor</div></div>
-            <div class="jersey" style="left:70%;top:40%"><div class="jersey__rating">60</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">East</div></div>
-            <div class="jersey" style="left:84%;top:36%"><div class="jersey__rating">58</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Lodygin</div></div>
-            <!-- defence 4 -->
-            <div class="jersey" style="left:20%;top:62%"><div class="jersey__rating">61</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Butler</div></div>
-            <div class="jersey" style="left:40%;top:66%"><div class="jersey__rating">62</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Knight</div></div>
-            <div class="jersey" style="left:60%;top:66%"><div class="jersey__rating">62</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Edwards</div></div>
-            <div class="jersey" style="left:80%;top:62%"><div class="jersey__rating">60</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Whatmough</div></div>
-            <!-- gk -->
-            <div class="jersey gk" style="left:50%;top:86%"><div class="jersey__rating">74</div><svg class="jersey__kit"><use href="#kit"></use></svg><div class="jersey__name">Docherty</div></div>
+
+        <!-- LEFT: team-sheet feature (carousel: formation / create new) -->
+        <div class="sq-sheet" data-carousel>
+          <div class="cpages">
+
+            <!-- page 1: Default Team Sheet -->
+            <div class="cpage is-active sq-sheet__formation">
+              <div class="pitch">
+                <div class="pitch__surface"></div>
+                <!-- strikers -->
+                <div class="jersey" style="left:34%;top:18%"><div class="jersey__top"><span class="jersey__pos">LS</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">64</span></div><div class="jersey__name">Taylor</div></div>
+                <div class="jersey" style="left:66%;top:18%"><div class="jersey__top"><span class="jersey__pos">RS</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">67</span></div><div class="jersey__name">Dongou</div></div>
+                <!-- midfield 4 -->
+                <div class="jersey" style="left:13%;top:46%"><div class="jersey__top"><span class="jersey__pos">LM</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">66</span></div><div class="jersey__name">Barcham</div></div>
+                <div class="jersey" style="left:39%;top:50%"><div class="jersey__top"><span class="jersey__pos">LCM</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">63</span></div><div class="jersey__name">Hollands</div></div>
+                <div class="jersey" style="left:61%;top:50%"><div class="jersey__top"><span class="jersey__pos">RCM</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">67</span><span class="jersey__cap">C</span></div><div class="jersey__name">Fogden</div></div>
+                <div class="jersey" style="left:87%;top:46%"><div class="jersey__top"><span class="jersey__pos">RM</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">67</span></div><div class="jersey__name">Wallace</div></div>
+                <!-- defence 4 -->
+                <div class="jersey" style="left:15%;top:72%"><div class="jersey__top"><span class="jersey__pos">LB</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">61</span></div><div class="jersey__name">Dunne</div></div>
+                <div class="jersey" style="left:39%;top:75%"><div class="jersey__top"><span class="jersey__pos">LCB</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">67</span></div><div class="jersey__name">Macky</div></div>
+                <div class="jersey" style="left:61%;top:75%"><div class="jersey__top"><span class="jersey__pos">RCB</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">64</span></div><div class="jersey__name">Robinson</div></div>
+                <div class="jersey" style="left:85%;top:72%"><div class="jersey__top"><span class="jersey__pos">RB</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">69</span></div><div class="jersey__name">Zimmermann</div></div>
+                <!-- gk -->
+                <div class="jersey gk" style="left:50%;top:92%"><div class="jersey__top"><span class="jersey__pos">GK</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">63</span></div><div class="jersey__name">Gersbeck</div></div>
+              </div>
+              <div class="sq-sheet__title">Default Team Sheet</div>
+              <div class="sq-sheet__shape"><b>4-4-2</b><span>Flat</span></div>
+            </div>
+
+            <!-- page 2: Create a new team sheet -->
+            <div class="cpage sq-sheet__create">
+              <div class="pitch pitch--ghost"><div class="pitch__surface"></div></div>
+              <div class="create-cta">
+                <span class="plus"><svg class="icon"><use href="#ic-plus"></use></svg></span>
+                <span class="cta-text">Select To<br>Create A New<br>Team Sheet</span>
+              </div>
+            </div>
+
           </div>
         </div>
 
-        <div class="sq-tiles">
-          <div class="tile">
+        <!-- RIGHT: 2x3 tile grid -->
+        <div class="sq-grid">
+
+          <!-- Club Squad (static) -->
+          <div class="tile sq-club">
             <div class="tile__title">Club<br>Squad</div>
-            <div class="tile__crest-row">
-              <span class="check">&#10003;</span>
-              <span class="club-name">Portsmouth</span>
-              <svg class="crest"><use href="#crest-pompey"></use></svg>
+            <svg class="crest sq-club__crest"><use href="#crest-pompey"></use></svg>
+            <div class="sq-club__name">Portsmouth</div>
+            <span class="check sq-club__check">&#10003;</span>
+          </div>
+
+          <!-- Natl Squad (disabled) -->
+          <div class="tile is-disabled sq-natl">
+            <div class="tile__title">Natl<br>Squad</div>
+            <div class="tile__desc">You are not managing a NATL Team right now</div>
+          </div>
+
+          <!-- Squad Report / Ranking (carousel) -->
+          <div class="tile has-photo" data-carousel>
+            <div class="cpages">
+              <div class="cpage is-active">
+                <div class="tile__title">Squad<br>Report</div>
+                <div class="tile__desc">Info on your current squad</div>
+              </div>
+              <div class="cpage">
+                <div class="tile__title">Squad<br>Ranking</div>
+                <div class="tile__desc">See where your squad ranks among the rest</div>
+              </div>
             </div>
           </div>
-          <div class="tile is-disabled">
-            <div class="tile__title">Natl<br>Squad</div>
-            <div class="tile__desc">You are not managing a NATL team right now</div>
-          </div>
-          <div class="tile has-photo">
-            <div class="tile__title">Squad<br>Report</div>
-            <div class="tile__desc">Info on your current squad</div>
-          </div>
-          <div class="tile has-photo">
+
+          <!-- Natl Squad Selection (disabled) -->
+          <div class="tile is-disabled sq-natlsel">
             <div class="tile__title">Natl Squad<br>Selection</div>
             <div class="tile__desc">Only available for NATL Teams</div>
           </div>
-          <div class="tile has-photo">
-            <div class="tile__title">Team<br>Sheets</div>
-            <div class="tile__desc">Edit existing team sheets and fully manage your team</div>
+
+          <!-- Formations / Tactics / Player Roles (carousel) -->
+          <div class="tile has-photo" data-carousel>
+            <div class="cpages">
+              <div class="cpage is-active">
+                <div class="tile__title">Formations</div>
+                <div class="tile__desc">Change your team's formation and player positions</div>
+              </div>
+              <div class="cpage">
+                <div class="tile__title">Tactics</div>
+                <div class="tile__desc">Set your team's tactical approach for matches</div>
+              </div>
+              <div class="cpage">
+                <div class="tile__title">Player<br>Roles</div>
+                <div class="tile__desc">Assign specific roles to your players</div>
+              </div>
+            </div>
           </div>
-          <div class="tile has-photo">
-            <div class="tile__title">Kit<br>Numbers</div>
-            <div class="tile__desc">Assign your players' kit numbers</div>
-            <div class="dots"><i class="on"></i><i></i><i></i></div>
+
+          <!-- Kit Numbers / Injury List / Edit Player (carousel) -->
+          <div class="tile has-photo" data-carousel>
+            <div class="cpages">
+              <div class="cpage is-active">
+                <div class="tile__title">Kit<br>Numbers</div>
+                <div class="tile__desc">Assign your players' kit numbers</div>
+              </div>
+              <div class="cpage">
+                <div class="tile__title">Injury<br>List</div>
+                <div class="tile__desc">View your squad's current injuries</div>
+              </div>
+              <div class="cpage sq-locked">
+                <div class="tile__title">Edit<br>Player</div>
+                <div class="tile__desc">Only available in unlocked mode</div>
+                <svg class="lock-ico"><use href="#ic-lock"></use></svg>
+              </div>
+            </div>
           </div>
+
         </div>
       </section>
 
@@ -417,6 +485,40 @@
         </div>
       </div>
 
+      <!-- =====================  NEWS OVERLAY  ====================== -->
+      <div id="news-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">CENTRAL</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">NEWS</span>
+        </div>
+
+        <nav class="news-tabs" id="news-tabs">
+          <button class="news-tab is-active" data-cat="breaking">Breaking News</button>
+          <button class="news-tab" data-cat="world">World News</button>
+          <button class="news-tab" data-cat="club">Club News</button>
+          <button class="news-tab" data-cat="transfer">Transfer News</button>
+          <button class="news-tab" data-cat="intl">Intl News</button>
+        </nav>
+
+        <div class="news-body">
+          <div class="news-list" id="news-list"><!-- built by news renderer --></div>
+
+          <div class="news-hero">
+            <div class="news-hero__photo"></div>
+            <div class="news-hero__overlay">
+              <span class="avatar"></span>
+              <svg class="crest" id="news-hero-crest"><use href="#crest-c"></use></svg>
+            </div>
+          </div>
+
+          <article class="news-detail">
+            <h2 class="news-detail__head" id="news-head">&nbsp;</h2>
+            <div class="news-detail__body" id="news-text"></div>
+          </article>
+        </div>
+      </div>
+
       <!-- =====================  FOOTER PROMPTS  ==================== -->
       <footer class="footer" id="footer-main">
         <span class="prompt" data-prompt="select"><span class="btn-glyph a">A</span> Select</span>
@@ -429,11 +531,16 @@
         <span class="prompt"><span class="btn-glyph x">X</span> Delete Message</span>
         <span class="prompt"><span class="btn-glyph y">Y</span> Archive Message</span>
       </footer>
+      <footer class="footer" id="footer-news" hidden>
+        <span class="prompt"><span class="btn-glyph l3">L3</span> View Player</span>
+        <span class="prompt"><span class="btn-glyph b">B</span> Back</span>
+      </footer>
 
     </div>
   </div>
 
   <script src="js/stage.js"></script>
+  <script src="js/carousel.js"></script>
   <script src="js/navigation.js"></script>
 </body>
 </html>
