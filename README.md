@@ -48,6 +48,13 @@ python -m http.server 8000
 
 GitHub Pages serves everything over HTTP already, so deployment is unaffected.
 
+## Dev pages
+
+- `dev/world.html` — browses the authored world data (`data/*.json`): every league's clubs
+  with a procedurally generated crest, plus nations, cups/tournaments and name-pool sizes.
+  Used to verify milestone M1 (world data) — counts should read ~35 leagues / ~600 clubs / ~50
+  nations. Visit `http://localhost:8000/dev/world.html` while serving locally.
+
 ## Project structure
 
 ```
@@ -64,6 +71,14 @@ js/core/rng.js         # seeded PRNG (mulberry32) — all future generation/sim 
 js/core/format.js     # date/number/money display formatting
 js/core/db.js         # IndexedDB key/value wrapper (save-slot logic lands in a later milestone)
 js/ui/render.js       # renders each screen's dynamic content from GameState
+js/gen/names.js       # deterministic player-name generation from data/names/*.json pools
+js/gen/crest.js       # procedural crest + kit SVG generator, keyed off club colours
+data/leagues.json     # ~35 leagues (ported from reference/ini/playerwages.ini [WAGE_LEAGUE])
+data/clubs.json       # ~600 clubs: prestige, crest/kit colours, stadium, budget, board tier
+data/nations.json     # ~50 national teams: prestige, quality weighting, name-pool mapping
+data/cups.json        # domestic cups, continental comps, international tournaments
+data/names/*.json     # first/last name pools, one file per nation (50 nations)
+dev/world.html        # dev page: every league→club with generated crests + nations/cups/pools
 reference/ini/        # FIFA 17 career-mode INI files, ported for tuning-number reference
 fable-plans/plan1.md  # the full build plan (milestones M0–M11)
 .nojekyll              # tells GitHub Pages to serve files as-is

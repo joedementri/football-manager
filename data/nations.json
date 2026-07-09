@@ -1,0 +1,502 @@
+[
+  {
+    "id": "england",
+    "name": "England",
+    "confed": "UEFA",
+    "prestige": 8,
+    "qualityWeight": 1.25,
+    "namePool": "england",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "wales",
+    "name": "Wales",
+    "confed": "UEFA",
+    "prestige": 6,
+    "qualityWeight": 1.05,
+    "namePool": "wales",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "northern-ireland",
+    "name": "Northern Ireland",
+    "confed": "UEFA",
+    "prestige": 4,
+    "qualityWeight": 0.8,
+    "namePool": "northern-ireland",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "scotland",
+    "name": "Scotland",
+    "confed": "UEFA",
+    "prestige": 5,
+    "qualityWeight": 0.9,
+    "namePool": "scotland",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "ireland",
+    "name": "Republic of Ireland",
+    "confed": "UEFA",
+    "prestige": 5,
+    "qualityWeight": 0.9,
+    "namePool": "ireland",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "spain",
+    "name": "Spain",
+    "confed": "UEFA",
+    "prestige": 9,
+    "qualityWeight": 1.4,
+    "namePool": "spain",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "italy",
+    "name": "Italy",
+    "confed": "UEFA",
+    "prestige": 8,
+    "qualityWeight": 1.3,
+    "namePool": "italy",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "germany",
+    "name": "Germany",
+    "confed": "UEFA",
+    "prestige": 10,
+    "qualityWeight": 1.4,
+    "namePool": "germany",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "france",
+    "name": "France",
+    "confed": "UEFA",
+    "prestige": 9,
+    "qualityWeight": 1.35,
+    "namePool": "france",
+    "diasporaPool": "senegal",
+    "diasporaChance": 0.25
+  },
+  {
+    "id": "netherlands",
+    "name": "Netherlands",
+    "confed": "UEFA",
+    "prestige": 8,
+    "qualityWeight": 1.25,
+    "namePool": "netherlands",
+    "diasporaPool": "ghana",
+    "diasporaChance": 0.15
+  },
+  {
+    "id": "portugal",
+    "name": "Portugal",
+    "confed": "UEFA",
+    "prestige": 8,
+    "qualityWeight": 1.25,
+    "namePool": "portugal",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "sweden",
+    "name": "Sweden",
+    "confed": "UEFA",
+    "prestige": 6,
+    "qualityWeight": 1.0,
+    "namePool": "sweden",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "switzerland",
+    "name": "Switzerland",
+    "confed": "UEFA",
+    "prestige": 6,
+    "qualityWeight": 1.05,
+    "namePool": "switzerland",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "russia",
+    "name": "Russia",
+    "confed": "UEFA",
+    "prestige": 6,
+    "qualityWeight": 1.05,
+    "namePool": "russia",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "austria",
+    "name": "Austria",
+    "confed": "UEFA",
+    "prestige": 5,
+    "qualityWeight": 0.95,
+    "namePool": "austria",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "belgium",
+    "name": "Belgium",
+    "confed": "UEFA",
+    "prestige": 8,
+    "qualityWeight": 1.3,
+    "namePool": "belgium",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "denmark",
+    "name": "Denmark",
+    "confed": "UEFA",
+    "prestige": 6,
+    "qualityWeight": 1.05,
+    "namePool": "denmark",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "norway",
+    "name": "Norway",
+    "confed": "UEFA",
+    "prestige": 4,
+    "qualityWeight": 0.85,
+    "namePool": "norway",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "turkey",
+    "name": "Turkey",
+    "confed": "UEFA",
+    "prestige": 6,
+    "qualityWeight": 1.0,
+    "namePool": "turkey",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "poland",
+    "name": "Poland",
+    "confed": "UEFA",
+    "prestige": 5,
+    "qualityWeight": 0.95,
+    "namePool": "poland",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "croatia",
+    "name": "Croatia",
+    "confed": "UEFA",
+    "prestige": 7,
+    "qualityWeight": 1.15,
+    "namePool": "croatia",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "serbia",
+    "name": "Serbia",
+    "confed": "UEFA",
+    "prestige": 6,
+    "qualityWeight": 1.05,
+    "namePool": "serbia",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "romania",
+    "name": "Romania",
+    "confed": "UEFA",
+    "prestige": 5,
+    "qualityWeight": 0.9,
+    "namePool": "romania",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "czech-republic",
+    "name": "Czech Republic",
+    "confed": "UEFA",
+    "prestige": 5,
+    "qualityWeight": 0.9,
+    "namePool": "czech-republic",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "greece",
+    "name": "Greece",
+    "confed": "UEFA",
+    "prestige": 5,
+    "qualityWeight": 0.9,
+    "namePool": "greece",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "finland",
+    "name": "Finland",
+    "confed": "UEFA",
+    "prestige": 4,
+    "qualityWeight": 0.8,
+    "namePool": "finland",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "iceland",
+    "name": "Iceland",
+    "confed": "UEFA",
+    "prestige": 4,
+    "qualityWeight": 0.85,
+    "namePool": "iceland",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "ukraine",
+    "name": "Ukraine",
+    "confed": "UEFA",
+    "prestige": 5,
+    "qualityWeight": 0.95,
+    "namePool": "ukraine",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "brazil",
+    "name": "Brazil",
+    "confed": "CONMEBOL",
+    "prestige": 10,
+    "qualityWeight": 1.5,
+    "namePool": "brazil",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "argentina",
+    "name": "Argentina",
+    "confed": "CONMEBOL",
+    "prestige": 9,
+    "qualityWeight": 1.4,
+    "namePool": "argentina",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "chile",
+    "name": "Chile",
+    "confed": "CONMEBOL",
+    "prestige": 7,
+    "qualityWeight": 1.1,
+    "namePool": "chile",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "colombia",
+    "name": "Colombia",
+    "confed": "CONMEBOL",
+    "prestige": 7,
+    "qualityWeight": 1.15,
+    "namePool": "colombia",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "uruguay",
+    "name": "Uruguay",
+    "confed": "CONMEBOL",
+    "prestige": 7,
+    "qualityWeight": 1.2,
+    "namePool": "uruguay",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "paraguay",
+    "name": "Paraguay",
+    "confed": "CONMEBOL",
+    "prestige": 4,
+    "qualityWeight": 0.85,
+    "namePool": "paraguay",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "peru",
+    "name": "Peru",
+    "confed": "CONMEBOL",
+    "prestige": 4,
+    "qualityWeight": 0.85,
+    "namePool": "peru",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "usa",
+    "name": "USA",
+    "confed": "CONCACAF",
+    "prestige": 6,
+    "qualityWeight": 1.0,
+    "namePool": "usa",
+    "diasporaPool": "mexico",
+    "diasporaChance": 0.2
+  },
+  {
+    "id": "mexico",
+    "name": "Mexico",
+    "confed": "CONCACAF",
+    "prestige": 6,
+    "qualityWeight": 1.05,
+    "namePool": "mexico",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "canada",
+    "name": "Canada",
+    "confed": "CONCACAF",
+    "prestige": 3,
+    "qualityWeight": 0.75,
+    "namePool": "canada",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "japan",
+    "name": "Japan",
+    "confed": "AFC",
+    "prestige": 5,
+    "qualityWeight": 0.9,
+    "namePool": "japan",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "south-korea",
+    "name": "South Korea",
+    "confed": "AFC",
+    "prestige": 5,
+    "qualityWeight": 0.9,
+    "namePool": "south-korea",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "saudi-arabia",
+    "name": "Saudi Arabia",
+    "confed": "AFC",
+    "prestige": 4,
+    "qualityWeight": 0.8,
+    "namePool": "saudi-arabia",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "australia",
+    "name": "Australia",
+    "confed": "AFC",
+    "prestige": 4,
+    "qualityWeight": 0.8,
+    "namePool": "australia",
+    "diasporaPool": "china",
+    "diasporaChance": 0.1
+  },
+  {
+    "id": "china",
+    "name": "China",
+    "confed": "AFC",
+    "prestige": 3,
+    "qualityWeight": 0.75,
+    "namePool": "china",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "ivory-coast",
+    "name": "Ivory Coast",
+    "confed": "CAF",
+    "prestige": 5,
+    "qualityWeight": 1.0,
+    "namePool": "ivory-coast",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "ghana",
+    "name": "Ghana",
+    "confed": "CAF",
+    "prestige": 5,
+    "qualityWeight": 0.95,
+    "namePool": "ghana",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "nigeria",
+    "name": "Nigeria",
+    "confed": "CAF",
+    "prestige": 5,
+    "qualityWeight": 1.0,
+    "namePool": "nigeria",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "senegal",
+    "name": "Senegal",
+    "confed": "CAF",
+    "prestige": 5,
+    "qualityWeight": 0.95,
+    "namePool": "senegal",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "cameroon",
+    "name": "Cameroon",
+    "confed": "CAF",
+    "prestige": 5,
+    "qualityWeight": 0.95,
+    "namePool": "cameroon",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "egypt",
+    "name": "Egypt",
+    "confed": "CAF",
+    "prestige": 5,
+    "qualityWeight": 0.9,
+    "namePool": "egypt",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  },
+  {
+    "id": "morocco",
+    "name": "Morocco",
+    "confed": "CAF",
+    "prestige": 4,
+    "qualityWeight": 0.85,
+    "namePool": "morocco",
+    "diasporaPool": null,
+    "diasporaChance": 0
+  }
+]

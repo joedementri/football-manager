@@ -1,0 +1,569 @@
+[
+  {
+    "id": "eng-1",
+    "iniLeagueId": 13,
+    "name": "Premier League",
+    "country": "England",
+    "tier": 1,
+    "teamsCount": 20,
+    "prestige": [
+      10,
+      6
+    ],
+    "wageModifier": 70,
+    "promotion": null,
+    "relegation": {
+      "to": "eng-2",
+      "slots": 3
+    }
+  },
+  {
+    "id": "eng-2",
+    "iniLeagueId": 14,
+    "name": "Championship",
+    "country": "England",
+    "tier": 2,
+    "teamsCount": 24,
+    "prestige": [
+      7,
+      3
+    ],
+    "wageModifier": 30,
+    "promotion": {
+      "to": "eng-1",
+      "slots": 3
+    },
+    "relegation": {
+      "to": "eng-3",
+      "slots": 3
+    }
+  },
+  {
+    "id": "eng-3",
+    "iniLeagueId": 60,
+    "name": "League One",
+    "country": "England",
+    "tier": 3,
+    "teamsCount": 24,
+    "prestige": [
+      5,
+      2
+    ],
+    "wageModifier": 8,
+    "promotion": {
+      "to": "eng-2",
+      "slots": 3
+    },
+    "relegation": {
+      "to": "eng-4",
+      "slots": 3
+    }
+  },
+  {
+    "id": "eng-4",
+    "iniLeagueId": 61,
+    "name": "League Two",
+    "country": "England",
+    "tier": 4,
+    "teamsCount": 24,
+    "prestige": [
+      4,
+      1
+    ],
+    "wageModifier": 8,
+    "promotion": {
+      "to": "eng-3",
+      "slots": 3
+    },
+    "relegation": null
+  },
+  {
+    "id": "esp-1",
+    "iniLeagueId": 53,
+    "name": "Primera División",
+    "country": "Spain",
+    "tier": 1,
+    "teamsCount": 20,
+    "prestige": [
+      10,
+      6
+    ],
+    "wageModifier": 43,
+    "promotion": null,
+    "relegation": {
+      "to": "esp-2",
+      "slots": 3
+    }
+  },
+  {
+    "id": "esp-2",
+    "iniLeagueId": 54,
+    "name": "Segunda División",
+    "country": "Spain",
+    "tier": 2,
+    "teamsCount": 22,
+    "prestige": [
+      7,
+      3
+    ],
+    "wageModifier": 12,
+    "promotion": {
+      "to": "esp-1",
+      "slots": 3
+    },
+    "relegation": null
+  },
+  {
+    "id": "ita-1",
+    "iniLeagueId": 31,
+    "name": "Serie A",
+    "country": "Italy",
+    "tier": 1,
+    "teamsCount": 20,
+    "prestige": [
+      10,
+      6
+    ],
+    "wageModifier": 45,
+    "promotion": null,
+    "relegation": {
+      "to": "ita-2",
+      "slots": 3
+    }
+  },
+  {
+    "id": "ita-2",
+    "iniLeagueId": 32,
+    "name": "Serie B",
+    "country": "Italy",
+    "tier": 2,
+    "teamsCount": 22,
+    "prestige": [
+      7,
+      3
+    ],
+    "wageModifier": 10,
+    "promotion": {
+      "to": "ita-1",
+      "slots": 3
+    },
+    "relegation": null
+  },
+  {
+    "id": "ger-1",
+    "iniLeagueId": 19,
+    "name": "Bundesliga",
+    "country": "Germany",
+    "tier": 1,
+    "teamsCount": 18,
+    "prestige": [
+      10,
+      6
+    ],
+    "wageModifier": 50,
+    "promotion": null,
+    "relegation": {
+      "to": "ger-2",
+      "slots": 3
+    }
+  },
+  {
+    "id": "ger-2",
+    "iniLeagueId": 20,
+    "name": "2. Bundesliga",
+    "country": "Germany",
+    "tier": 2,
+    "teamsCount": 18,
+    "prestige": [
+      7,
+      3
+    ],
+    "wageModifier": 20,
+    "promotion": {
+      "to": "ger-1",
+      "slots": 3
+    },
+    "relegation": null
+  },
+  {
+    "id": "fra-1",
+    "iniLeagueId": 16,
+    "name": "Ligue 1",
+    "country": "France",
+    "tier": 1,
+    "teamsCount": 20,
+    "prestige": [
+      10,
+      6
+    ],
+    "wageModifier": 40,
+    "promotion": null,
+    "relegation": {
+      "to": "fra-2",
+      "slots": 3
+    }
+  },
+  {
+    "id": "fra-2",
+    "iniLeagueId": 17,
+    "name": "Ligue 2",
+    "country": "France",
+    "tier": 2,
+    "teamsCount": 20,
+    "prestige": [
+      7,
+      3
+    ],
+    "wageModifier": 10,
+    "promotion": {
+      "to": "fra-1",
+      "slots": 3
+    },
+    "relegation": null
+  },
+  {
+    "id": "ned-1",
+    "iniLeagueId": 10,
+    "name": "Eredivisie",
+    "country": "Netherlands",
+    "tier": 1,
+    "teamsCount": 18,
+    "prestige": [
+      9,
+      5
+    ],
+    "wageModifier": 22,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "por-1",
+    "iniLeagueId": 308,
+    "name": "Primeira Liga",
+    "country": "Portugal",
+    "tier": 1,
+    "teamsCount": 18,
+    "prestige": [
+      9,
+      5
+    ],
+    "wageModifier": 18,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "swe-1",
+    "iniLeagueId": 56,
+    "name": "Allsvenskan",
+    "country": "Sweden",
+    "tier": 1,
+    "teamsCount": 16,
+    "prestige": [
+      8,
+      3
+    ],
+    "wageModifier": 8,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "sui-1",
+    "iniLeagueId": 189,
+    "name": "Super League",
+    "country": "Switzerland",
+    "tier": 1,
+    "teamsCount": 10,
+    "prestige": [
+      8,
+      3
+    ],
+    "wageModifier": 20,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "usa-1",
+    "iniLeagueId": 39,
+    "name": "MLS",
+    "country": "USA",
+    "tier": 1,
+    "teamsCount": 20,
+    "prestige": [
+      8,
+      3
+    ],
+    "wageModifier": 15,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "mex-1",
+    "iniLeagueId": 341,
+    "name": "Liga MX",
+    "country": "Mexico",
+    "tier": 1,
+    "teamsCount": 18,
+    "prestige": [
+      8,
+      3
+    ],
+    "wageModifier": 25,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "chi-1",
+    "iniLeagueId": 335,
+    "name": "Primera División",
+    "country": "Chile",
+    "tier": 1,
+    "teamsCount": 16,
+    "prestige": [
+      7,
+      2
+    ],
+    "wageModifier": 6,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "col-1",
+    "iniLeagueId": 336,
+    "name": "Categoría Primera A",
+    "country": "Colombia",
+    "tier": 1,
+    "teamsCount": 18,
+    "prestige": [
+      7,
+      2
+    ],
+    "wageModifier": 4,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "rus-1",
+    "iniLeagueId": 67,
+    "name": "Premier League",
+    "country": "Russia",
+    "tier": 1,
+    "teamsCount": 16,
+    "prestige": [
+      9,
+      5
+    ],
+    "wageModifier": 33,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "aut-1",
+    "iniLeagueId": 80,
+    "name": "Bundesliga",
+    "country": "Austria",
+    "tier": 1,
+    "teamsCount": 10,
+    "prestige": [
+      8,
+      3
+    ],
+    "wageModifier": 22,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "bel-1",
+    "iniLeagueId": 4,
+    "name": "Pro League",
+    "country": "Belgium",
+    "tier": 1,
+    "teamsCount": 16,
+    "prestige": [
+      9,
+      5
+    ],
+    "wageModifier": 21,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "den-1",
+    "iniLeagueId": 1,
+    "name": "Superliga",
+    "country": "Denmark",
+    "tier": 1,
+    "teamsCount": 12,
+    "prestige": [
+      8,
+      3
+    ],
+    "wageModifier": 20,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "nor-1",
+    "iniLeagueId": 41,
+    "name": "Eliteserien",
+    "country": "Norway",
+    "tier": 1,
+    "teamsCount": 16,
+    "prestige": [
+      8,
+      3
+    ],
+    "wageModifier": 10,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "tur-1",
+    "iniLeagueId": 68,
+    "name": "Süper Lig",
+    "country": "Turkey",
+    "tier": 1,
+    "teamsCount": 18,
+    "prestige": [
+      9,
+      5
+    ],
+    "wageModifier": 32,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "pol-1",
+    "iniLeagueId": 66,
+    "name": "Ekstraklasa",
+    "country": "Poland",
+    "tier": 1,
+    "teamsCount": 16,
+    "prestige": [
+      8,
+      3
+    ],
+    "wageModifier": 13,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "ksa-1",
+    "iniLeagueId": 350,
+    "name": "Pro League",
+    "country": "Saudi Arabia",
+    "tier": 1,
+    "teamsCount": 14,
+    "prestige": [
+      8,
+      3
+    ],
+    "wageModifier": 25,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "aus-1",
+    "iniLeagueId": 351,
+    "name": "A-League",
+    "country": "Australia",
+    "tier": 1,
+    "teamsCount": 10,
+    "prestige": [
+      7,
+      2
+    ],
+    "wageModifier": 8,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "arg-1",
+    "iniLeagueId": 353,
+    "name": "Primera División",
+    "country": "Argentina",
+    "tier": 1,
+    "teamsCount": 20,
+    "prestige": [
+      9,
+      5
+    ],
+    "wageModifier": 15,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "sco-1",
+    "iniLeagueId": 50,
+    "name": "Premiership",
+    "country": "Scotland",
+    "tier": 1,
+    "teamsCount": 12,
+    "prestige": [
+      8,
+      3
+    ],
+    "wageModifier": 10,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "irl-1",
+    "iniLeagueId": 65,
+    "name": "Premier Division",
+    "country": "Republic of Ireland",
+    "tier": 1,
+    "teamsCount": 10,
+    "prestige": [
+      7,
+      2
+    ],
+    "wageModifier": 3,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "bra-1",
+    "iniLeagueId": 7,
+    "name": "Série A",
+    "country": "Brazil",
+    "tier": 1,
+    "teamsCount": 20,
+    "prestige": [
+      9,
+      5
+    ],
+    "wageModifier": 15,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "jpn-1",
+    "iniLeagueId": 349,
+    "name": "J1 League",
+    "country": "Japan",
+    "tier": 1,
+    "teamsCount": 18,
+    "prestige": [
+      8,
+      3
+    ],
+    "wageModifier": 14,
+    "promotion": null,
+    "relegation": null
+  },
+  {
+    "id": "kor-1",
+    "iniLeagueId": 83,
+    "name": "K League 1",
+    "country": "South Korea",
+    "tier": 1,
+    "teamsCount": 12,
+    "prestige": [
+      7,
+      2
+    ],
+    "wageModifier": 8,
+    "promotion": null,
+    "relegation": null
+  }
+]

@@ -1,0 +1,314 @@
+{
+  "domestic": [
+    {
+      "id": "eng-fa-cup",
+      "name": "FA Cup",
+      "country": "England",
+      "leagueIds": [
+        "eng-1",
+        "eng-2",
+        "eng-3",
+        "eng-4"
+      ]
+    },
+    {
+      "id": "eng-league-cup",
+      "name": "League Cup",
+      "country": "England",
+      "leagueIds": [
+        "eng-1",
+        "eng-2",
+        "eng-3",
+        "eng-4"
+      ]
+    },
+    {
+      "id": "esp-copa-del-rey",
+      "name": "Copa del Rey",
+      "country": "Spain",
+      "leagueIds": [
+        "esp-1",
+        "esp-2"
+      ]
+    },
+    {
+      "id": "ita-coppa-italia",
+      "name": "Coppa Italia",
+      "country": "Italy",
+      "leagueIds": [
+        "ita-1",
+        "ita-2"
+      ]
+    },
+    {
+      "id": "ger-dfb-pokal",
+      "name": "DFB-Pokal",
+      "country": "Germany",
+      "leagueIds": [
+        "ger-1",
+        "ger-2"
+      ]
+    },
+    {
+      "id": "fra-coupe-de-france",
+      "name": "Coupe de France",
+      "country": "France",
+      "leagueIds": [
+        "fra-1",
+        "fra-2"
+      ]
+    },
+    {
+      "id": "ned-knvb-beker",
+      "name": "KNVB Beker",
+      "country": "Netherlands",
+      "leagueIds": [
+        "ned-1"
+      ]
+    },
+    {
+      "id": "por-taca-de-portugal",
+      "name": "Taça de Portugal",
+      "country": "Portugal",
+      "leagueIds": [
+        "por-1"
+      ]
+    },
+    {
+      "id": "swe-svenska-cupen",
+      "name": "Svenska Cupen",
+      "country": "Sweden",
+      "leagueIds": [
+        "swe-1"
+      ]
+    },
+    {
+      "id": "sui-schweizer-cup",
+      "name": "Schweizer Cup",
+      "country": "Switzerland",
+      "leagueIds": [
+        "sui-1"
+      ]
+    },
+    {
+      "id": "usa-open-cup",
+      "name": "U.S. Open Cup",
+      "country": "USA",
+      "leagueIds": [
+        "usa-1"
+      ]
+    },
+    {
+      "id": "mex-copa-mx",
+      "name": "Copa MX",
+      "country": "Mexico",
+      "leagueIds": [
+        "mex-1"
+      ]
+    },
+    {
+      "id": "chi-copa-chile",
+      "name": "Copa Chile",
+      "country": "Chile",
+      "leagueIds": [
+        "chi-1"
+      ]
+    },
+    {
+      "id": "col-copa-colombia",
+      "name": "Copa Colombia",
+      "country": "Colombia",
+      "leagueIds": [
+        "col-1"
+      ]
+    },
+    {
+      "id": "rus-cup",
+      "name": "Russian Cup",
+      "country": "Russia",
+      "leagueIds": [
+        "rus-1"
+      ]
+    },
+    {
+      "id": "aut-ofb-cup",
+      "name": "ÖFB-Cup",
+      "country": "Austria",
+      "leagueIds": [
+        "aut-1"
+      ]
+    },
+    {
+      "id": "bel-cup",
+      "name": "Belgian Cup",
+      "country": "Belgium",
+      "leagueIds": [
+        "bel-1"
+      ]
+    },
+    {
+      "id": "den-cup",
+      "name": "Danish Cup",
+      "country": "Denmark",
+      "leagueIds": [
+        "den-1"
+      ]
+    },
+    {
+      "id": "nor-cup",
+      "name": "Norwegian Cup",
+      "country": "Norway",
+      "leagueIds": [
+        "nor-1"
+      ]
+    },
+    {
+      "id": "tur-cup",
+      "name": "Turkish Cup",
+      "country": "Turkey",
+      "leagueIds": [
+        "tur-1"
+      ]
+    },
+    {
+      "id": "pol-cup",
+      "name": "Polish Cup",
+      "country": "Poland",
+      "leagueIds": [
+        "pol-1"
+      ]
+    },
+    {
+      "id": "ksa-king-cup",
+      "name": "King Cup",
+      "country": "Saudi Arabia",
+      "leagueIds": [
+        "ksa-1"
+      ]
+    },
+    {
+      "id": "aus-ffa-cup",
+      "name": "FFA Cup",
+      "country": "Australia",
+      "leagueIds": [
+        "aus-1"
+      ]
+    },
+    {
+      "id": "arg-copa-argentina",
+      "name": "Copa Argentina",
+      "country": "Argentina",
+      "leagueIds": [
+        "arg-1"
+      ]
+    },
+    {
+      "id": "sco-scottish-cup",
+      "name": "Scottish Cup",
+      "country": "Scotland",
+      "leagueIds": [
+        "sco-1"
+      ]
+    },
+    {
+      "id": "irl-fai-cup",
+      "name": "FAI Cup",
+      "country": "Republic of Ireland",
+      "leagueIds": [
+        "irl-1"
+      ]
+    },
+    {
+      "id": "bra-copa-do-brasil",
+      "name": "Copa do Brasil",
+      "country": "Brazil",
+      "leagueIds": [
+        "bra-1"
+      ]
+    },
+    {
+      "id": "jpn-emperors-cup",
+      "name": "Emperor's Cup",
+      "country": "Japan",
+      "leagueIds": [
+        "jpn-1"
+      ]
+    },
+    {
+      "id": "kor-fa-cup",
+      "name": "Korean FA Cup",
+      "country": "South Korea",
+      "leagueIds": [
+        "kor-1"
+      ]
+    }
+  ],
+  "continental": [
+    {
+      "id": "euro-champions-cup",
+      "name": "European Champions Cup",
+      "confed": "UEFA",
+      "teams": 32,
+      "format": "8 groups of 4 -> round of 16 knockout",
+      "qualifyVia": "league position"
+    },
+    {
+      "id": "euro-trophy",
+      "name": "European Trophy",
+      "confed": "UEFA",
+      "teams": 48,
+      "format": "group stage -> knockout",
+      "qualifyVia": "league position / cup performance"
+    },
+    {
+      "id": "south-american-champions-cup",
+      "name": "South American Champions Cup",
+      "confed": "CONMEBOL",
+      "teams": 32,
+      "format": "group stage -> knockout",
+      "qualifyVia": "league position"
+    }
+  ],
+  "international": [
+    {
+      "id": "world-cup",
+      "name": "World Cup",
+      "scope": "global",
+      "cycleEvery": 4,
+      "firstYear": 2018,
+      "qualifiers": "confederation qualifiers in intl breaks the two preceding years"
+    },
+    {
+      "id": "euro",
+      "name": "European Championship",
+      "scope": "UEFA",
+      "cycleEvery": 4,
+      "firstYear": 2016,
+      "qualifiers": "UEFA qualifying groups"
+    },
+    {
+      "id": "copa-america",
+      "name": "Copa América",
+      "scope": "CONMEBOL",
+      "cycleEvery": 4,
+      "firstYear": 2015,
+      "qualifiers": "none (round robin qualification via WC qualifiers)"
+    },
+    {
+      "id": "afcon",
+      "name": "Africa Cup of Nations",
+      "scope": "CAF",
+      "cycleEvery": 2,
+      "firstYear": 2015,
+      "qualifiers": "CAF qualifying groups"
+    },
+    {
+      "id": "asian-cup",
+      "name": "AFC Asian Cup",
+      "scope": "AFC",
+      "cycleEvery": 4,
+      "firstYear": 2019,
+      "qualifiers": "AFC qualifying groups"
+    }
+  ]
+}
