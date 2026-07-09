@@ -1,31 +1,25 @@
-/* stage.js — scale the fixed 1280x720 stage to fit the window, preserving 16:9 */
-(function () {
-  "use strict";
+// stage.js — scale the fixed 1280x720 stage to fit the window, preserving 16:9
 
-  var STAGE_W = 1280;
-  var STAGE_H = 720;
+const STAGE_W = 1280;
+const STAGE_H = 720;
 
-  var stage = null;
+let stage = null;
 
-  function fit() {
-    if (!stage) stage = document.getElementById("stage");
-    if (!stage) return;
+export function fitStage() {
+  if (!stage) stage = document.getElementById("stage");
+  if (!stage) return;
 
-    var w = window.innerWidth;
-    var h = window.innerHeight;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
 
-    // Largest uniform scale that keeps the whole stage visible (letterboxed).
-    var scale = Math.min(w / STAGE_W, h / STAGE_H);
+  // Largest uniform scale that keeps the whole stage visible (letterboxed).
+  const scale = Math.min(w / STAGE_W, h / STAGE_H);
 
-    stage.style.setProperty("--scale", scale.toFixed(4));
-  }
+  stage.style.setProperty("--scale", scale.toFixed(4));
+}
 
-  window.addEventListener("resize", fit, { passive: true });
-  window.addEventListener("orientationchange", fit, { passive: true });
-  document.addEventListener("DOMContentLoaded", fit);
-  // Run once immediately in case DOM is already parsed.
-  fit();
-
-  // Expose for other modules if ever needed.
-  window.__fitStage = fit;
-})();
+export function initStage() {
+  window.addEventListener("resize", fitStage, { passive: true });
+  window.addEventListener("orientationchange", fitStage, { passive: true });
+  fitStage();
+}

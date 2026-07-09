@@ -2,7 +2,9 @@
 
 A static, browser-based recreation of the **FIFA 15 Manager Career Mode** menu screens,
 built to run on GitHub Pages. This first pass is **visual/layout only** — the look, menus,
-and screen-to-screen paging are in place, but there is no game logic yet.
+and screen-to-screen paging are in place, but there is no game logic yet. Every screen
+renders from a `GameState` stub (`js/core/store.js`) whose values are copied verbatim from
+the original hardcoded markup — see `fable-plans/plan1.md` for the full build plan.
 
 ## https://joedementri.github.io/football-manager/
 
@@ -27,35 +29,44 @@ All club crests, player faces, and photos are **CSS/SVG placeholders** — no li
   page between screens (wraps around).
 - **Email inbox** — press **Y** or **E** (or click the *Email Inbox* prompt) to open;
   press **B** or **Esc** (or click *Close Inbox*) to return.
-- **Deep links** — open with a hash to jump straight to a screen, e.g.
-  `index.html#season` or `index.html#email`.
+- **Deep links** — jump straight to a screen either via hash or query string, e.g.
+  `index.html#season` / `index.html?screen=season`, or `index.html#email` /
+  `index.html?screen=email`. Both forms are supported.
 
 The UI renders on a fixed **1280×720 (16:9)** stage that scales to fit any window, like the
 console game.
 
 ## Run locally
 
-Just open `index.html` in a browser. Everything is self-contained (the SVG sprite is inlined,
-so it works over `file://`). The only network request is an optional Google Fonts link; the
-layout falls back to system fonts offline.
-
-To serve it like GitHub Pages does:
+The app is built from **ES modules** (`<script type="module">`), which browsers refuse to
+load over `file://`. Serve the folder over HTTP instead:
 
 ```bash
 python -m http.server 8000
 # then visit http://localhost:8000
 ```
 
+GitHub Pages serves everything over HTTP already, so deployment is unaffected.
+
 ## Project structure
 
 ```
-index.html        # entry point: stage, inline SVG sprite, all six screens
-css/base.css      # design tokens, 16:9 stage scaling, backgrounds, fonts
-css/chrome.css    # header, tab bar, footer prompts + reusable panel/tile components
-css/screens.css   # per-screen layouts + email overlay
-js/stage.js       # scales the 16:9 stage to the window
-js/navigation.js  # tab switching, ←/→ paging, email overlay, deep links
-.nojekyll         # tells GitHub Pages to serve files as-is
+index.html            # entry point: stage, inline SVG sprite, all six screens
+css/base.css          # design tokens, 16:9 stage scaling, backgrounds, fonts
+css/chrome.css        # header, tab bar, footer prompts + reusable panel/tile components
+css/screens.css       # per-screen layouts + email overlay
+js/main.js            # bootstrap: builds the store, renders it, wires up router/carousel/stage
+js/stage.js           # scales the 16:9 stage to the window
+js/carousel.js        # generic [data-carousel] tile paging widget
+js/core/store.js      # GameState (currently a hardcoded-content stub) + pub/sub
+js/core/router.js     # screen/overlay switching, footer prompts, deep links
+js/core/rng.js         # seeded PRNG (mulberry32) — all future generation/sim draws from this
+js/core/format.js     # date/number/money display formatting
+js/core/db.js         # IndexedDB key/value wrapper (save-slot logic lands in a later milestone)
+js/ui/render.js       # renders each screen's dynamic content from GameState
+reference/ini/        # FIFA 17 career-mode INI files, ported for tuning-number reference
+fable-plans/plan1.md  # the full build plan (milestones M0–M11)
+.nojekyll              # tells GitHub Pages to serve files as-is
 ```
 
 ## Deploy to GitHub Pages
