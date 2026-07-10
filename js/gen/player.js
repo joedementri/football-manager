@@ -192,6 +192,10 @@ export function generatePlayer(opts) {
     morale: 7,
     fitness: 100,
     injury: null,
+    // Most-recent-first match-rating history engine/form.js's rolling form
+    // average reads from (M4) — empty at generation time, capped at 10 by
+    // recordMatchRating as matches get played.
+    ratingHistory: [],
     seasonStats: { apps: 0, goals: 0, assists: 0, cleanSheets: 0, avgRating: 0, yellows: 0, reds: 0 },
     careerStats: [],
     kitNumber: null, // assigned by gen/squad.js once the full 24-man list exists

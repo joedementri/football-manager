@@ -14,8 +14,10 @@
 // game logic themselves, so the sim stays testable headless later.
 
 import { addDays } from "./clock.js";
-import { buildFixtures, buildLeagueTable, advanceTowards } from "../engine/calendar.js";
+import { buildFixtures, buildLeagueTable, advanceTowards, fixtureOnDate } from "../engine/calendar.js";
 import { buildObjectiveEmails, domesticCupFor } from "../engine/objectives.js";
+import { simulateWorldDay } from "../engine/sim/worldsim.js";
+import * as matchEngine from "../engine/sim/match.js";
 
 export const SCREENS = ["central", "squad", "transfers", "office", "season"];
 
@@ -244,7 +246,7 @@ function createUiDefaults(today) {
   return {
     screen: "central",
     lastScreen: "central",
-    overlay: null, // null | 'email' | 'news' | 'squadlist' | 'playerbio' | 'calendar'
+    overlay: null, // null | 'email' | 'news' | 'squadlist' | 'playerbio' | 'calendar' | 'matchday'
     overlayStack: [], // nested overlays (playerbio opened from within squadlist)
     emailSelectedIndex: 0,
     newsCategory: "breaking",
@@ -252,21 +254,38 @@ function createUiDefaults(today) {
     squadlist: { sortKey: "overall", sortDir: "desc", selectedIndex: -1 },
     bioPlayerId: null,
     calendar: { viewYear: today.getFullYear(), viewMonth: today.getMonth() },
+    // Matchday substitution picker (ui/matchday.js): step 1 opens the
+    // picker (matchdaySubOpen), step 2 records who's coming on
+    // (matchdaySubInId) while waiting for the user to pick who goes off.
+    matchdaySubOpen: false,
+    matchdaySubInId: null,
   };
 }
 
 /**
  * Builds the derived, non-persisted indices every GameState needs:
- * `playersById` for O(1) bio lookups, `squad.roster` (the user's 24 players,
- * sorted by overall), the full-season `fixtures` graph (engine/calendar.js —
- * every league scheduled, not just the user's) and `league.table` computed
- * from it. Both createCareerState and hydrateFromSave funnel through this so
- * the two paths can't drift apart. `allClubs`/`allLeagues` are the complete
- * data/*.json lists (fixture generation needs every league, not just the
- * user's one).
+ * `playersById` for O(1) bio lookups, `playersByClub` (every club's live
+ * roster — M4's match sim needs any of ~600 clubs' squad on demand, not
+ * just the user's), `clubsById` (ditto, for club objects — team strength
+ * needs `.prestige`), `squad.roster` (the user's 24 players, sorted by
+ * overall), the full-season `fixtures` graph (engine/calendar.js — every
+ * league scheduled, not just the user's) and `league.table`/`league.clubs`
+ * computed from it plus `results` (M4: fixtureId -> {homeGoals,awayGoals},
+ * empty for a new career, restored from the save otherwise — see
+ * core/db.js's header for why results are persisted directly rather than
+ * re-derived). Both createCareerState and hydrateFromSave funnel through
+ * this so the two paths can't drift apart. `allClubs`/`allLeagues` are the
+ * complete data/*.json lists (fixture generation needs every league, not
+ * just the user's one).
  */
-function deriveIndices(state, { allClubs, allLeagues }) {
+function deriveIndices(state, { allClubs, allLeagues, results = new Map() }) {
   state.playersById = new Map(state.players.map((p) => [p.id, p]));
+  state.playersByClub = new Map();
+  for (const p of state.players) {
+    if (!state.playersByClub.has(p.clubId)) state.playersByClub.set(p.clubId, []);
+    state.playersByClub.get(p.clubId).push(p);
+  }
+  state.clubsById = new Map(allClubs.map((c) => [c.id, c]));
   state.squad.roster = state.players
     .filter((p) => p.clubId === state.club.id)
     .sort((a, b) => b.overall - a.overall);
@@ -274,10 +293,18 @@ function deriveIndices(state, { allClubs, allLeagues }) {
   state.fixtures = buildFixtures({
     leagues: allLeagues, clubs: allClubs, seed: state.seed, seasonStartYear: state.seasonStartYear,
   });
-  const leagueClubs = allClubs.filter((c) => c.leagueId === state.league.id);
-  state.league.table = buildLeagueTable(state.league, leagueClubs, state.fixtures.byLeague.get(state.league.id));
+  state.results = results;
+  state.league.clubs = allClubs.filter((c) => c.leagueId === state.league.id);
+  state.league.table = buildLeagueTable(state.league, state.league.clubs, state.fixtures.byLeague.get(state.league.id), state.results);
 
   return state;
+}
+
+/** Recomputes state.league.table from the latest state.results — called
+ * after any batch of matches resolves (core/store.js's advanceToDate and
+ * matchdayFinish()) so Central/Season's table tiles reflect new results. */
+export function refreshLeagueTable(state) {
+  state.league.table = buildLeagueTable(state.league, state.league.clubs, state.fixtures.byLeague.get(state.league.id), state.results);
 }
 
 /**
@@ -326,6 +353,12 @@ export function createCareerState({ managerName, club, league, world, seasonStar
     // day 1"). Real content from here on — see engine/objectives.js.
     inbox: { emails: buildObjectiveEmails({ club, league, cup, managerName, today }) },
 
+    // The live Match Day overlay's state (engine/sim/match.js) — null except
+    // for the duration of the user's own fixture; never persisted (a save
+    // mid-live-match isn't supported, matching the project's existing
+    // "fixtures/inbox persist, in-flight UI doesn't" convention).
+    matchday: null,
+
     ...createStubExtras(today),
     ui: createUiDefaults(today),
   };
@@ -360,11 +393,12 @@ export function hydrateFromSave(saved, { leagues, clubs }) {
       lineup: saved.lineup,
     },
     inbox: { emails: saved.inbox },
+    matchday: null,
     ...createStubExtras(today),
     ui: createUiDefaults(today),
   };
 
-  return deriveIndices(state, { allClubs: clubs, allLeagues: leagues });
+  return deriveIndices(state, { allClubs: clubs, allLeagues: leagues, results: saved.results });
 }
 
 /**
@@ -472,12 +506,132 @@ export class Store {
    * several days at once), but halts on the first day that's a match day
    * for the user's club (plan1.md: "Multi-day advance stops at any event
    * needing user input"). `today` itself is never a stop — you're already
-   * sitting on it, so re-advancing from a match day moves past it normally. */
+   * sitting on it, so re-advancing from a match day moves past it normally.
+   * Every day swept through along the way gets that date's non-user
+   * fixtures simulated (engine/sim/worldsim.js, M4) via advanceTowards'
+   * `onEnterDay` hook, so every league's table keeps filling in regardless
+   * of whether the user's own club plays that day. Landing on a user match
+   * day opens the live Match Day overlay instead of just sitting on it.
+   */
   advanceToDate(targetDate) {
-    const { date } = advanceTowards(this.state.fixtures, this.state.club.id, this.state.calendar.today, targetDate);
+    if (this.state.matchday && !this.state.matchday.finished) return; // a live match must finish first
+    const { date } = advanceTowards(
+      this.state.fixtures, this.state.club.id, this.state.calendar.today, targetDate,
+      (day) => simulateWorldDay(this.state, day),
+    );
     this.state.calendar.today = date;
     this.state.calendar.strip = buildDayStrip(date, 5);
+    refreshLeagueTable(this.state);
     this.emit("advance", null);
+
+    const fixture = fixtureOnDate(this.state.fixtures, this.state.club.id, date);
+    if (fixture) this.openMatchday(fixture);
+  }
+
+  /* ----- Match Day (M4): engine/sim/match.js owns the actual state
+   * machine; these methods just call into it and emit "matchday" for
+   * ui/matchday.js to re-render from. ----- */
+
+  openMatchday(fixture) {
+    this.state.matchday = matchEngine.createMatchState(this.state, fixture);
+    this.state.ui.matchdaySubOpen = false;
+    this.state.ui.matchdaySubInId = null;
+    this.openOverlay("matchday");
+    this.emit("matchday", null);
+  }
+
+  matchdayPlay() {
+    const m = this.state.matchday;
+    if (!m || m.finished || m.atHalftime) return;
+    m.playing = true;
+    this.emit("matchday", null);
+  }
+
+  matchdayPause() {
+    const m = this.state.matchday;
+    if (!m) return;
+    m.playing = false;
+    this.emit("matchday", null);
+  }
+
+  matchdaySetSpeed(speed) {
+    const m = this.state.matchday;
+    if (!m) return;
+    m.speed = speed;
+    this.emit("matchday", null);
+  }
+
+  /** One ticker "frame" — ui/matchday.js's interval timer calls this once
+   * per real-time tick while playing; a no-op once paused/halftime/finished
+   * (the UI stops its own timer on that same transition). */
+  matchdayTick() {
+    const m = this.state.matchday;
+    if (!m || !m.playing || m.finished || m.atHalftime) return;
+    matchEngine.tick(this.state, m);
+    if (m.finished) refreshLeagueTable(this.state);
+    this.emit("matchday", null);
+  }
+
+  matchdayContinueSecondHalf() {
+    const m = this.state.matchday;
+    if (!m) return;
+    matchEngine.continueSecondHalf(this.state, m);
+    m.playing = true; // second half kicks straight off, same as the opening whistle
+    this.emit("matchday", null);
+  }
+
+  /** The ticker's "instant" speed — resolves straight to full time. */
+  matchdaySimToEnd() {
+    const m = this.state.matchday;
+    if (!m) return;
+    m.playing = false;
+    matchEngine.simToEnd(this.state, m);
+    refreshLeagueTable(this.state);
+    this.emit("matchday", null);
+  }
+
+  /** Opens the substitution picker (pauses the ticker while it's open —
+   * plan1.md's "pause for subs/tactics at stoppages"). Step 1 picks who
+   * comes on; step 2 (matchdaySubstitute) picks who goes off for them. */
+  matchdayOpenSubPicker() {
+    const m = this.state.matchday;
+    if (!m || m.finished) return;
+    this.state.ui.matchdaySubOpen = true;
+    this.state.ui.matchdaySubInId = null;
+    this.matchdayPause();
+    this.emit("matchday", null);
+  }
+
+  matchdaySelectSubIn(playerId) {
+    this.state.ui.matchdaySubInId = playerId;
+    this.emit("matchday", null);
+  }
+
+  matchdayCancelSub() {
+    this.state.ui.matchdaySubOpen = false;
+    this.state.ui.matchdaySubInId = null;
+    this.emit("matchday", null);
+  }
+
+  matchdaySubstitute(side, outPlayerId) {
+    const m = this.state.matchday;
+    const inPlayerId = this.state.ui.matchdaySubInId;
+    if (!m || inPlayerId == null) return;
+    matchEngine.substitute(this.state, m, side, outPlayerId, inPlayerId);
+    this.state.ui.matchdaySubOpen = false;
+    this.state.ui.matchdaySubInId = null;
+    this.emit("matchday", null);
+  }
+
+  /** Only leaves the overlay once the match has actually finished — the
+   * live match itself can't be backed out of, matching plan1.md's "Multi-day
+   * advance stops at any event needing user input (match...)". */
+  closeMatchday() {
+    const m = this.state.matchday;
+    if (!m || !m.finished) return;
+    this.state.matchday = null;
+    this.closeOverlay();
+    this.emit("advance", null); // reuse Central/Season's re-render hook — league.table/results changed
   }
 
   openCalendar() {

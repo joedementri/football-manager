@@ -95,6 +95,7 @@ const FOOT_CODES = ["L", "R"];
 const WORKRATE_CODES = ["Low", "Medium", "High"];
 const SQUAD_ROLE_CODES = ["prospect", "rotation", "important", "crucial"];
 const ALT_POS_SLOTS = 2; // schema: altPositions has 0-2 entries
+const RATING_HISTORY_SLOTS = 10; // engine/form.js's HISTORY_CAP; -1 = empty slot
 
 /** Reads a flat array positionally, in the exact order it was written — see
  * serializePlayer/deserializePlayer, which must stay in lockstep. */
@@ -139,6 +140,7 @@ export function serializePlayer(p) {
     p.seasonStats.avgRating, p.seasonStats.yellows, p.seasonStats.reds,
     p.kitNumber, p.isYouth ? 1 : 0,
     p.scouting.level, p.scouting.ovrRange[0], p.scouting.ovrRange[1], p.scouting.potRange[0], p.scouting.potRange[1],
+    ...Array.from({ length: RATING_HISTORY_SLOTS }, (_, i) => p.ratingHistory[i] ?? -1),
   ];
 }
 
@@ -164,6 +166,7 @@ export function deserializePlayer(arr) {
   const avgRating = c.next(), yellows = c.next(), reds = c.next();
   const kitNumber = c.next(), isYouth = c.next();
   const scoutLevel = c.next(), ovrLo = c.next(), ovrHi = c.next(), potLo = c.next(), potHi = c.next();
+  const ratingHistory = c.take(RATING_HISTORY_SLOTS).filter((v) => v >= 0);
 
   return {
     id, firstName, lastName, commonName, nationId, clubId, natTeamId,
@@ -172,6 +175,7 @@ export function deserializePlayer(arr) {
     contract: { wage, endYear, signingBonus, squadRole },
     value, form, morale, fitness,
     injury: hasInjury ? { type: injuryType, daysLeft: injuryDaysLeft } : null,
+    ratingHistory,
     seasonStats: { apps, goals, assists, cleanSheets, avgRating, yellows, reds },
     careerStats: [],
     kitNumber, isYouth: !!isYouth,
@@ -214,6 +218,12 @@ export function serializeSave(state) {
     players: state.players.map(serializePlayer),
     lineup: state.squad.lineup,
     inbox: state.inbox.emails.map(serializeEmail),
+    // Match results (M4): fixtures themselves regenerate deterministically
+    // from the seed (engine/calendar.js), but *results* can't — a live user
+    // match's outcome depends on mid-match decisions (substitutions) the
+    // seed alone can't reproduce, so every finished fixture's scoreline is
+    // persisted directly, same rationale as the inbox above.
+    results: [...state.results.entries()],
   };
 }
 
@@ -230,6 +240,7 @@ export function deserializeSave(saved) {
     players: saved.players.map(deserializePlayer),
     lineup: saved.lineup,
     inbox: (saved.inbox || []).map(deserializeEmail),
+    results: new Map(saved.results || []),
   };
 }
 

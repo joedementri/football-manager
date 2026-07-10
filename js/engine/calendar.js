@@ -27,7 +27,8 @@ import { RngStream, deriveSeed } from "../core/rng.js";
  * @param {number} opts.seed
  * @param {number} opts.seasonStartYear
  * @returns {{ byLeague: Map<string,object[]>, byClub: Map<string,object[]>,
- *             byClubDate: Map<string, Map<number,object>>, byId: Map<string,object> }}
+ *             byClubDate: Map<string, Map<number,object>>, byId: Map<string,object>,
+ *             byDate: Map<number,object[]> }}
  */
 export function buildFixtures({ leagues, clubs, seed, seasonStartYear }) {
   const rng = new RngStream(deriveSeed(seed, "fixtures"));
@@ -43,6 +44,7 @@ export function buildFixtures({ leagues, clubs, seed, seasonStartYear }) {
   const byClub = new Map(clubs.map((c) => [c.id, []]));
   const byClubDate = new Map(clubs.map((c) => [c.id, new Map()]));
   const byId = new Map();
+  const byDate = new Map();
 
   for (const league of leagues) {
     const clubIds = clubsByLeague.get(league.id) || [];
@@ -54,17 +56,27 @@ export function buildFixtures({ leagues, clubs, seed, seasonStartYear }) {
       byClub.get(fx.awayClubId).push(fx);
       byClubDate.get(fx.homeClubId).set(toEpochDay(fx.date), fx);
       byClubDate.get(fx.awayClubId).set(toEpochDay(fx.date), fx);
+      const day = toEpochDay(fx.date);
+      if (!byDate.has(day)) byDate.set(day, []);
+      byDate.get(day).push(fx);
     }
   }
   for (const list of byClub.values()) list.sort((a, b) => toEpochDay(a.date) - toEpochDay(b.date));
 
-  return { byLeague, byClub, byClubDate, byId };
+  return { byLeague, byClub, byClubDate, byId, byDate };
 }
 
 /** The fixture (if any) a club plays on a given date. */
 export function fixtureOnDate(fixtures, clubId, date) {
   const perDate = fixtures.byClubDate.get(clubId);
   return perDate ? perDate.get(toEpochDay(date)) || null : null;
+}
+
+/** Every fixture (any club, any league) scheduled on a given date — the
+ * cross-league index engine/sim/worldsim.js's per-day batch simulation
+ * (M4) walks as the calendar advances. */
+export function fixturesOnDate(fixtures, date) {
+  return fixtures.byDate.get(toEpochDay(date)) || [];
 }
 
 /** Next N upcoming fixtures for a club, strictly after `fromDate`. */
@@ -104,13 +116,20 @@ export function eventsOnDate(date, seasonStartYear) {
  * `fromDate` itself is never treated as a stop (you're already sitting on
  * it — otherwise clicking Advance again from a match day could never move
  * past it).
+ *
+ * `onEnterDay(date)`, if given, runs for every day the walk steps into
+ * (including the final halting day), *before* the match-day check — M4's
+ * hook for core/store.js to batch-simulate that date's non-user fixtures
+ * (engine/sim/worldsim.js) as the calendar sweeps past them, so every
+ * league's table fills in even on days the user's own club doesn't play.
  * @returns {{ date: Date, stoppedEarly: boolean }}
  */
-export function advanceTowards(fixtures, clubId, fromDate, toDate) {
+export function advanceTowards(fixtures, clubId, fromDate, toDate, onEnterDay) {
   const targetDay = toEpochDay(toDate);
   let current = fromDate;
   while (toEpochDay(current) < targetDay) {
     current = addDays(current, 1);
+    if (onEnterDay) onEnterDay(current);
     if (fixtureOnDate(fixtures, clubId, current)) return { date: current, stoppedEarly: true };
   }
   return { date: current, stoppedEarly: false };

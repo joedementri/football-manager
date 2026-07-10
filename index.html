@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="css/bio.css" />
   <link rel="stylesheet" href="css/calendar.css" />
   <link rel="stylesheet" href="css/flags.css" />
+  <link rel="stylesheet" href="css/matchday.css" />
 </head>
 <body>
 
@@ -614,6 +615,16 @@
         </div>
       </div>
 
+      <!-- =====================  MATCH DAY OVERLAY  =================== -->
+      <div id="matchday-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">CENTRAL</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">MATCH DAY</span>
+        </div>
+        <div class="md-body" id="md-body"><!-- built by ui/matchday.js --></div>
+      </div>
+
       <!-- =====================  FOOTER PROMPTS  ==================== -->
       <footer class="footer" id="footer-main">
         <span class="prompt" data-prompt="select"><span class="btn-glyph a">A</span> Select</span>
@@ -642,6 +653,7 @@
         <span class="prompt"><span class="btn-glyph r1">&rsaquo;</span> Next Month</span>
         <span class="prompt"><span class="btn-glyph b">B</span> Back</span>
       </footer>
+      <footer class="footer" id="footer-matchday" hidden><!-- built by ui/matchday.js (prompts change per phase) --></footer>
 
       <!-- =====================  DELETE SAVE CONFIRM  ================ -->
       <div class="confirm-modal" id="confirm-delete-modal" hidden>

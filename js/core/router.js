@@ -18,6 +18,7 @@ import {
 import { renderSquadList } from "../ui/squadlist.js";
 import { renderPlayerBio } from "../ui/playerbio.js";
 import { renderCalendar, initCalendarHeaders } from "../ui/calendarui.js";
+import { renderMatchday, initMatchdayTicker } from "../ui/matchday.js";
 import { fromEpochDay } from "./clock.js";
 
 export function initRouter(store) {
@@ -35,6 +36,9 @@ export function initRouter(store) {
   const playerbioOverlay = document.getElementById("playerbio-overlay");
   const footerCalendar = document.getElementById("footer-calendar");
   const calendarOverlay = document.getElementById("calendar-overlay");
+  const footerMatchday = document.getElementById("footer-matchday");
+  const matchdayOverlay = document.getElementById("matchday-overlay");
+  const mdBodyEl = document.getElementById("md-body");
   const newsTabsEl = document.getElementById("news-tabs");
   const newsListEl = document.getElementById("news-list");
   const squadlistBodyEl = document.getElementById("squadlist-body");
@@ -66,6 +70,10 @@ export function initRouter(store) {
       calendarOverlay.classList.toggle("is-active", open);
       footerCalendar.hidden = !open;
       if (open) { initCalendarHeaders(); renderCalendar(store.state); }
+    } else if (name === "matchday") {
+      matchdayOverlay.classList.toggle("is-active", open);
+      footerMatchday.hidden = !open;
+      if (open) renderMatchday(store.state);
     }
     const anyOverlayOpen = !!store.state.ui.overlay;
     tabbar.style.display = anyOverlayOpen ? "none" : "";
@@ -92,6 +100,8 @@ export function initRouter(store) {
     if (store.state.ui.overlay === "calendar") renderCalendar(store.state);
   });
   store.on("calendar:view", () => renderCalendar(store.state));
+  store.on("matchday", () => renderMatchday(store.state));
+  initMatchdayTicker(store);
 
   /* ----- DOM -> store wiring ---------------------------------------------- */
   tabs.forEach((t) => t.addEventListener("click", () => store.setScreen(t.dataset.screen)));
@@ -149,6 +159,36 @@ export function initRouter(store) {
     if (/Prev Month/i.test(p.textContent)) p.addEventListener("click", () => store.calendarChangeMonth(-1));
     else if (/Next Month/i.test(p.textContent)) p.addEventListener("click", () => store.calendarChangeMonth(1));
     else if (/Back/i.test(p.textContent)) p.addEventListener("click", () => store.closeOverlay());
+  });
+
+  // Match Day overlay (M4): both the body (pre-match/ticker/full-time/sub
+  // picker) and its footer prompts are fully re-rendered per phase by
+  // ui/matchday.js, so wiring is delegated (data-action) rather than
+  // per-element, same rationale as the email list above.
+  function handleMatchdayAction(action, target) {
+    switch (action) {
+      case "kickoff": case "toggle-play":
+        store.state.matchday.playing ? store.matchdayPause() : store.matchdayPlay();
+        break;
+      case "cycle-speed":
+        store.matchdaySetSpeed(store.state.matchday.speed >= 4 ? 1 : 4);
+        break;
+      case "instant": store.matchdaySimToEnd(); break;
+      case "continue-second-half": store.matchdayContinueSecondHalf(); break;
+      case "open-sub": store.matchdayOpenSubPicker(); break;
+      case "cancel-sub": store.matchdayCancelSub(); break;
+      case "pick-sub-in": store.matchdaySelectSubIn(Number(target.dataset.player)); break;
+      case "confirm-sub-out": store.matchdaySubstitute(target.dataset.side, Number(target.dataset.player)); break;
+      case "back": store.closeMatchday(); break;
+    }
+  }
+  mdBodyEl.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (el) handleMatchdayAction(el.dataset.action, el);
+  });
+  footerMatchday.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (el) handleMatchdayAction(el.dataset.action, el);
   });
 
   newsTabsEl.querySelectorAll(".news-tab").forEach((t) => {
@@ -224,7 +264,12 @@ export function initRouter(store) {
         if (!store.state.ui.overlay) store.openOverlay("email");
         break;
       case "b": case "B": case "Escape":
-        if (store.state.ui.overlay) store.closeOverlay();
+        // Match Day can't be dismissed mid-match (plan1.md: "Multi-day
+        // advance stops at any event needing user input (match...)") —
+        // closeMatchday() itself already no-ops unless finished, but a
+        // plain closeOverlay() here would bypass that check entirely.
+        if (store.state.ui.overlay === "matchday") store.closeMatchday();
+        else if (store.state.ui.overlay) store.closeOverlay();
         break;
     }
   });

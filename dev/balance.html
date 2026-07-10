@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Balance Sim — M4 dev page</title>
+  <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@400;500;600;700&family=Saira:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="dev.css" />
+</head>
+<body>
+  <header class="hdr">
+    <h1>Balance Sim</h1>
+    <p class="sub">M4 verification page — headless-sims one full season (Jul 2014 → Jul 2015) through
+      the same <code>engine/sim/quick.js</code> + <code>engine/sim/worldsim.js</code> path Advance uses,
+      with no user club (every fixture in every league resolves). Checks the M4 ✔ criterion "strong
+      teams top tables at season end when auto-simming" — reports a position↔prestige correlation per
+      league and shows full final standings for the three highest-prestige leagues.</p>
+  </header>
+
+  <div class="counts">
+    <button id="balance-run" class="tab" style="border:1px solid var(--panel-line);border-radius:6px;">Re-run a fresh season</button>
+  </div>
+  <div id="balance-progress" class="test-summary">Starting…</div>
+  <main>
+    <div id="balance-summary" class="counts"></div>
+    <div id="balance-tables"></div>
+  </main>
+
+  <script type="module" src="balance.js"></script>
+</body>
+</html>
