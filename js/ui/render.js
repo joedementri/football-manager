@@ -17,7 +17,7 @@ export function renderHeader(state) {
   const { manager, club } = state;
   document.querySelector(".header__club").textContent = club.name;
   document.querySelector(".header__manager").textContent = manager.name;
-  document.querySelector(".header__id .crest use").setAttribute("href", `#${club.crest}`);
+  document.querySelector(".header__id .crest use").setAttribute("href", `#crest-${club.id}`);
   document.querySelector(".level-badge").textContent = manager.level;
   document.querySelector(".stat-xp .xp").textContent = `${number(manager.xp)}/${number(manager.xpMax)}`;
   const coinsEl = document.querySelector(".stat-coins");
@@ -104,7 +104,7 @@ export function renderSquad(state) {
   document.querySelector(".sq-sheet__shape b").textContent = state.squad.formationLabel;
   document.querySelector(".sq-sheet__shape span").textContent = state.squad.formationStyle;
 
-  document.querySelector(".sq-club__crest use").setAttribute("href", `#${state.club.crest}`);
+  document.querySelector(".sq-club__crest use").setAttribute("href", `#crest-${state.club.id}`);
   document.querySelector(".sq-club__name").textContent = state.club.name;
 }
 

@@ -1,0 +1,84 @@
+/* ===========================================================================
+   bio.css — Player Bio overlay: the 6-panel attribute layout (PAC/SHO/PAS/
+   DRI/DEF/PHY) + info column from the Player schema in fable-plans/plan1.md.
+   No REFERENCE_PICS screenshot covers this subscreen, so the layout is
+   authored fresh from the existing token set (.tile-like panels, gold
+   accents, the shared .news-crumb breadcrumb) rather than copying a
+   reference image.
+   =========================================================================== */
+
+#playerbio-overlay { display: none; }
+#playerbio-overlay.is-active { display: block; }
+
+.bio-body {
+  position: absolute;
+  top: 160px; left: 36px; right: 36px; bottom: 56px;
+  display: grid; grid-template-columns: 34% 1fr; gap: 0 20px;
+  z-index: 7;
+}
+
+/* ---- left: identity card ---- */
+.bio-identity {
+  background: linear-gradient(160deg, rgba(30, 36, 43, 0.92), rgba(18, 22, 27, 0.92));
+  border-radius: 8px;
+  padding: 20px 22px;
+  overflow-y: auto;
+}
+.bio-identity__top { display: flex; align-items: flex-start; gap: 12px; }
+.flag--lg { width: 30px; height: 20px; border-radius: 3px; }
+.bio-identity__name { flex: 1; }
+.bio-name { font-family: var(--font-cond); font-size: 28px; font-weight: 700; line-height: 1; }
+.bio-sub { font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim); margin-top: 4px; }
+.bio-identity__crest { width: 40px; height: 40px; }
+
+.bio-ovr-row { display: flex; gap: 16px; margin-top: 18px; }
+.bio-ovr {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 64px; height: 64px; border-radius: 50%;
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold-deep));
+  color: var(--gold-text-dark);
+}
+.bio-ovr--pot { background: linear-gradient(180deg, #7fb8e6, #2f6fa8); color: #0d1e2c; }
+.bio-ovr__num { font-family: var(--font-cond); font-size: 24px; font-weight: 700; line-height: 1; }
+.bio-ovr__lbl { font-family: var(--font-ui); font-size: 11px; letter-spacing: 0.5px; }
+
+.bio-potential-band {
+  margin-top: 12px; font-family: var(--font-ui); font-size: 14px; font-style: italic;
+  color: var(--gold);
+}
+
+.bio-info { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+.bio-info-row {
+  display: flex; justify-content: space-between; gap: 12px;
+  font-family: var(--font-ui); font-size: 14px; padding: 5px 0; color: var(--ink);
+}
+.bio-info-row .k { color: var(--ink-dim); }
+.bio-info-row .v { font-weight: 600; text-transform: capitalize; }
+
+/* ---- right: 6 attribute panels ---- */
+.bio-panels {
+  display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr);
+  gap: 10px;
+  overflow-y: auto;
+}
+.bio-panel {
+  background: linear-gradient(160deg, var(--tile-hi), var(--tile));
+  border: 1px solid rgba(120, 140, 160, 0.10);
+  border-radius: 7px;
+  padding: 12px 16px;
+}
+.bio-panel__head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding-bottom: 8px; margin-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.bio-panel__label {
+  font-family: var(--font-cond); font-weight: 700; font-size: 18px; letter-spacing: 0.6px; color: var(--ink);
+}
+.bio-panel__avg { font-family: var(--font-cond); font-weight: 700; font-size: 22px; color: var(--gold); }
+.bio-attr-row {
+  display: flex; justify-content: space-between;
+  font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim);
+  padding: 3px 0;
+}
+.bio-attr-val { color: var(--ink); font-weight: 600; }

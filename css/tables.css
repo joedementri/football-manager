@@ -1,0 +1,55 @@
+/* ===========================================================================
+   tables.css — Squad List overlay: the sortable 24-man roster table
+   (fable-plans/plan1.md M2: "Squad List (sortable table ... this is the
+   main roster screen)"). Reuses .news-crumb for the breadcrumb (SQUAD ›
+   SQUAD LIST) and the .tbl base tokens from screens.css; extends rather
+   than rewrites, per ground rule #1.
+   =========================================================================== */
+
+#squadlist-overlay { display: none; }
+#squadlist-overlay.is-active { display: block; }
+
+.sl-body {
+  position: absolute;
+  top: 160px; left: 36px; right: 36px; bottom: 56px;
+  overflow-y: auto;
+  z-index: 7;
+}
+.sl-body::-webkit-scrollbar { width: 8px; }
+.sl-body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+
+.sl-header {
+  display: flex; align-items: center; gap: 14px;
+  margin-bottom: 14px;
+}
+.sl-crest { width: 42px; height: 42px; }
+.sl-clubname {
+  font-family: var(--font-cond); font-size: 26px; font-weight: 700; letter-spacing: 0.3px;
+}
+.sl-count {
+  margin-left: auto;
+  font-family: var(--font-ui); font-size: 14px; color: var(--ink-dim);
+}
+
+.sl-table { font-size: 15px; }
+.sl-table th { padding: 0 10px 8px; cursor: pointer; user-select: none; }
+.sl-table th:first-child { padding-left: 4px; }
+.sl-table th.is-sorted-desc::after { content: " \25BC"; font-size: 9px; color: var(--gold); }
+.sl-table th.is-sorted-asc::after { content: " \25B2"; font-size: 9px; color: var(--gold); }
+
+.sl-row td { padding: 8px 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+.sl-row td:first-child { padding-left: 4px; }
+.sl-row { cursor: pointer; }
+.sl-row:hover td { background: rgba(255, 255, 255, 0.03); }
+.sl-name { font-family: var(--font-cond); font-size: 17px; font-weight: 600; }
+.sl-ovr { font-family: var(--font-cond); font-weight: 700; color: var(--gold); }
+.sl-status .icon { width: 16px; height: 16px; color: var(--red-dot); margin-right: 4px; }
+
+.sl-row.is-sel td {
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold-deep));
+  color: var(--gold-text-dark);
+}
+.sl-row.is-sel .sl-name,
+.sl-row.is-sel .sl-ovr { color: var(--gold-text-dark); }
+.sl-row.is-sel td:first-child { border-radius: 4px 0 0 4px; }
+.sl-row.is-sel td:last-child { border-radius: 0 4px 4px 0; }

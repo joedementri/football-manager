@@ -13,7 +13,11 @@ const poolCache = new Map();
 /** Fetch + cache one region's {first:[], last:[]} pool. Safe to call repeatedly. */
 export async function loadNamePool(region) {
   if (poolCache.has(region)) return poolCache.get(region);
-  const res = await fetch(`data/names/${region}.json`);
+  // Resolved against this module's own location, not the importing page's
+  // URL — see gen/world.js's dataURL() for why (dev/tests.js sits one
+  // directory deeper than index.html).
+  const url = new URL(`../../data/names/${region}.json`, import.meta.url);
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`failed to load name pool "${region}": ${res.status}`);
   const pool = await res.json();
   poolCache.set(region, pool);

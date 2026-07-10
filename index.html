@@ -10,6 +10,10 @@
   <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/chrome.css" />
   <link rel="stylesheet" href="css/screens.css" />
+  <link rel="stylesheet" href="css/newgame.css" />
+  <link rel="stylesheet" href="css/tables.css" />
+  <link rel="stylesheet" href="css/bio.css" />
+  <link rel="stylesheet" href="css/flags.css" />
 </head>
 <body>
 
@@ -75,6 +79,52 @@
 
   <div id="viewport">
     <div id="stage">
+
+      <!-- =====================  NEW GAME WIZARD  ==================== -->
+      <div id="newgame-root">
+
+        <!-- step 1: manager name -->
+        <section class="ng-step is-active" data-step="name">
+          <div class="ng-panel">
+            <div class="ng-title">Create Manager</div>
+            <div class="ng-sub">Enter your manager name</div>
+            <input class="ng-input" id="ng-name-input" type="text" maxlength="24" placeholder="Manager Name" autocomplete="off" />
+          </div>
+        </section>
+
+        <!-- step 2: league picker -->
+        <section class="ng-step" data-step="league">
+          <div class="ng-crumb"><span class="ng-crumb-cur">CHOOSE A LEAGUE</span></div>
+          <div class="ng-list" id="ng-league-list"><!-- built by ui/newgame.js --></div>
+        </section>
+
+        <!-- step 3: club picker -->
+        <section class="ng-step" data-step="club">
+          <div class="ng-crumb">
+            <span class="ng-crumb-prev" id="ng-club-back">CHOOSE A LEAGUE</span>
+            <span class="ng-crumb-sep">&rsaquo;</span>
+            <span class="ng-crumb-cur">CHOOSE A CLUB</span>
+          </div>
+          <div class="ng-club-grid" id="ng-club-grid"><!-- built by ui/newgame.js --></div>
+          <div class="ng-club-preview" id="ng-club-preview"><!-- board expectation preview --></div>
+        </section>
+
+        <!-- step 4: world-gen progress -->
+        <section class="ng-step" data-step="progress">
+          <div class="ng-panel ng-progress-panel">
+            <div class="ng-title">Generating World</div>
+            <div class="ng-progress-label" id="ng-progress-label">Loading world data…</div>
+            <div class="ng-progress-bar"><div class="ng-progress-fill" id="ng-progress-fill"></div></div>
+          </div>
+        </section>
+
+        <footer class="footer" id="ng-footer">
+          <span class="prompt" id="ng-prompt-back"><span class="btn-glyph b">B</span> Back</span>
+          <span class="prompt" id="ng-prompt-select"><span class="btn-glyph a">A</span> Select</span>
+        </footer>
+      </div>
+
+      <div id="game-root" hidden>
 
       <!-- =====================  HEADER  ============================ -->
       <header class="header">
@@ -241,8 +291,8 @@
         <!-- RIGHT: 2x3 tile grid -->
         <div class="sq-grid">
 
-          <!-- Club Squad (static) -->
-          <div class="tile sq-club">
+          <!-- Club Squad: opens the Squad List (sortable roster table) -->
+          <div class="tile sq-club is-link" data-open="squadlist">
             <div class="tile__title">Club<br>Squad</div>
             <svg class="crest sq-club__crest"><use href="#crest-pompey"></use></svg>
             <div class="sq-club__name">Portsmouth</div>
@@ -519,6 +569,26 @@
         </div>
       </div>
 
+      <!-- =====================  SQUAD LIST OVERLAY  ================= -->
+      <div id="squadlist-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">SQUAD</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">SQUAD LIST</span>
+        </div>
+        <div class="sl-body" id="squadlist-body"><!-- built by ui/squadlist.js --></div>
+      </div>
+
+      <!-- =====================  PLAYER BIO OVERLAY  ================= -->
+      <div id="playerbio-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">SQUAD LIST</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur" id="bio-crumb-name">PLAYER BIO</span>
+        </div>
+        <div class="bio-body" id="playerbio-body"><!-- built by ui/playerbio.js --></div>
+      </div>
+
       <!-- =====================  FOOTER PROMPTS  ==================== -->
       <footer class="footer" id="footer-main">
         <span class="prompt" data-prompt="select"><span class="btn-glyph a">A</span> Select</span>
@@ -535,7 +605,15 @@
         <span class="prompt"><span class="btn-glyph l3">L3</span> View Player</span>
         <span class="prompt"><span class="btn-glyph b">B</span> Back</span>
       </footer>
+      <footer class="footer" id="footer-squadlist" hidden>
+        <span class="prompt"><span class="btn-glyph a">A</span> View Bio</span>
+        <span class="prompt"><span class="btn-glyph b">B</span> Back</span>
+      </footer>
+      <footer class="footer" id="footer-playerbio" hidden>
+        <span class="prompt"><span class="btn-glyph b">B</span> Back</span>
+      </footer>
 
+      </div>
     </div>
   </div>
 

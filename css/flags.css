@@ -1,0 +1,290 @@
+/* ===========================================================================
+   flags.css — national flags for every nation in data/nations.json (~50),
+   keyed by data-flag="<nationId>" so js/ui/playerbio.js's
+   `data-flag="${player.nationId}"` (nationId = nations.json's `id`, e.g.
+   "england", "ivory-coast") always resolves to a real flag instead of the
+   .flag base rule's plain grey swatch.
+
+   Extends screens.css's .flag base rule (18x12 swatch / 30x20 for
+   .flag--lg) rather than rewriting it — ground rule #1. screens.css's
+   handful of hand-authored flags for stub content (data-flag="eng"/"wal"/
+   "par"/"mli"/"cze", used by Central's GTN tile and the Transfers scouted-
+   group tile, both still M0 placeholder content) are untouched; this file
+   only adds the nations.json-keyed set.
+
+   Technique: pure CSS gradients on `background` (no images/SVG), matching
+   screens.css's existing .flag[data-flag="eng"] idiom — a solid-colour
+   linear-gradient sized/positioned via the background shorthand acts as a
+   crisp rectangular bar, so a cross/saltire/Nordic-cross is just two or
+   four layered bars over a base colour. Stripes are hard-stop
+   linear/repeating-linear-gradients; discs/crescents are radial-gradients
+   (a crescent is a circle with a same-colour-as-field circle layered on
+   top to "bite" a sliver out of it). A few flags whose entire identity is
+   one filled shape (Czech triangle, Brazil's diamond, Morocco/Ghana's
+   star, South Korea's taegeuk) use a ::before + clip-path instead, since
+   diamonds/triangles/stars aren't expressible as plain gradients.
+
+   Scope decision: coats of arms, seals, eagles, star fields and other fine
+   heraldry are skipped throughout (consistent with the existing "wal" flag
+   already skipping its dragon) — every flag keeps its defining color
+   layout and primary geometric charge (cross, saltire, crescent, disc,
+   the one shape-flags above), which is what's legible at an 18-30px swatch
+   anyway. */
+
+.flag { position: relative; }
+
+/* ----------------------------- UEFA ----------------------------- */
+.flag[data-flag="eng"], .flag[data-flag="england"] {
+  background:
+    linear-gradient(#c8102e, #c8102e) 50% 0 / 4px 100% no-repeat,
+    linear-gradient(#c8102e, #c8102e) 0 50% / 100% 4px no-repeat,
+    #fff;
+}
+.flag[data-flag="wal"], .flag[data-flag="wales"] {
+  background: linear-gradient(180deg, #fff 0 50%, #00a651 50% 100%);
+}
+.flag[data-flag="northern-ireland"] {
+  background:
+    radial-gradient(circle at 50% 50%, #ffd100 0 2px, transparent 2.5px),
+    linear-gradient(#c8102e, #c8102e) 50% 0 / 4px 100% no-repeat,
+    linear-gradient(#c8102e, #c8102e) 0 50% / 100% 4px no-repeat,
+    #fff;
+}
+.flag[data-flag="scotland"] {
+  background:
+    linear-gradient(45deg, transparent 44%, #fff 44% 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 44%, #fff 44% 56%, transparent 56%),
+    #005eb8;
+}
+.flag[data-flag="ireland"] {
+  background: linear-gradient(90deg, #169b62 0 33.3%, #fff 33.3% 66.6%, #ff883e 66.6% 100%);
+}
+.flag[data-flag="spain"] {
+  background: linear-gradient(180deg, #aa151b 0 25%, #f1bf00 25% 75%, #aa151b 75% 100%);
+}
+.flag[data-flag="italy"] {
+  background: linear-gradient(90deg, #009246 0 33.3%, #fff 33.3% 66.6%, #ce2b37 66.6% 100%);
+}
+.flag[data-flag="germany"] {
+  background: linear-gradient(180deg, #000 0 33.3%, #dd0000 33.3% 66.6%, #ffce00 66.6% 100%);
+}
+.flag[data-flag="france"] {
+  background: linear-gradient(90deg, #0055a4 0 33.3%, #fff 33.3% 66.6%, #ef4135 66.6% 100%);
+}
+.flag[data-flag="netherlands"] {
+  background: linear-gradient(180deg, #ae1c28 0 33.3%, #fff 33.3% 66.6%, #21468b 66.6% 100%);
+}
+.flag[data-flag="portugal"] {
+  background: linear-gradient(90deg, #046a38 0 40%, #da291c 40% 100%);
+}
+.flag[data-flag="sweden"] {
+  background:
+    linear-gradient(#fecc02, #fecc02) 35% 0 / 4px 100% no-repeat,
+    linear-gradient(#fecc02, #fecc02) 0 50% / 100% 4px no-repeat,
+    #006aa7;
+}
+.flag[data-flag="switzerland"] {
+  background:
+    linear-gradient(#fff, #fff) 50% 0 / 4px 100% no-repeat,
+    linear-gradient(#fff, #fff) 0 50% / 100% 4px no-repeat,
+    #d52b1e;
+}
+.flag[data-flag="russia"] {
+  background: linear-gradient(180deg, #fff 0 33.3%, #0039a6 33.3% 66.6%, #d52b1e 66.6% 100%);
+}
+.flag[data-flag="austria"] {
+  background: linear-gradient(180deg, #ed2939 0 33.3%, #fff 33.3% 66.6%, #ed2939 66.6% 100%);
+}
+.flag[data-flag="belgium"] {
+  background: linear-gradient(90deg, #000 0 33.3%, #fdda24 33.3% 66.6%, #ef3340 66.6% 100%);
+}
+.flag[data-flag="denmark"] {
+  background:
+    linear-gradient(#fff, #fff) 35% 0 / 4px 100% no-repeat,
+    linear-gradient(#fff, #fff) 0 50% / 100% 4px no-repeat,
+    #c8102e;
+}
+.flag[data-flag="norway"] {
+  background:
+    linear-gradient(#002868, #002868) 35% 0 / 3px 100% no-repeat,
+    linear-gradient(#002868, #002868) 0 50% / 100% 3px no-repeat,
+    linear-gradient(#fff, #fff) 35% 0 / 5px 100% no-repeat,
+    linear-gradient(#fff, #fff) 0 50% / 100% 5px no-repeat,
+    #ef2b2d;
+}
+.flag[data-flag="turkey"] {
+  background:
+    radial-gradient(circle at 46% 50%, #e30a17 0 22%, transparent 23%),
+    radial-gradient(circle at 40% 50%, #fff 0 28%, transparent 29%),
+    #e30a17;
+}
+.flag[data-flag="poland"] {
+  background: linear-gradient(180deg, #fff 0 50%, #dc143c 50% 100%);
+}
+.flag[data-flag="croatia"] {
+  background: linear-gradient(180deg, #ff0000 0 33.3%, #fff 33.3% 66.6%, #171796 66.6% 100%);
+}
+.flag[data-flag="serbia"] {
+  background: linear-gradient(180deg, #c6363c 0 33.3%, #0c4076 33.3% 66.6%, #fff 66.6% 100%);
+}
+.flag[data-flag="romania"] {
+  background: linear-gradient(90deg, #002b7f 0 33.3%, #fcd116 33.3% 66.6%, #ce1126 66.6% 100%);
+}
+.flag[data-flag="czech-republic"] {
+  background: linear-gradient(180deg, #fff 0 50%, #d7141a 50% 100%);
+}
+.flag[data-flag="czech-republic"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #11457e;
+  clip-path: polygon(0 0, 55% 50%, 0 100%);
+}
+.flag[data-flag="greece"] {
+  background: repeating-linear-gradient(180deg, #0d5eaf 0 2.4px, #fff 2.4px 4.8px);
+}
+.flag[data-flag="finland"] {
+  background:
+    linear-gradient(#002f6c, #002f6c) 35% 0 / 4px 100% no-repeat,
+    linear-gradient(#002f6c, #002f6c) 0 50% / 100% 4px no-repeat,
+    #fff;
+}
+.flag[data-flag="iceland"] {
+  background:
+    linear-gradient(#d72828, #d72828) 32% 0 / 3px 100% no-repeat,
+    linear-gradient(#d72828, #d72828) 0 50% / 100% 3px no-repeat,
+    linear-gradient(#fff, #fff) 32% 0 / 5px 100% no-repeat,
+    linear-gradient(#fff, #fff) 0 50% / 100% 5px no-repeat,
+    #02529c;
+}
+.flag[data-flag="ukraine"] {
+  background: linear-gradient(180deg, #0057b7 0 50%, #ffd700 50% 100%);
+}
+
+/* --------------------------- CONMEBOL --------------------------- */
+.flag[data-flag="brazil"] {
+  background: #009c3b;
+}
+.flag[data-flag="brazil"]::before {
+  content: "";
+  position: absolute;
+  inset: 15% 18%;
+  background: #ffdf00;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+.flag[data-flag="argentina"] {
+  background: linear-gradient(180deg, #74acdf 0 33.3%, #fff 33.3% 66.6%, #74acdf 66.6% 100%);
+}
+.flag[data-flag="chile"] {
+  background:
+    radial-gradient(circle at 21% 25%, #fff 0 2px, transparent 2.5px),
+    linear-gradient(#002590, #002590) 0 0 / 42% 50% no-repeat,
+    linear-gradient(180deg, #fff 0 50%, #d52b1e 50% 100%);
+}
+.flag[data-flag="colombia"] {
+  background: linear-gradient(180deg, #fcd116 0 50%, #003893 50% 75%, #ce1126 75% 100%);
+}
+.flag[data-flag="uruguay"] {
+  background: repeating-linear-gradient(180deg, #fff 0 2.4px, #0038a8 2.4px 4.8px);
+}
+.flag[data-flag="par"], .flag[data-flag="paraguay"] {
+  background: linear-gradient(180deg, #d52b1e 0 33.3%, #fff 33.3% 66.6%, #0038a8 66.6% 100%);
+}
+.flag[data-flag="peru"] {
+  background: linear-gradient(90deg, #d91023 0 25%, #fff 25% 75%, #d91023 75% 100%);
+}
+
+/* --------------------------- CONCACAF --------------------------- */
+.flag[data-flag="usa"] {
+  background:
+    linear-gradient(#3c3b6e, #3c3b6e) 0 0 / 40% 53% no-repeat,
+    repeating-linear-gradient(180deg, #b22234 0 1.85px, #fff 1.85px 3.7px);
+}
+.flag[data-flag="mexico"] {
+  background: linear-gradient(90deg, #006341 0 33.3%, #fff 33.3% 66.6%, #ce1126 66.6% 100%);
+}
+.flag[data-flag="canada"] {
+  background: linear-gradient(90deg, #d80621 0 25%, #fff 25% 75%, #d80621 75% 100%);
+}
+
+/* ------------------------------ AFC ------------------------------ */
+.flag[data-flag="japan"] {
+  background: radial-gradient(circle at 50% 50%, #bc002d 0 32%, transparent 33%), #fff;
+}
+.flag[data-flag="south-korea"] {
+  background: #fff;
+}
+.flag[data-flag="south-korea"]::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: conic-gradient(#cd2e3a 0deg 180deg, #0047a0 180deg 360deg);
+}
+.flag[data-flag="saudi-arabia"] {
+  background: #006c35;
+}
+.flag[data-flag="australia"] {
+  background:
+    radial-gradient(circle at 75% 28%, #fff 0 1.4px, transparent 1.8px),
+    radial-gradient(circle at 87% 52%, #fff 0 1.4px, transparent 1.8px),
+    radial-gradient(circle at 70% 76%, #fff 0 1.4px, transparent 1.8px),
+    radial-gradient(circle at 58% 45%, #fff 0 1.4px, transparent 1.8px),
+    #00247d;
+}
+.flag[data-flag="china"] {
+  background: radial-gradient(circle at 22% 28%, #ffde00 0 2.5px, transparent 3px), #de2910;
+}
+
+/* ------------------------------ CAF ------------------------------ */
+.flag[data-flag="ivory-coast"] {
+  background: linear-gradient(90deg, #f77f00 0 33.3%, #fff 33.3% 66.6%, #009e60 66.6% 100%);
+}
+.flag[data-flag="ghana"] {
+  background: linear-gradient(180deg, #ce1126 0 33.3%, #fcd116 33.3% 66.6%, #006b3f 66.6% 100%);
+}
+.flag[data-flag="ghana"]::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translate(-50%, -50%);
+  background: #000;
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
+.flag[data-flag="nigeria"] {
+  background: linear-gradient(90deg, #008751 0 33.3%, #fff 33.3% 66.6%, #008751 66.6% 100%);
+}
+.flag[data-flag="senegal"] {
+  background:
+    radial-gradient(circle at 50% 50%, #00853f 0 2px, transparent 2.5px),
+    linear-gradient(90deg, #00853f 0 33.3%, #fdef42 33.3% 66.6%, #e31b23 66.6% 100%);
+}
+.flag[data-flag="cameroon"] {
+  background:
+    radial-gradient(circle at 50% 50%, #fcd116 0 2px, transparent 2.5px),
+    linear-gradient(90deg, #007a5e 0 33.3%, #ce1126 33.3% 66.6%, #fcd116 66.6% 100%);
+}
+.flag[data-flag="egypt"] {
+  background: linear-gradient(180deg, #ce1126 0 33.3%, #fff 33.3% 66.6%, #000 66.6% 100%);
+}
+.flag[data-flag="morocco"] {
+  background: #c1272d;
+}
+.flag[data-flag="morocco"]::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  transform: translate(-50%, -50%);
+  background: #006233;
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}

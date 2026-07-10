@@ -1,12 +1,16 @@
 // core/store.js — single mutable GameState object + pub/sub.
 //
-// M0 scope: the state below is a *stub* — its values are copied verbatim
-// from today's hardcoded prototype markup (see fable-plans/plan1.md M0:
-// "screens render from a GameState stub identical to today's hardcoded
-// content"). Real world/player/calendar data replaces this stub starting
-// M1/M2. UI modules (js/ui/*, js/core/router.js) must only ever read from
-// `store.state` and call mutator methods below — never mutate state or hold
-// game logic themselves, so the sim stays testable headless later.
+// M2 scope: `club`, `manager`, `players`/`squad.roster` and `squad.lineup`
+// are now real, generated data — createCareerState() builds a fresh
+// GameState from a New Game wizard's choices + gen/world.js's output, and
+// hydrateFromSave() rebuilds one from a loaded save (core/db.js). Several
+// screens' content (news articles, Central's table, Transfers' scouted
+// group, the Office inbox, Season's cup/fixtures) is still the M0 stub —
+// createStubExtras() — pending the calendar/news (M3), transfers (M7) etc.
+// milestones that generate it for real. UI modules (js/ui/*, js/core/
+// router.js) must only ever read from `store.state` and call mutator
+// methods below — never mutate state or hold game logic themselves, so the
+// sim stays testable headless later.
 
 export const SCREENS = ["central", "squad", "transfers", "office", "season"];
 
@@ -163,35 +167,15 @@ function buildDayStrip(start, count) {
 }
 
 /**
- * The M0 GameState stub. Every value here mirrors what was previously
- * hardcoded straight into index.html — no new content, no game logic.
+ * Everything M2 does *not* generate yet: news articles, the Central table,
+ * the Transfers scouted group, the Office inbox, the Season cup/fixtures.
+ * These stay exactly as hardcoded in the original prototype — M3 (calendar/
+ * news), M7 (transfers) etc. replace them with real systems. Kept as a
+ * function (not a constant) because `today` needs the real career's start
+ * date, and Date objects are mutable.
  */
-export function createInitialState() {
-  const today = new Date(2014, 6, 16); // Wed 16 Jul 2014 — matches the prototype
-
+function createStubExtras(today) {
   return {
-    seed: 1234567890,
-
-    manager: {
-      name: "Bob Jackson",
-      gamertag: "RS",
-      level: 49,
-      xp: 218045,
-      xpMax: 224093,
-      coins: 35020,
-    },
-
-    club: {
-      id: "pompey",
-      name: "Portsmouth",
-      crest: "crest-pompey",
-    },
-
-    calendar: {
-      today,
-      strip: buildDayStrip(today, 5),
-    },
-
     central: {
       headline: {
         title: "ACCRINGTON FACE DIFFICULT SEASON",
@@ -223,24 +207,6 @@ export function createInitialState() {
           { pos: 21, crest: "crest-a", name: "Stevenage", pld: 0, pts: 0 },
         ],
       },
-    },
-
-    squad: {
-      formationLabel: "4-4-2",
-      formationStyle: "Flat",
-      lineup: [
-        { pos: "LS", name: "Taylor", rating: 64, x: 34, y: 18 },
-        { pos: "RS", name: "Dongou", rating: 67, x: 66, y: 18 },
-        { pos: "LM", name: "Barcham", rating: 66, x: 13, y: 46 },
-        { pos: "LCM", name: "Hollands", rating: 63, x: 39, y: 50 },
-        { pos: "RCM", name: "Fogden", rating: 67, x: 61, y: 50, captain: true },
-        { pos: "RM", name: "Wallace", rating: 67, x: 87, y: 46 },
-        { pos: "LB", name: "Dunne", rating: 61, x: 15, y: 72 },
-        { pos: "LCB", name: "Macky", rating: 67, x: 39, y: 75 },
-        { pos: "RCB", name: "Robinson", rating: 64, x: 61, y: 75 },
-        { pos: "RB", name: "Zimmermann", rating: 69, x: 85, y: 72 },
-        { pos: "GK", name: "Gersbeck", rating: 63, x: 50, y: 92, gk: true },
-      ],
     },
 
     transfers: {
@@ -304,16 +270,115 @@ export function createInitialState() {
     },
 
     news: NEWS_DATA,
-
-    ui: {
-      screen: "central",
-      lastScreen: "central",
-      overlay: null, // null | 'email' | 'news'
-      emailSelectedIndex: 3,
-      newsCategory: "breaking",
-      newsSelectedIndex: { breaking: 0, world: 0, club: 0, transfer: 0, intl: 0 },
-    },
   };
+}
+
+/** Fresh ui-state defaults, shared by both a brand-new career and a loaded save. */
+function createUiDefaults() {
+  return {
+    screen: "central",
+    lastScreen: "central",
+    overlay: null, // null | 'email' | 'news' | 'squadlist' | 'playerbio'
+    overlayStack: [], // nested overlays (playerbio opened from within squadlist)
+    emailSelectedIndex: 3,
+    newsCategory: "breaking",
+    newsSelectedIndex: { breaking: 0, world: 0, club: 0, transfer: 0, intl: 0 },
+    squadlist: { sortKey: "overall", sortDir: "desc", selectedIndex: -1 },
+    bioPlayerId: null,
+  };
+}
+
+/**
+ * Builds the derived, non-persisted indices every GameState needs:
+ * `playersById` for O(1) bio lookups and `squad.roster` (the user's 24
+ * players, sorted by overall) so ui/squadlist.js never has to filter the
+ * full ~15k-player world itself. Both createCareerState and
+ * hydrateFromSave funnel through this so the two paths can't drift apart.
+ */
+function deriveIndices(state) {
+  state.playersById = new Map(state.players.map((p) => [p.id, p]));
+  state.squad.roster = state.players
+    .filter((p) => p.clubId === state.club.id)
+    .sort((a, b) => b.overall - a.overall);
+  return state;
+}
+
+/**
+ * Builds a brand-new career's GameState from a New Game wizard's choices
+ * plus a freshly generated world (js/gen/world.js).
+ * @param {object} opts
+ * @param {string} opts.managerName
+ * @param {object} opts.club - the chosen data/clubs.json entry
+ * @param {object} opts.league - the chosen data/leagues.json entry
+ * @param {object} opts.world - gen/world.js's generateWorld() return value
+ * @param {number} opts.seasonStartYear
+ */
+export function createCareerState({ managerName, club, league, world, seasonStartYear }) {
+  const today = new Date(seasonStartYear, 6, 1); // career always starts July 1st
+
+  const state = {
+    seed: world.seed,
+    seasonStartYear,
+
+    manager: {
+      name: managerName,
+      gamertag: managerName.slice(0, 2).toUpperCase(),
+      level: 1,
+      xp: 0,
+      xpMax: 1000,
+      coins: 0,
+    },
+
+    club,
+    league,
+
+    calendar: {
+      today,
+      strip: buildDayStrip(today, 5),
+    },
+
+    players: world.players,
+    squad: {
+      formationLabel: "4-4-2",
+      formationStyle: "Flat",
+      lineup: world.lineupsByClub.get(club.id),
+    },
+
+    ...createStubExtras(today),
+    ui: createUiDefaults(),
+  };
+
+  return deriveIndices(state);
+}
+
+/**
+ * Rebuilds a GameState from a loaded save (core/db.js's deserializeSave)
+ * plus freshly-fetched static data (leagues/clubs/nations aren't persisted
+ * in the save — see db.js's header comment for why).
+ */
+export function hydrateFromSave(saved, { leagues, clubs }) {
+  const club = clubs.find((c) => c.id === saved.clubId);
+  const league = leagues.find((l) => l.id === club.leagueId);
+  const today = saved.calendarToday;
+
+  const state = {
+    seed: saved.seed,
+    seasonStartYear: saved.seasonStartYear,
+    manager: saved.manager,
+    club,
+    league,
+    calendar: { today, strip: buildDayStrip(today, 5) },
+    players: saved.players,
+    squad: {
+      formationLabel: "4-4-2",
+      formationStyle: "Flat",
+      lineup: saved.lineup,
+    },
+    ...createStubExtras(today),
+    ui: createUiDefaults(),
+  };
+
+  return deriveIndices(state);
 }
 
 /**
@@ -354,9 +419,22 @@ export class Store {
     this.setScreen(next);
   }
 
+  /** Opens an overlay. If one is already open, the new one nests on top
+   * (pushed onto overlayStack) so closeOverlay() returns to it instead of
+   * the base screen — this is how Player Bio opened from within Squad List
+   * backs out to Squad List rather than straight to the Squad tab. */
   openOverlay(name) {
     if (this.state.ui.overlay === name) return;
-    this.state.ui.lastScreen = this.state.ui.screen;
+    const prevName = this.state.ui.overlay;
+    if (prevName) {
+      // Nesting on top of another overlay: remember it for closeOverlay(),
+      // but also hide its DOM now — otherwise both overlays stay marked
+      // is-active and paint stacked on top of each other.
+      this.state.ui.overlayStack.push(prevName);
+      this.emit("overlay", { name: prevName, open: false });
+    } else {
+      this.state.ui.lastScreen = this.state.ui.screen;
+    }
     this.state.ui.overlay = name;
     if (name === "news") this.selectNewsCategory("breaking");
     this.emit("overlay", { name, open: true });
@@ -365,9 +443,18 @@ export class Store {
   closeOverlay() {
     const name = this.state.ui.overlay;
     if (!name) return;
-    this.state.ui.overlay = null;
+    // Update state to its post-close value *before* emitting — applyOverlay's
+    // "is any overlay still open" check reads state live off this emit, so if
+    // we emitted first and mutated after, closing the last overlay would read
+    // a stale non-null overlay and never un-hide the tabbar/screens/footer.
+    const prev = this.state.ui.overlayStack.pop();
+    this.state.ui.overlay = prev || null;
     this.emit("overlay", { name, open: false });
-    this.setScreen(this.state.ui.lastScreen);
+    if (prev) {
+      this.emit("overlay", { name: prev, open: true });
+    } else {
+      this.setScreen(this.state.ui.lastScreen);
+    }
   }
 
   selectEmail(idx) {
@@ -392,5 +479,29 @@ export class Store {
    * UI can wire the Advance control up front per the pub/sub contract. */
   advance() {
     this.emit("advance", null);
+  }
+
+  openSquadList() {
+    this.openOverlay("squadlist");
+  }
+
+  /** Sorting toggles direction when the same column is clicked again, per
+   * the usual sortable-table convention (plan1.md: Squad List is "a
+   * sortable table"). */
+  sortSquadList(key) {
+    const s = this.state.ui.squadlist;
+    s.sortDir = s.sortKey === key && s.sortDir === "desc" ? "asc" : "desc";
+    s.sortKey = key;
+    this.emit("squadlist:sort", s);
+  }
+
+  selectSquadListRow(idx) {
+    this.state.ui.squadlist.selectedIndex = idx;
+    this.emit("squadlist:select", idx);
+  }
+
+  openPlayerBio(playerId) {
+    this.state.ui.bioPlayerId = playerId;
+    this.openOverlay("playerbio");
   }
 }
