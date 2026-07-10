@@ -1,9 +1,10 @@
-// dev/tests.js — M2 assert harness (fable-plans/plan1.md "Verification"
+// dev/tests.js — assert harness (fable-plans/plan1.md "Verification"
 // section): overall test vectors (Messi 93±1, Neuer 88), growth-curve
-// monotonicity, plus M2's own generation/serialization invariants (weight
-// tables sum to 1, squad shape, world-gen performance budget, save
-// round-trip equality, RNG determinism). More assertions (value/wage spot
-// checks, fixture-count invariants) land here as later milestones add them.
+// monotonicity, M2's generation/serialization invariants (weight tables sum
+// to 1, squad shape, world-gen performance budget, save round-trip
+// equality, RNG determinism), and M3's fixture-count invariants + calendar
+// advance/objective-email checks. More assertions (value/wage spot checks)
+// land here as later milestones add them.
 
 import { computeOverall, computeGkOverall, weightSum, WEIGHTS, MESSI_VECTOR, NEUER_VECTOR } from "../js/gen/overall.js";
 import { CURVES, curveIsUnimodal, ratioForAge } from "../js/config/growth.js";
@@ -11,6 +12,10 @@ import { OVERALL_GROUPS, positionInfo } from "../js/config/positions.js";
 import { generateWorld } from "../js/gen/world.js";
 import { serializePlayer, deserializePlayer } from "../js/core/db.js";
 import { RngStream, deriveSeed } from "../js/core/rng.js";
+import { buildFixtures, buildLeagueTable, advanceTowards, fixtureOnDate, eventsOnDate } from "../js/engine/calendar.js";
+import { intlBreakWeeks } from "../js/config/calendar.js";
+import { buildObjectiveEmails, domesticCupFor } from "../js/engine/objectives.js";
+import { toEpochDay, addDays, isDateInRange } from "../js/core/clock.js";
 
 const groups = []; // [{ title, results: [{name, pass, detail}] }]
 let current = null;
@@ -134,6 +139,92 @@ async function run() {
   assert("re-running generateWorld with the same seed yields an identical first player", sameFirstPlayer);
   const sameOverallSum = world.players.reduce((s, p) => s + p.overall, 0) === world2.players.reduce((s, p) => s + p.overall, 0);
   assert("re-running generateWorld with the same seed yields the same total overall sum", sameOverallSum);
+
+  /* ---------------- fixture generation (M3) ---------------- */
+  group("engine/comps/league.js + engine/calendar.js — fixture generation");
+  const seasonStartYear = 2014;
+  const t1 = performance.now();
+  const fixtures = buildFixtures({ leagues: world.leagues, clubs: world.clubs, seed, seasonStartYear });
+  const fixturesElapsedMs = performance.now() - t1;
+  assert(`generated fixtures for ${world.leagues.length} leagues in ${fixturesElapsedMs.toFixed(0)}ms (budget: <1000ms)`, fixturesElapsedMs < 1000, `${fixturesElapsedMs.toFixed(0)}ms`);
+
+  const clubsByLeague = new Map();
+  for (const c of world.clubs) {
+    if (!clubsByLeague.has(c.leagueId)) clubsByLeague.set(c.leagueId, []);
+    clubsByLeague.get(c.leagueId).push(c.id);
+  }
+  let fixtureCountsOk = true, noSelfPlayOk = true, homeAwayBalanceOk = true, noSameDayDoubleBookingOk = true;
+  for (const league of world.leagues) {
+    const leagueFixtures = fixtures.byLeague.get(league.id);
+    const n = clubsByLeague.get(league.id).length;
+    if (leagueFixtures.length !== n * (n - 1)) fixtureCountsOk = false;
+    if (leagueFixtures.some((fx) => fx.homeClubId === fx.awayClubId)) noSelfPlayOk = false;
+    for (const clubId of clubsByLeague.get(league.id)) {
+      const homeCount = leagueFixtures.filter((fx) => fx.homeClubId === clubId).length;
+      const awayCount = leagueFixtures.filter((fx) => fx.awayClubId === clubId).length;
+      if (homeCount !== n - 1 || awayCount !== n - 1) homeAwayBalanceOk = false;
+      const dates = fixtures.byClub.get(clubId).map((fx) => toEpochDay(fx.date));
+      if (new Set(dates).size !== dates.length) noSameDayDoubleBookingOk = false;
+    }
+  }
+  assert("every league's fixture count = teamsCount × (teamsCount-1) (double round-robin)", fixtureCountsOk);
+  assert("no fixture pits a club against itself", noSelfPlayOk);
+  assert("every club plays exactly (teamsCount-1) home and (teamsCount-1) away fixtures", homeAwayBalanceOk);
+  assert("no club has two fixtures on the same date", noSameDayDoubleBookingOk);
+
+  const breaks = intlBreakWeeks(seasonStartYear);
+  const noBreakWeekFixtures = [...fixtures.byId.values()].every((fx) => !breaks.some((r) => isDateInRange(fx.date, r.start, r.end)));
+  assert("no fixture is scheduled during an international break week", noBreakWeekFixtures);
+
+  const fixtures2 = buildFixtures({ leagues: world.leagues, clubs: world.clubs, seed, seasonStartYear });
+  const sampleLeagueId = world.leagues[0].id;
+  const sameSchedule = deepEqual(fixtures.byLeague.get(sampleLeagueId), fixtures2.byLeague.get(sampleLeagueId));
+  assert("re-running buildFixtures with the same seed yields an identical schedule", sameSchedule);
+
+  const sampleClubId = clubsByLeague.get(sampleLeagueId)[0];
+  const firstFixture = fixtures.byClub.get(sampleClubId)[0];
+  const dayBefore = addDays(firstFixture.date, -10);
+  const wellAfter = addDays(firstFixture.date, 10);
+  const stopResult = advanceTowards(fixtures, sampleClubId, dayBefore, wellAfter);
+  assert("advanceTowards halts exactly on the first match day it crosses", toEpochDay(stopResult.date) === toEpochDay(firstFixture.date) && stopResult.stoppedEarly);
+  assert("fixtureOnDate finds that same fixture on its date", fixtureOnDate(fixtures, sampleClubId, stopResult.date)?.id === firstFixture.id);
+  // fixtures are weekly (7+ days apart, blackout weeks only push them further), so the very next day is never also a match day.
+  assert("fixtureOnDate returns null on a non-match date", fixtureOnDate(fixtures, sampleClubId, addDays(firstFixture.date, 1)) === null);
+
+  const noStopOnStartDay = advanceTowards(fixtures, sampleClubId, firstFixture.date, addDays(firstFixture.date, 1));
+  assert("advancing from a match day itself moves past it (not stuck)", toEpochDay(noStopOnStartDay.date) === toEpochDay(addDays(firstFixture.date, 1)));
+
+  const leagueClubs = world.clubs.filter((c) => c.leagueId === sampleLeagueId);
+  const table = buildLeagueTable(world.leagues.find((l) => l.id === sampleLeagueId), leagueClubs, fixtures.byLeague.get(sampleLeagueId));
+  assert("league table has one row per club, all 0 pld/pts before any results exist", table.length === leagueClubs.length && table.every((r) => r.pld === 0 && r.pts === 0));
+  assert("league table positions are 1..N sequential", table.every((r, i) => r.position === i + 1));
+
+  group("config/calendar.js — season event dates");
+  const summerOpenEvents = eventsOnDate(new Date(seasonStartYear, 6, 1), seasonStartYear);
+  const summerCloseEvents = eventsOnDate(new Date(seasonStartYear, 8, 1), seasonStartYear);
+  const winterCloseEvents = eventsOnDate(new Date(seasonStartYear + 1, 1, 1), seasonStartYear);
+  assert("Jul 1 is a window-open event", summerOpenEvents.includes("window-open"));
+  assert("Sep 1 is a window-close + deadline-day event", summerCloseEvents.includes("window-close") && summerCloseEvents.includes("deadline-day"));
+  assert("Feb 1 (next year) is deadline-day + growth", winterCloseEvents.includes("deadline-day") && winterCloseEvents.includes("growth"));
+  assert("some date in each break week reports an intl-break event", breaks.every((r) => eventsOnDate(r.start, seasonStartYear).includes("intl-break")));
+
+  /* ---------------- board objective emails (M3) ---------------- */
+  group("engine/objectives.js — day-1 board emails");
+  let everyLeagueHasCup = true;
+  for (const league of world.leagues) if (!domesticCupFor(league, world.cups)) everyLeagueHasCup = false;
+  assert("every league resolves to exactly one domestic cup", everyLeagueHasCup);
+
+  const sampleClub = world.clubs.find((c) => c.id === sampleClubId);
+  const sampleLeague = world.leagues.find((l) => l.id === sampleLeagueId);
+  const emails = buildObjectiveEmails({
+    club: sampleClub, league: sampleLeague, cup: domesticCupFor(sampleLeague, world.cups),
+    managerName: "Bob Jackson", today: new Date(seasonStartYear, 6, 1),
+  });
+  assert("buildObjectiveEmails returns exactly 2 emails (League + Domestic Cup)", emails.length === 2);
+  assert("both emails are unread on arrival", emails.every((e) => e.read === false));
+  assert("subjects are 'League Objective' and 'Domestic Cup Objective'", emails.map((e) => e.subject).join(",") === "League Objective,Domestic Cup Objective");
+  assert("email 'to' field uses 'Lastname, Firstname'", emails[0].to === "Jackson, Bob");
+  assert("email crest references the club's own crest symbol", emails[0].crest === `crest-${sampleClub.id}`);
 
   /* ---------------- save round-trip (core/db.js) ---------------- */
   group("core/db.js — compact serialization round-trip");

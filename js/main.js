@@ -19,13 +19,18 @@ import * as db from "./core/db.js";
 
 const AUTOSAVE_SLOT = db.AUTOSAVE_SLOT_ID;
 
-/** The user's club is the only club Squad List/Player Bio ever reference —
- * every other crest on screen still comes from the M0 stub's hand-authored
- * crest-a/b/c/d/pompey symbols, so only this one needs generating. */
-function injectClubCrestSymbol(club) {
+/** Squad List/Player Bio only ever reference the user's own club, but M3's
+ * real league table + fixtures list + Calendar overlay reference every club
+ * in the user's league (fixtures are all intra-league — no inter-league
+ * fixtures exist yet) — so all of those need a generated crest symbol, not
+ * just the user's. Everything else on screen still comes from the M0
+ * stub's hand-authored crest-a/b/c/d/pompey symbols. */
+function injectClubCrestSymbols(clubs) {
   const sprite = document.querySelector(".svg-sprite");
-  if (sprite.querySelector(`#crest-${club.id}`)) return;
-  sprite.insertAdjacentHTML("beforeend", crestSymbolMarkup(club));
+  for (const club of clubs) {
+    if (sprite.querySelector(`#crest-${club.id}`)) continue;
+    sprite.insertAdjacentHTML("beforeend", crestSymbolMarkup(club));
+  }
 }
 
 function wireSaveButton(store) {
@@ -93,7 +98,7 @@ function wireHeaderMenu() {
 }
 
 function startGame(state) {
-  injectClubCrestSymbol(state.club);
+  injectClubCrestSymbols(state.league.table.map((r) => r.club));
 
   document.getElementById("newgame-root").hidden = true;
   document.getElementById("game-root").hidden = false;

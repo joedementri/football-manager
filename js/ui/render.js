@@ -5,8 +5,10 @@
 
 import {
   dayOfWeekShort, dayOfMonth, monthYearShort,
-  dateSlash, dateLong, number, money,
+  dateSlash, dateLong, dateDayMonth, number, money,
 } from "../core/format.js";
+import { upcomingFixtures, fixtureOnDate } from "../engine/calendar.js";
+import { toEpochDay } from "../core/clock.js";
 
 function flagSpan(code) {
   return `<span class="flag" data-flag="${code}"></span>`;
@@ -25,16 +27,34 @@ export function renderHeader(state) {
 }
 
 /* ----------------------------- Central ----------------------------------- */
+/** Each cell carries `data-date` (epoch day) so router.js can advance
+ * straight to it on click. Match days for the user's club (fable-plans/
+ * plan1.md M3: day-strip "with events: match days...") swap the arrow icon
+ * for the opponent's crest (+ H/A) so there's something to visibly advance
+ * towards — every fixture is club-vs-club until M10 adds international
+ * fixtures, at which point this same branch swaps in the nation's flag
+ * (flagSpan, already used by Player Bio) instead of a crest. */
 function renderDayStrip(state) {
   const strip = document.querySelector(".daystrip");
   const todayTime = state.calendar.today.getTime();
   strip.innerHTML = state.calendar.strip.map((d) => {
     const isNow = d.getTime() === todayTime ? " is-now" : "";
+    const fixture = fixtureOnDate(state.fixtures, state.club.id, d);
+    let matchIcon = `<svg class="adv-ico"><use href="#ic-advance"></use></svg>`;
+    if (fixture) {
+      const isHome = fixture.homeClubId === state.club.id;
+      const oppClubId = isHome ? fixture.awayClubId : fixture.homeClubId;
+      matchIcon =
+        `<div class="day__match">` +
+          `<svg class="crest crest--xs day__crest"><use href="#crest-${oppClubId}"></use></svg>` +
+          `<span class="day__ha">${isHome ? "H" : "A"}</span>` +
+        `</div>`;
+    }
     return (
-      `<div class="day${isNow}">` +
+      `<div class="day${isNow}${fixture ? " has-match" : ""}" data-date="${toEpochDay(d)}">` +
         `<span class="dow">${dayOfWeekShort(d)}</span>` +
         `<span class="dom">${dayOfMonth(d)}</span>` +
-        `<svg class="adv-ico"><use href="#ic-advance"></use></svg>` +
+        matchIcon +
       `</div>`
     );
   }).join("");
@@ -61,11 +81,24 @@ function renderCentralNewsList(state) {
   )).join("");
 }
 
+/** A ~7-row window of the user's real league table (fable-plans/plan1.md
+ * M3: "Central's table" is one of the stubs this milestone makes real),
+ * centered on the user's club so it reads the same as the FIFA reference
+ * screenshot even in a 20-24 team league. Every row is 0 pld/pts until
+ * sim/quick.js (M4) starts producing results. */
 function renderCentralTable(state) {
+  const rows = state.league.table;
+  const WINDOW = 7;
+  const clubIdx = rows.findIndex((r) => r.club.id === state.club.id);
+  const half = Math.floor(WINDOW / 2);
+  let start = Math.max(0, clubIdx - half);
+  start = Math.min(start, Math.max(0, rows.length - WINDOW));
+  const windowRows = rows.slice(start, start + WINDOW);
+
   const tbody = document.querySelector(".c-tables .tbl tbody");
-  tbody.innerHTML = state.central.table.rows.map((r) => (
-    `<tr><td class="team"><span class="pos">${r.pos}</span>` +
-      `<svg class="crest crest--xs"><use href="#${r.crest}"></use></svg> ${r.name}</td>` +
+  tbody.innerHTML = windowRows.map((r) => (
+    `<tr class="${r.club.id === state.club.id ? "is-user" : ""}"><td class="team"><span class="pos">${r.position}</span>` +
+      `<svg class="crest crest--xs"><use href="#crest-${r.club.id}"></use></svg> ${r.club.shortName}</td>` +
       `<td class="num">${r.pld}</td><td class="num">${r.pts}</td></tr>`
   )).join("");
 }
@@ -128,6 +161,34 @@ export function renderTransfers(state) {
   finLines[1].textContent = money(state.transfers.finances.wageBudget);
 }
 
+/* ----------------------------- Office -------------------------------------- */
+/** The Office inbox tile used to always render the M0 "NO ITEMS AVAILABLE"
+ * empty state (static markup, not state-driven at all). Now that day-1
+ * board objective emails always exist (engine/objectives.js), it shows a
+ * real unread-count + latest-subject preview instead. */
+function renderOffice(state) {
+  const body = document.getElementById("of-inbox-body");
+  const emails = state.inbox.emails;
+  if (!emails.length) {
+    body.innerHTML =
+      `<div class="empty">` +
+        `<svg class="icon"><use href="#ic-envelope"></use></svg>` +
+        `<span class="lbl">NO ITEMS AVAILABLE</span>` +
+      `</div>`;
+    return;
+  }
+  const unread = emails.filter((e) => !e.read).length;
+  const latest = emails[0];
+  body.innerHTML =
+    `<div class="of-inbox__preview">` +
+      `<div class="of-inbox__count">${unread}</div>` +
+      `<div class="of-inbox__latest">` +
+        `<div class="of-inbox__from">${latest.from}</div>` +
+        `<div class="of-inbox__subj">${latest.subject}</div>` +
+      `</div>` +
+    `</div>`;
+}
+
 /* ----------------------------- Season -------------------------------------- */
 export function renderSeason(state) {
   const cup = state.season.cup;
@@ -138,12 +199,15 @@ export function renderSeason(state) {
     trows[i].innerHTML = `<svg class="crest crest--sm"><use href="#${t.crest}"></use></svg> ${t.name}`;
   });
 
+  // Real upcoming fixtures (fable-plans/plan1.md M3): no results exist until
+  // sim/quick.js (M4), so the date stands in for a scoreline.
   document.querySelector(".se-fixtures").querySelectorAll(".fx").forEach((el) => el.remove());
-  const fixturesHtml = state.season.fixtures.map((f) => (
+  const fixtures = upcomingFixtures(state.fixtures, state.club.id, state.calendar.today, 3);
+  const fixturesHtml = fixtures.map((f) => (
     `<div class="fx">` +
-      `<svg class="crest crest--sm"><use href="#${f.home}"></use></svg>` +
-      `<span class="score">${f.score}</span>` +
-      `<svg class="crest crest--sm"><use href="#${f.away}"></use></svg>` +
+      `<svg class="crest crest--sm"><use href="#crest-${f.homeClubId}"></use></svg>` +
+      `<span class="score">${dateDayMonth(f.date)}</span>` +
+      `<svg class="crest crest--sm"><use href="#crest-${f.awayClubId}"></use></svg>` +
     `</div>`
   )).join("");
   document.querySelector(".se-fixtures .panel-title").insertAdjacentHTML("afterend", fixturesHtml);
@@ -169,14 +233,9 @@ export function renderEmailList(state) {
   if (badge) badge.textContent = unread;
 }
 
-export function renderEmailSelection(state) {
-  document.querySelectorAll("#email-list .email-row").forEach((row) => {
-    row.classList.toggle("is-sel", row.dataset.email === String(state.ui.emailSelectedIndex));
-  });
-}
-
 export function renderEmailDetail(state) {
-  const d = state.inbox.detail;
+  const d = state.inbox.emails[state.ui.emailSelectedIndex];
+  if (!d) return;
   document.querySelector("#email-read .crest use").setAttribute("href", `#${d.crest}`);
   const meta = document.querySelectorAll(".email-meta > div");
   meta[0].innerHTML = `<span class="k">Date</span> ${dateSlash(d.date)}`;
@@ -227,6 +286,7 @@ export function renderAll(state) {
   renderCentral(state);
   renderSquad(state);
   renderTransfers(state);
+  renderOffice(state);
   renderSeason(state);
   renderEmailList(state);
   renderEmailDetail(state);

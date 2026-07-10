@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="css/newgame.css" />
   <link rel="stylesheet" href="css/tables.css" />
   <link rel="stylesheet" href="css/bio.css" />
+  <link rel="stylesheet" href="css/calendar.css" />
   <link rel="stylesheet" href="css/flags.css" />
 </head>
 <body>
@@ -421,10 +422,7 @@
       <section class="screen screen--office" data-screen="office">
         <div class="tile of-inbox">
           <div class="tile__title">Inbox</div>
-          <div class="empty">
-            <svg class="icon"><use href="#ic-envelope"></use></svg>
-            <span class="lbl">NO ITEMS AVAILABLE</span>
-          </div>
+          <div id="of-inbox-body"><!-- built by ui/render.js's renderOffice --></div>
         </div>
         <div class="tile has-photo of-contracts">
           <div class="tile__title">Contracts</div>
@@ -456,7 +454,7 @@
 
       <!-- =====================  SEASON  ============================ -->
       <section class="screen screen--season" data-screen="season">
-        <div class="tile is-gold se-cal">
+        <div class="tile is-gold se-cal is-link" data-open="calendar">
           <div class="tile__title">Calendar</div>
           <div class="tile__desc">Your complete schedule and events</div>
           <div class="cal-ico">
@@ -598,6 +596,24 @@
         <div class="bio-body" id="playerbio-body"><!-- built by ui/playerbio.js --></div>
       </div>
 
+      <!-- =====================  CALENDAR OVERLAY  ==================== -->
+      <div id="calendar-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">SEASON</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">CALENDAR</span>
+        </div>
+        <div class="cal-body">
+          <div class="cal-nav">
+            <button class="cal-nav__btn" id="cal-prev-month" type="button" aria-label="Previous month">&lsaquo;</button>
+            <span class="cal-nav__label" id="cal-month-label">JULY 2014</span>
+            <button class="cal-nav__btn" id="cal-next-month" type="button" aria-label="Next month">&rsaquo;</button>
+          </div>
+          <div class="cal-dow-header" id="cal-dow-header"><!-- built by ui/calendarui.js --></div>
+          <div class="cal-grid" id="cal-grid"><!-- built by ui/calendarui.js --></div>
+        </div>
+      </div>
+
       <!-- =====================  FOOTER PROMPTS  ==================== -->
       <footer class="footer" id="footer-main">
         <span class="prompt" data-prompt="select"><span class="btn-glyph a">A</span> Select</span>
@@ -619,6 +635,11 @@
         <span class="prompt"><span class="btn-glyph b">B</span> Back</span>
       </footer>
       <footer class="footer" id="footer-playerbio" hidden>
+        <span class="prompt"><span class="btn-glyph b">B</span> Back</span>
+      </footer>
+      <footer class="footer" id="footer-calendar" hidden>
+        <span class="prompt"><span class="btn-glyph l1">&lsaquo;</span> Prev Month</span>
+        <span class="prompt"><span class="btn-glyph r1">&rsaquo;</span> Next Month</span>
         <span class="prompt"><span class="btn-glyph b">B</span> Back</span>
       </footer>
 

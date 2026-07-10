@@ -11,11 +11,14 @@
 
 import { SCREENS } from "./store.js";
 import {
-  renderEmailSelection,
+  renderCentral, renderSeason,
+  renderEmailList, renderEmailDetail,
   renderNewsCategoryTabs, renderNewsList,
 } from "../ui/render.js";
 import { renderSquadList } from "../ui/squadlist.js";
 import { renderPlayerBio } from "../ui/playerbio.js";
+import { renderCalendar, initCalendarHeaders } from "../ui/calendarui.js";
+import { fromEpochDay } from "./clock.js";
 
 export function initRouter(store) {
   const tabbar = document.getElementById("tabbar");
@@ -30,6 +33,8 @@ export function initRouter(store) {
   const newsOverlay = document.getElementById("news-overlay");
   const squadlistOverlay = document.getElementById("squadlist-overlay");
   const playerbioOverlay = document.getElementById("playerbio-overlay");
+  const footerCalendar = document.getElementById("footer-calendar");
+  const calendarOverlay = document.getElementById("calendar-overlay");
   const newsTabsEl = document.getElementById("news-tabs");
   const newsListEl = document.getElementById("news-list");
   const squadlistBodyEl = document.getElementById("squadlist-body");
@@ -57,6 +62,10 @@ export function initRouter(store) {
       playerbioOverlay.classList.toggle("is-active", open);
       footerPlayerbio.hidden = !open;
       if (open) renderPlayerBio(store.state);
+    } else if (name === "calendar") {
+      calendarOverlay.classList.toggle("is-active", open);
+      footerCalendar.hidden = !open;
+      if (open) { initCalendarHeaders(); renderCalendar(store.state); }
     }
     const anyOverlayOpen = !!store.state.ui.overlay;
     tabbar.style.display = anyOverlayOpen ? "none" : "";
@@ -66,7 +75,7 @@ export function initRouter(store) {
 
   store.on("screen", applyScreen);
   store.on("overlay", applyOverlay);
-  store.on("email:select", () => renderEmailSelection(store.state));
+  store.on("email:select", () => { renderEmailList(store.state); renderEmailDetail(store.state); });
   store.on("news:category", () => {
     renderNewsCategoryTabs(store.state);
     renderNewsList(store.state);
@@ -74,6 +83,15 @@ export function initRouter(store) {
   store.on("news:select", () => renderNewsList(store.state));
   store.on("squadlist:sort", () => renderSquadList(store.state));
   store.on("squadlist:select", () => renderSquadList(store.state));
+  // Advancing the calendar (M3) repaints the day strip/table (Central) and
+  // the upcoming-fixtures list (Season); the Calendar overlay too, on the
+  // rare chance it's open while a click on a day-strip cell advances today.
+  store.on("advance", () => {
+    renderCentral(store.state);
+    renderSeason(store.state);
+    if (store.state.ui.overlay === "calendar") renderCalendar(store.state);
+  });
+  store.on("calendar:view", () => renderCalendar(store.state));
 
   /* ----- DOM -> store wiring ---------------------------------------------- */
   tabs.forEach((t) => t.addEventListener("click", () => store.setScreen(t.dataset.screen)));
@@ -100,8 +118,37 @@ export function initRouter(store) {
 
   // Generic: any tile with data-open="<overlayName>" opens that overlay
   // (news, squadlist, ...) — matches store.openOverlay's signature directly.
+  // "calendar" is the one exception: openCalendar() also resets the month
+  // view to the current date before opening.
   document.querySelectorAll("[data-open]").forEach((tile) => {
-    tile.addEventListener("click", () => store.openOverlay(tile.dataset.open));
+    tile.addEventListener("click", () => {
+      if (tile.dataset.open === "calendar") store.openCalendar();
+      else store.openOverlay(tile.dataset.open);
+    });
+  });
+
+  // Central's Advance tile (fable-plans/plan1.md M3): clicking the "A
+  // ADVANCE" header moves one day forward; clicking a specific day-strip
+  // cell jumps straight to that date (halting early if a match day for the
+  // user's club intervenes — see store.advanceToDate).
+  const advanceHead = document.querySelector(".c-advance__top");
+  if (advanceHead) {
+    advanceHead.style.cursor = "pointer";
+    advanceHead.addEventListener("click", () => store.advanceOneDay());
+  }
+  document.querySelector(".daystrip").addEventListener("click", (e) => {
+    const dayEl = e.target.closest(".day");
+    if (dayEl) store.advanceToDate(fromEpochDay(Number(dayEl.dataset.date)));
+  });
+
+  // Calendar overlay: month navigation (nav buttons + footer prompts + Back).
+  document.getElementById("cal-prev-month").addEventListener("click", () => store.calendarChangeMonth(-1));
+  document.getElementById("cal-next-month").addEventListener("click", () => store.calendarChangeMonth(1));
+  footerCalendar.querySelectorAll(".prompt").forEach((p) => {
+    p.style.cursor = "pointer";
+    if (/Prev Month/i.test(p.textContent)) p.addEventListener("click", () => store.calendarChangeMonth(-1));
+    else if (/Next Month/i.test(p.textContent)) p.addEventListener("click", () => store.calendarChangeMonth(1));
+    else if (/Back/i.test(p.textContent)) p.addEventListener("click", () => store.closeOverlay());
   });
 
   newsTabsEl.querySelectorAll(".news-tab").forEach((t) => {
@@ -155,6 +202,10 @@ export function initRouter(store) {
   });
 
   document.addEventListener("keydown", (e) => {
+    if (store.state.ui.overlay === "calendar") {
+      if (e.key === "ArrowLeft") { store.calendarChangeMonth(-1); return; }
+      if (e.key === "ArrowRight") { store.calendarChangeMonth(1); return; }
+    }
     if (store.state.ui.overlay === "squadlist") {
       const roster = store.state.squad.roster;
       const s = store.state.ui.squadlist;

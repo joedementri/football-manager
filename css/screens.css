@@ -52,6 +52,16 @@
 .day .dow { font-size: 16px; font-weight: 700; }
 .day .dom { font-size: 14px; font-weight: 700; opacity: 0.7; }
 .day .adv-ico { margin-top: auto; width: 22px; height: 22px; color: #1f5390; }
+.day { cursor: pointer; }
+/* a scheduled fixture for the user's club (M3) swaps the arrow for the
+   opponent's crest + a H/A tag, so you can see who you're advancing towards */
+.day__match { margin-top: auto; display: flex; align-items: center; gap: 5px; }
+.day__crest { width: 22px; height: 22px; }
+.day__ha {
+  font-family: var(--font-ui); font-size: 10px; font-weight: 700;
+  color: var(--gold-text-dark); background: rgba(0, 0, 0, 0.22);
+  border-radius: 3px; padding: 1px 4px;
+}
 
 .c-news { grid-area: news; padding: 16px 18px; display: flex; flex-direction: column; }
 .c-news__head { font-size: 30px; font-weight: 700; line-height: 0.98; max-width: 70%; }
@@ -119,6 +129,9 @@
 .tbl td.team { display: flex; align-items: center; gap: 8px; }
 .tbl td.team .pos { color: var(--ink-faint); width: 20px; }
 .tbl td.team .crest--xs { width: 18px; height: 18px; }
+/* highlights the user's own club row (Central's mini league table, M3) */
+.tbl tr.is-user td { color: var(--gold); font-weight: 700; }
+.tbl tr.is-user td.num { color: var(--gold); }
 
 /* ===========================  SQUAD  ===================================== */
 .screen--squad.is-active {
@@ -315,6 +328,17 @@
 .of-inbox .empty { display: flex; flex-direction: column; align-items: center; gap: 12px; color: var(--ink-faint); }
 .of-inbox .empty .icon { width: 46px; height: 46px; }
 .of-inbox .empty .lbl { font-family: var(--font-cond); font-size: 22px; letter-spacing: 1px; }
+/* real day-1 board emails always exist from M3 on, so this is the common case */
+.of-inbox__preview { display: flex; align-items: center; gap: 16px; }
+.of-inbox__count {
+  width: 48px; height: 48px; border-radius: 50%; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold-deep));
+  color: var(--gold-text-dark); font-family: var(--font-cond); font-weight: 700; font-size: 22px;
+}
+.of-inbox__latest { font-family: var(--font-ui); text-align: left; }
+.of-inbox__from { font-size: 13px; color: var(--ink-dim); }
+.of-inbox__subj { font-size: 16px; font-weight: 600; margin-top: 2px; }
 .of-contracts { grid-area: contracts; }
 .of-youth { grid-area: youth; }
 .of-career { grid-area: career; }

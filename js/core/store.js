@@ -1,16 +1,21 @@
 // core/store.js — single mutable GameState object + pub/sub.
 //
 // M2 scope: `club`, `manager`, `players`/`squad.roster` and `squad.lineup`
-// are now real, generated data — createCareerState() builds a fresh
-// GameState from a New Game wizard's choices + gen/world.js's output, and
-// hydrateFromSave() rebuilds one from a loaded save (core/db.js). Several
-// screens' content (news articles, Central's table, Transfers' scouted
-// group, the Office inbox, Season's cup/fixtures) is still the M0 stub —
-// createStubExtras() — pending the calendar/news (M3), transfers (M7) etc.
-// milestones that generate it for real. UI modules (js/ui/*, js/core/
-// router.js) must only ever read from `store.state` and call mutator
-// methods below — never mutate state or hold game logic themselves, so the
-// sim stays testable headless later.
+// are now real, generated data. M3 adds `fixtures` (engine/calendar.js's
+// full-season schedule for every league), `league.table` (derived from it,
+// both built in deriveIndices() below) and a real day-1 `inbox`
+// (engine/objectives.js's board emails). createCareerState()
+// builds a fresh GameState from a New Game wizard's choices + gen/world.js's
+// output, and hydrateFromSave() rebuilds one from a loaded save
+// (core/db.js). Remaining stub content (news articles, Transfers' scouted
+// group, Season's cup bracket) awaits later milestones (news.js, M7, M5).
+// UI modules (js/ui/*, js/core/router.js) must only ever read from
+// `store.state` and call mutator methods below — never mutate state or hold
+// game logic themselves, so the sim stays testable headless later.
+
+import { addDays } from "./clock.js";
+import { buildFixtures, buildLeagueTable, advanceTowards } from "../engine/calendar.js";
+import { buildObjectiveEmails, domesticCupFor } from "../engine/objectives.js";
 
 export const SCREENS = ["central", "squad", "transfers", "office", "season"];
 
@@ -167,12 +172,13 @@ function buildDayStrip(start, count) {
 }
 
 /**
- * Everything M2 does *not* generate yet: news articles, the Central table,
- * the Transfers scouted group, the Office inbox, the Season cup/fixtures.
- * These stay exactly as hardcoded in the original prototype — M3 (calendar/
- * news), M7 (transfers) etc. replace them with real systems. Kept as a
- * function (not a constant) because `today` needs the real career's start
- * date, and Date objects are mutable.
+ * Everything still *not* real as of M3: the Central headline/GTN panel, the
+ * Transfers scouted group, the Season cup bracket. Central's mini-table is
+ * now real (`state.league.table`, derived in deriveIndices) and the Season
+ * fixtures panel is now real (`state.fixtures`) — see deriveIndices below.
+ * These remaining stubs stay exactly as hardcoded in the original prototype
+ * pending news.js/M7/M5. Kept as a function (not a constant) because
+ * `today` needs the real career's start date, and Date objects are mutable.
  */
 function createStubExtras(today) {
   return {
@@ -196,17 +202,6 @@ function createStubExtras(today) {
         { text: "LOSC Lille and Juventus in Llorente Talks", accent: "r" },
         { text: "Lane Seeks To Grasp Loan Chance", accent: "g" },
       ],
-      table: {
-        rows: [
-          { pos: 15, crest: "crest-c", name: "Northampton", pld: 0, pts: 0 },
-          { pos: 16, crest: "crest-b", name: "Oxford United", pld: 0, pts: 0 },
-          { pos: 17, crest: "crest-a", name: "Plymouth Argyle", pld: 0, pts: 0 },
-          { pos: 18, crest: "crest-pompey", name: "Portsmouth", pld: 0, pts: 0 },
-          { pos: 19, crest: "crest-d", name: "Shrewsbury", pld: 0, pts: 0 },
-          { pos: 20, crest: "crest-c", name: "Southend United", pld: 0, pts: 0 },
-          { pos: 21, crest: "crest-a", name: "Stevenage", pld: 0, pts: 0 },
-        ],
-      },
     },
 
     transfers: {
@@ -225,10 +220,10 @@ function createStubExtras(today) {
       finances: { transferBudget: 401500, wageBudget: 16750 },
     },
 
-    office: {
-      inboxEmpty: true,
-    },
-
+    // F.A. Cup round stub: domestic cups aren't scheduled until M5 ("Full
+    // season loop"), so this panel stays hand-authored flavour for now.
+    // `state.fixtures` (real, M3 — see deriveIndices()) supplies the
+    // Season screen's actual upcoming-fixtures list instead.
     season: {
       cup: {
         name: "F.A. Cup",
@@ -238,35 +233,6 @@ function createStubExtras(today) {
           { crest: "crest-a", name: "Yeovil Town" },
         ],
       },
-      fixtures: [
-        { home: "crest-a", score: "1-2", away: "crest-c" },
-        { home: "crest-b", score: "1-0", away: "crest-d" },
-        { home: "crest-c", score: "1-0", away: "crest-a" },
-      ],
-    },
-
-    inbox: {
-      emails: [
-        { from: "PORTSMOUTH BOARD", subject: "Domestic Cup Objective", date: new Date(2014, 6, 1), read: true },
-        { from: "ASSISTANT MANAGER", subject: "[GTN] We should look for a striker", date: new Date(2014, 5, 30), read: false },
-        { from: "ASSISTANT MANAGER", subject: "[Info] Westcarr Injury Update", date: new Date(2014, 5, 30), read: true },
-        { from: "PORTSMOUTH BOARD", subject: "League Objective", date: new Date(2014, 5, 30), read: true },
-      ],
-      detail: {
-        crest: "crest-pompey",
-        date: new Date(2014, 5, 30),
-        from: "PORTSMOUTH BOARD",
-        to: "Jackson, Bob",
-        cc: "Assistant Manager",
-        subject: "League Objective",
-        body: [
-          "Dear Mr. Jackson,",
-          "The board is hopeful of a successful season. We look forward to seeing how your leadership and determination can get the best out of the players.",
-          "We will mostly judge you on your success in the league, and have decided that your season objective for the league campaign will be to win the league title.",
-          "If this objective can also be met via a cup competition, then succeeding through that medium but failing your league objective may not be enough to satisfy our criteria.",
-          "Best of luck for the season ahead.",
-        ],
-      },
     },
 
     news: NEWS_DATA,
@@ -274,32 +240,43 @@ function createStubExtras(today) {
 }
 
 /** Fresh ui-state defaults, shared by both a brand-new career and a loaded save. */
-function createUiDefaults() {
+function createUiDefaults(today) {
   return {
     screen: "central",
     lastScreen: "central",
-    overlay: null, // null | 'email' | 'news' | 'squadlist' | 'playerbio'
+    overlay: null, // null | 'email' | 'news' | 'squadlist' | 'playerbio' | 'calendar'
     overlayStack: [], // nested overlays (playerbio opened from within squadlist)
-    emailSelectedIndex: 3,
+    emailSelectedIndex: 0,
     newsCategory: "breaking",
     newsSelectedIndex: { breaking: 0, world: 0, club: 0, transfer: 0, intl: 0 },
     squadlist: { sortKey: "overall", sortDir: "desc", selectedIndex: -1 },
     bioPlayerId: null,
+    calendar: { viewYear: today.getFullYear(), viewMonth: today.getMonth() },
   };
 }
 
 /**
  * Builds the derived, non-persisted indices every GameState needs:
- * `playersById` for O(1) bio lookups and `squad.roster` (the user's 24
- * players, sorted by overall) so ui/squadlist.js never has to filter the
- * full ~15k-player world itself. Both createCareerState and
- * hydrateFromSave funnel through this so the two paths can't drift apart.
+ * `playersById` for O(1) bio lookups, `squad.roster` (the user's 24 players,
+ * sorted by overall), the full-season `fixtures` graph (engine/calendar.js —
+ * every league scheduled, not just the user's) and `league.table` computed
+ * from it. Both createCareerState and hydrateFromSave funnel through this so
+ * the two paths can't drift apart. `allClubs`/`allLeagues` are the complete
+ * data/*.json lists (fixture generation needs every league, not just the
+ * user's one).
  */
-function deriveIndices(state) {
+function deriveIndices(state, { allClubs, allLeagues }) {
   state.playersById = new Map(state.players.map((p) => [p.id, p]));
   state.squad.roster = state.players
     .filter((p) => p.clubId === state.club.id)
     .sort((a, b) => b.overall - a.overall);
+
+  state.fixtures = buildFixtures({
+    leagues: allLeagues, clubs: allClubs, seed: state.seed, seasonStartYear: state.seasonStartYear,
+  });
+  const leagueClubs = allClubs.filter((c) => c.leagueId === state.league.id);
+  state.league.table = buildLeagueTable(state.league, leagueClubs, state.fixtures.byLeague.get(state.league.id));
+
   return state;
 }
 
@@ -315,6 +292,7 @@ function deriveIndices(state) {
  */
 export function createCareerState({ managerName, club, league, world, seasonStartYear }) {
   const today = new Date(seasonStartYear, 6, 1); // career always starts July 1st
+  const cup = domesticCupFor(league, world.cups);
 
   const state = {
     seed: world.seed,
@@ -344,17 +322,24 @@ export function createCareerState({ managerName, club, league, world, seasonStar
       lineup: world.lineupsByClub.get(club.id),
     },
 
+    // Day-1 board objective emails (plan1.md M3: "board objective emails on
+    // day 1"). Real content from here on — see engine/objectives.js.
+    inbox: { emails: buildObjectiveEmails({ club, league, cup, managerName, today }) },
+
     ...createStubExtras(today),
-    ui: createUiDefaults(),
+    ui: createUiDefaults(today),
   };
 
-  return deriveIndices(state);
+  return deriveIndices(state, { allClubs: world.clubs, allLeagues: world.leagues });
 }
 
 /**
  * Rebuilds a GameState from a loaded save (core/db.js's deserializeSave)
  * plus freshly-fetched static data (leagues/clubs/nations aren't persisted
- * in the save — see db.js's header comment for why).
+ * in the save — see db.js's header comment for why). The inbox IS persisted
+ * (unlike fixtures, which regenerate deterministically from the seed) since
+ * read/unread state and any mail accumulated during play must survive a
+ * reload.
  */
 export function hydrateFromSave(saved, { leagues, clubs }) {
   const club = clubs.find((c) => c.id === saved.clubId);
@@ -374,11 +359,12 @@ export function hydrateFromSave(saved, { leagues, clubs }) {
       formationStyle: "Flat",
       lineup: saved.lineup,
     },
+    inbox: { emails: saved.inbox },
     ...createStubExtras(today),
-    ui: createUiDefaults(),
+    ui: createUiDefaults(today),
   };
 
-  return deriveIndices(state);
+  return deriveIndices(state, { allClubs: clubs, allLeagues: leagues });
 }
 
 /**
@@ -459,6 +445,8 @@ export class Store {
 
   selectEmail(idx) {
     this.state.ui.emailSelectedIndex = idx;
+    const email = this.state.inbox.emails[idx];
+    if (email) email.read = true;
     this.emit("email:select", idx);
   }
 
@@ -475,10 +463,39 @@ export class Store {
     this.emit("news:select", { cat, idx });
   }
 
-  /** M0 stub: the day-advance/calendar engine lands in M3. Exists now so the
-   * UI can wire the Advance control up front per the pub/sub contract. */
-  advance() {
+  /** Advances one calendar day — the ADVANCE tile's default click. */
+  advanceOneDay() {
+    this.advanceToDate(addDays(this.state.calendar.today, 1));
+  }
+
+  /** Advances towards `targetDate` (a day-strip cell click, so possibly
+   * several days at once), but halts on the first day that's a match day
+   * for the user's club (plan1.md: "Multi-day advance stops at any event
+   * needing user input"). `today` itself is never a stop — you're already
+   * sitting on it, so re-advancing from a match day moves past it normally. */
+  advanceToDate(targetDate) {
+    const { date } = advanceTowards(this.state.fixtures, this.state.club.id, this.state.calendar.today, targetDate);
+    this.state.calendar.today = date;
+    this.state.calendar.strip = buildDayStrip(date, 5);
     this.emit("advance", null);
+  }
+
+  openCalendar() {
+    this.state.ui.calendar.viewYear = this.state.calendar.today.getFullYear();
+    this.state.ui.calendar.viewMonth = this.state.calendar.today.getMonth();
+    this.openOverlay("calendar");
+  }
+
+  /** Month navigation within the Calendar overlay (delta = +/-1 month). */
+  calendarChangeMonth(delta) {
+    const c = this.state.ui.calendar;
+    let month = c.viewMonth + delta;
+    let year = c.viewYear;
+    if (month < 0) { month = 11; year--; }
+    else if (month > 11) { month = 0; year++; }
+    c.viewMonth = month;
+    c.viewYear = year;
+    this.emit("calendar:view", c);
   }
 
   openSquadList() {

@@ -11,6 +11,7 @@
 
 import { POSITION_CODES } from "../config/positions.js";
 import { ALL_ATTRIBUTES } from "../config/attributes.js";
+import { toEpochDay, fromEpochDay } from "./clock.js";
 
 const DB_NAME = "fm-career";
 const DB_VERSION = 1;
@@ -93,22 +94,7 @@ export function isSupported() {
 const FOOT_CODES = ["L", "R"];
 const WORKRATE_CODES = ["Low", "Medium", "High"];
 const SQUAD_ROLE_CODES = ["prospect", "rotation", "important", "crucial"];
-const DAY_MS = 86400000;
 const ALT_POS_SLOTS = 2; // schema: altPositions has 0-2 entries
-
-// Dates in this project (birthDate, calendar.today) are calendar dates built
-// with the local-time constructor `new Date(y, m, d)`, not instants. Naively
-// dividing/multiplying date.getTime() by a day in milliseconds is sensitive
-// to the runtime's timezone offset (e.g. UTC-4) and can round to the wrong
-// calendar day entirely. Routing through Date.UTC's y/m/d components keeps
-// the conversion exact regardless of timezone.
-function toEpochDay(date) {
-  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / DAY_MS;
-}
-function fromEpochDay(n) {
-  const utc = new Date(n * DAY_MS);
-  return new Date(utc.getUTCFullYear(), utc.getUTCMonth(), utc.getUTCDate());
-}
 
 /** Reads a flat array positionally, in the exact order it was written — see
  * serializePlayer/deserializePlayer, which must stay in lockstep. */
@@ -202,6 +188,16 @@ export const AUTOSAVE_SLOT_ID = "autosave";
 const SAVE_KEY_PREFIX = "save:";
 const SAVE_FORMAT_VERSION = 1;
 
+/** Inbox emails (engine/objectives.js's day-1 board emails, more from M5+)
+ * carry a real Date and are otherwise plain JSON — no need for db.js's
+ * compact-array treatment (there are dozens, not thousands, of these). */
+function serializeEmail(e) {
+  return { ...e, date: toEpochDay(e.date) };
+}
+function deserializeEmail(e) {
+  return { ...e, date: fromEpochDay(e.date) };
+}
+
 /** GameState -> a small, IndexedDB-ready blob: static reference data
  * (leagues/clubs/nations/cups) is deliberately excluded — gen/world.js
  * re-fetches it from data/*.json on load — only what generation/play
@@ -217,6 +213,7 @@ export function serializeSave(state) {
     calendarToday: toEpochDay(state.calendar.today),
     players: state.players.map(serializePlayer),
     lineup: state.squad.lineup,
+    inbox: state.inbox.emails.map(serializeEmail),
   };
 }
 
@@ -232,6 +229,7 @@ export function deserializeSave(saved) {
     calendarToday: fromEpochDay(saved.calendarToday),
     players: saved.players.map(deserializePlayer),
     lineup: saved.lineup,
+    inbox: (saved.inbox || []).map(deserializeEmail),
   };
 }
 

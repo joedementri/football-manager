@@ -23,6 +23,22 @@ export function monthYearShort(date) {
   return `${MONTH_SHORT[date.getMonth()]} ${date.getFullYear()}`;
 }
 
+/** "JULY" from a Date — full month name, used by the Calendar overlay's
+ * month-view header. */
+export function monthLong(date) {
+  const MONTH = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+  ];
+  return MONTH[date.getMonth()];
+}
+
+/** "9 AUG" from a Date — compact fixture-date label (Season's fixtures tile,
+ * where there's no result yet to show a scoreline for). */
+export function dateDayMonth(date) {
+  return `${date.getDate()} ${MONTH_SHORT[date.getMonth()]}`;
+}
+
 /** "16/07/2014" (UK order, used by email timestamps) */
 export function dateSlash(date) {
   const d = String(date.getDate()).padStart(2, "0");
