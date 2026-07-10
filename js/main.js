@@ -39,6 +39,59 @@ function wireSaveButton(store) {
   });
 }
 
+/** Header hamburger menu: currently just "Delete Save", guarded behind a
+ * confirm modal so a misclick can't wipe a career (this is the whole reason
+ * it exists — before this, starting over meant manually clearing IndexedDB). */
+function wireHeaderMenu() {
+  const menuBtn = document.getElementById("menu-btn");
+  const dropdown = document.getElementById("menu-dropdown");
+  const deleteItem = document.getElementById("menu-delete-save");
+  const modal = document.getElementById("confirm-delete-modal");
+  const cancelBtn = document.getElementById("confirm-delete-cancel");
+  const confirmBtn = document.getElementById("confirm-delete-confirm");
+
+  function closeMenu() {
+    dropdown.hidden = true;
+    menuBtn.setAttribute("aria-expanded", "false");
+  }
+  function toggleMenu() {
+    const willOpen = dropdown.hidden;
+    dropdown.hidden = !willOpen;
+    menuBtn.setAttribute("aria-expanded", String(willOpen));
+  }
+  function openModal() {
+    closeMenu();
+    modal.hidden = false;
+  }
+  function closeModal() {
+    modal.hidden = true;
+  }
+
+  menuBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleMenu();
+  });
+  document.addEventListener("click", (e) => {
+    if (!dropdown.hidden && !e.target.closest(".menu-wrap")) closeMenu();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (!modal.hidden) closeModal();
+    else if (!dropdown.hidden) closeMenu();
+  });
+
+  deleteItem.addEventListener("click", openModal);
+  cancelBtn.addEventListener("click", closeModal);
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
+  confirmBtn.addEventListener("click", async () => {
+    confirmBtn.disabled = true;
+    if (db.isSupported()) await db.deleteSave(AUTOSAVE_SLOT);
+    location.reload();
+  });
+}
+
 function startGame(state) {
   injectClubCrestSymbol(state.club);
 
@@ -51,6 +104,7 @@ function startGame(state) {
   initCarousels(); // generic [data-carousel] tile paging
   initStage(); // fit the 1280x720 stage to the viewport
   wireSaveButton(store);
+  wireHeaderMenu();
 
   // Exposed for manual verification in the console (dev convenience only —
   // no production code should depend on this global).

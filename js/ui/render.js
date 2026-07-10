@@ -22,7 +22,6 @@ export function renderHeader(state) {
   document.querySelector(".stat-xp .xp").textContent = `${number(manager.xp)}/${number(manager.xpMax)}`;
   const coinsEl = document.querySelector(".stat-coins");
   coinsEl.childNodes[coinsEl.childNodes.length - 1].textContent = ` ${number(manager.coins)}`;
-  document.querySelector(".gamertag").textContent = manager.gamertag;
 }
 
 /* ----------------------------- Central ----------------------------------- */

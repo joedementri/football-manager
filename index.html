@@ -151,7 +151,16 @@
             </div>
           </div>
           <svg class="crest crest--sm" style="width:44px;height:44px"><use href="#crest-a"></use></svg>
-          <span class="gamertag">RS</span>
+          <div class="menu-wrap">
+            <button class="gamertag menu-btn" id="menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Menu">
+              <span class="menu-btn__bar"></span>
+              <span class="menu-btn__bar"></span>
+              <span class="menu-btn__bar"></span>
+            </button>
+            <div class="menu-dropdown" id="menu-dropdown" hidden>
+              <button class="menu-dropdown__item menu-dropdown__item--danger" id="menu-delete-save" type="button">Delete Save</button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -612,6 +621,21 @@
       <footer class="footer" id="footer-playerbio" hidden>
         <span class="prompt"><span class="btn-glyph b">B</span> Back</span>
       </footer>
+
+      <!-- =====================  DELETE SAVE CONFIRM  ================ -->
+      <div class="confirm-modal" id="confirm-delete-modal" hidden>
+        <div class="confirm-modal__box">
+          <div class="confirm-modal__title">Delete save?</div>
+          <p class="confirm-modal__body">
+            This permanently deletes your career from this browser and can't be undone.
+            You'll be returned to the New Game screen.
+          </p>
+          <div class="confirm-modal__actions">
+            <button class="confirm-modal__btn" id="confirm-delete-cancel" type="button">Cancel</button>
+            <button class="confirm-modal__btn confirm-modal__btn--danger" id="confirm-delete-confirm" type="button">Delete Save</button>
+          </div>
+        </div>
+      </div>
 
       </div>
     </div>
