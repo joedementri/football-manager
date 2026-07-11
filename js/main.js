@@ -14,24 +14,12 @@ import { initRouter } from "./core/router.js";
 import { initStage } from "./stage.js";
 import { initCarousels } from "./carousel.js";
 import { initNewGame } from "./ui/newgame.js";
-import { crestSymbolMarkup } from "./gen/crest.js";
+import { injectClubCrestSymbols } from "./gen/crest.js";
+import { preloadNamePools } from "./gen/names.js";
+import { resetPlayerIdCounter } from "./gen/player.js";
 import * as db from "./core/db.js";
 
 const AUTOSAVE_SLOT = db.AUTOSAVE_SLOT_ID;
-
-/** Squad List/Player Bio only ever reference the user's own club, but M3's
- * real league table + fixtures list + Calendar overlay reference every club
- * in the user's league (fixtures are all intra-league — no inter-league
- * fixtures exist yet) — so all of those need a generated crest symbol, not
- * just the user's. Everything else on screen still comes from the M0
- * stub's hand-authored crest-a/b/c/d/pompey symbols. */
-function injectClubCrestSymbols(clubs) {
-  const sprite = document.querySelector(".svg-sprite");
-  for (const club of clubs) {
-    if (sprite.querySelector(`#crest-${club.id}`)) continue;
-    sprite.insertAdjacentHTML("beforeend", crestSymbolMarkup(club));
-  }
-}
 
 function wireSaveButton(store) {
   const saveBtn = Array.from(document.querySelectorAll("#footer-main .prompt"))
@@ -116,12 +104,20 @@ function startGame(state) {
   window.__store = store;
 }
 
+// M5 additions: nations + cups are now fetched here too (not just leagues/
+// clubs) — engine/retirement.js's regens need a nation to draw a name pool
+// from, and engine/season.js's rollover needs cups.json's domestic-cup
+// definitions to rebuild next season's brackets. Both were previously only
+// loaded by gen/world.js's New Game path.
 async function loadStaticRefData() {
-  const [leagues, clubs] = await Promise.all([
+  const [leagues, clubs, nations, cups] = await Promise.all([
     fetch("data/leagues.json").then((r) => r.json()),
     fetch("data/clubs.json").then((r) => r.json()),
+    fetch("data/nations.json").then((r) => r.json()),
+    fetch("data/cups.json").then((r) => r.json()),
   ]);
-  return { leagues, clubs };
+  await preloadNamePools(nations); // gen/names.js's randomName() needs pools loaded before any regen runs
+  return { leagues, clubs, nations, cups };
 }
 
 async function boot() {
@@ -130,7 +126,13 @@ async function boot() {
       const saved = await db.loadGame(AUTOSAVE_SLOT);
       if (saved) {
         const staticData = await loadStaticRefData();
-        startGame(hydrateFromSave(saved, staticData));
+        const state = hydrateFromSave(saved, staticData);
+        // A regen (engine/retirement.js) assigns ids from where world-gen
+        // left off; gen/player.js's module-level counter resets to 1 on
+        // every fresh page load, so it must fast-forward past every id
+        // already in this save before any regen can run this session.
+        resetPlayerIdCounter(state.players.reduce((max, p) => Math.max(max, p.id), 0) + 1);
+        startGame(state);
         return;
       }
     } catch (err) {

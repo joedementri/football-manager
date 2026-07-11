@@ -127,11 +127,13 @@ function pickAltPositions(rng, positionCode) {
  * @param {number} opts.wageModifier - league.wageModifier (placeholder wage calc)
  */
 export function generatePlayer(opts) {
-  const { rng, positionCode, nation, club, targetOverall, seasonStartYear, wageModifier } = opts;
+  const { rng, positionCode, nation, club, targetOverall, seasonStartYear, wageModifier, ageOverride } = opts;
   const info = positionInfo(positionCode);
   const overallGroup = info.overallGroup;
 
-  const age = pickAge(rng);
+  // ageOverride (M5, engine/retirement.js): a regen is always generated at a
+  // fixed 16-18, not this module's normal 17-36 career-wide age distribution.
+  const age = ageOverride ?? pickAge(rng);
   const birthDate = new Date(seasonStartYear - age, rng.int(0, 11), rng.int(1, 28));
 
   const overall = Math.round(Math.min(94, Math.max(40, targetOverall)));
@@ -198,8 +200,18 @@ export function generatePlayer(opts) {
     ratingHistory: [],
     seasonStats: { apps: 0, goals: 0, assists: 0, cleanSheets: 0, avgRating: 0, yellows: 0, reds: 0 },
     careerStats: [],
+    // Minutes + rating accumulated since the last growth application
+    // (engine/growth.js, M5) — reset every Feb 1/Jul 1; feeds the
+    // match-rating/playtime growth bonuses (plan1.md: "match-rating bonus
+    // ±10% ... playtime bonus up to +10%").
+    growthPeriod: { minutes: 0, ratingSum: 0, ratingCount: 0 },
     kitNumber: null, // assigned by gen/squad.js once the full 24-man list exists
     isYouth: false,
     scouting: { level: 3, ovrRange: [overall, overall], potRange: [potential, potential] },
+    // Set true by engine/retirement.js (M5) once a player's retirement roll
+    // hits at the January board-review date; they actually retire (and a
+    // regen replaces them) at the July 1 rollover — plan1.md: "announce in
+    // Jan, retire in July".
+    retiringAnnounced: false,
   };
 }

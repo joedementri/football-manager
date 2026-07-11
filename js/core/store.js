@@ -14,10 +14,13 @@
 // game logic themselves, so the sim stays testable headless later.
 
 import { addDays } from "./clock.js";
-import { buildFixtures, buildLeagueTable, advanceTowards, fixtureOnDate } from "../engine/calendar.js";
+import { buildFixtures, buildLeagueTable, advanceTowards, fixtureOnDate, eventsOnDate } from "../engine/calendar.js";
 import { buildObjectiveEmails, domesticCupFor } from "../engine/objectives.js";
 import { simulateWorldDay } from "../engine/sim/worldsim.js";
 import * as matchEngine from "../engine/sim/match.js";
+import { buildCupState } from "../engine/comps/cup.js";
+import { applyBoardReview, applyMidSeasonGrowth, rolloverSeason } from "../engine/season.js";
+import { acceptJob } from "../engine/jobs.js";
 
 export const SCREENS = ["central", "squad", "transfers", "office", "season"];
 
@@ -174,13 +177,16 @@ function buildDayStrip(start, count) {
 }
 
 /**
- * Everything still *not* real as of M3: the Central headline/GTN panel, the
- * Transfers scouted group, the Season cup bracket. Central's mini-table is
- * now real (`state.league.table`, derived in deriveIndices) and the Season
- * fixtures panel is now real (`state.fixtures`) — see deriveIndices below.
- * These remaining stubs stay exactly as hardcoded in the original prototype
- * pending news.js/M7/M5. Kept as a function (not a constant) because
- * `today` needs the real career's start date, and Date objects are mutable.
+ * Everything still *not* real as of M5: the Central headline/GTN panel, the
+ * Transfers scouted group. Central's mini-table is real (`state.league.table`,
+ * derived in deriveIndices), the Season fixtures panel is real
+ * (`state.fixtures`), and the Season screen's cup tile is now real too
+ * (`state.cups` + `ui/render.js`'s cupTileData() — M5's domestic cups,
+ * engine/comps/cup.js) — the old hand-authored "F.A. Cup — Round 2" stub is
+ * gone. These remaining stubs stay exactly as hardcoded in the original
+ * prototype pending news.js/M7/M8. Kept as a function (not a constant)
+ * because `today` needs the real career's start date, and Date objects are
+ * mutable.
  */
 function createStubExtras(today) {
   return {
@@ -222,21 +228,6 @@ function createStubExtras(today) {
       finances: { transferBudget: 401500, wageBudget: 16750 },
     },
 
-    // F.A. Cup round stub: domestic cups aren't scheduled until M5 ("Full
-    // season loop"), so this panel stays hand-authored flavour for now.
-    // `state.fixtures` (real, M3 — see deriveIndices()) supplies the
-    // Season screen's actual upcoming-fixtures list instead.
-    season: {
-      cup: {
-        name: "F.A. Cup",
-        round: "Round 2",
-        teams: [
-          { crest: "crest-pompey", name: "Portsmouth" },
-          { crest: "crest-a", name: "Yeovil Town" },
-        ],
-      },
-    },
-
     news: NEWS_DATA,
   };
 }
@@ -259,6 +250,8 @@ function createUiDefaults(today) {
     // (matchdaySubInId) while waiting for the user to pick who goes off.
     matchdaySubOpen: false,
     matchdaySubInId: null,
+    // Browse Jobs overlay (M5, ui/jobsui.js): selected vacancy row.
+    jobsSelectedIndex: -1,
   };
 }
 
@@ -277,25 +270,51 @@ function createUiDefaults(today) {
  * this so the two paths can't drift apart. `allClubs`/`allLeagues` are the
  * complete data/*.json lists (fixture generation needs every league, not
  * just the user's one).
+ *
+ * M5 additions: `state.clubLeague` (Map<clubId,leagueId>) is the *current*
+ * season's club->league membership — promotion/relegation (engine/
+ * season.js) moves clubs between leagues every year, but data/clubs.json's
+ * own `.leagueId` is static, so every place that needs to know which league
+ * a club plays in *this* season (fixture generation, league tables, cup
+ * brackets) reads through this override instead of the raw club object.
+ * `state.staticData` keeps the raw leagues/clubs/nations/cups lists around
+ * (world.js already loaded them; a rollover needs them again without
+ * re-fetching) and `state.cups` is this season's domestic-cup brackets
+ * (engine/comps/cup.js).
  */
-function deriveIndices(state, { allClubs, allLeagues, results = new Map() }) {
+function deriveIndices(state, { allClubs, allLeagues, allNations, allCups, results = new Map(), clubLeague, cups }) {
+  state.staticData = { leagues: allLeagues, clubs: allClubs, nations: allNations, cups: allCups };
+  state.clubLeague = clubLeague || new Map(allClubs.map((c) => [c.id, c.leagueId]));
+
   state.playersById = new Map(state.players.map((p) => [p.id, p]));
   state.playersByClub = new Map();
   for (const p of state.players) {
     if (!state.playersByClub.has(p.clubId)) state.playersByClub.set(p.clubId, []);
     state.playersByClub.get(p.clubId).push(p);
   }
-  state.clubsById = new Map(allClubs.map((c) => [c.id, c]));
+
+  const effectiveClubs = allClubs.map((c) => ({ ...c, leagueId: state.clubLeague.get(c.id) ?? c.leagueId }));
+  state.clubsById = new Map(effectiveClubs.map((c) => [c.id, c]));
   state.squad.roster = state.players
     .filter((p) => p.clubId === state.club.id)
     .sort((a, b) => b.overall - a.overall);
 
   state.fixtures = buildFixtures({
-    leagues: allLeagues, clubs: allClubs, seed: state.seed, seasonStartYear: state.seasonStartYear,
+    leagues: allLeagues, clubs: effectiveClubs, seed: state.seed, seasonStartYear: state.seasonStartYear,
   });
   state.results = results;
-  state.league.clubs = allClubs.filter((c) => c.leagueId === state.league.id);
+  state.league.clubs = effectiveClubs.filter((c) => c.leagueId === state.league.id);
   state.league.table = buildLeagueTable(state.league, state.league.clubs, state.fixtures.byLeague.get(state.league.id), state.results);
+
+  // Cup brackets carry live progress (which ties have been played) that
+  // can't be re-derived from the seed alone the way fixtures can (a knockout
+  // round's pairing depends on *who actually won* the previous round) — a
+  // loaded save passes its persisted `cups` Map straight through; only a
+  // brand-new career (or a fresh rollover, which rebuilds them explicitly —
+  // see engine/season.js) builds fresh ones here.
+  state.cups = (cups && cups.size > 0) ? cups : new Map(allCups.domestic.map((cup) => [
+    cup.id, buildCupState({ cup, clubs: effectiveClubs, leagues: allLeagues, seed: state.seed, seasonStartYear: state.seasonStartYear }),
+  ]));
 
   return state;
 }
@@ -332,6 +351,13 @@ export function createCareerState({ managerName, club, league, world, seasonStar
       xp: 0,
       xpMax: 1000,
       coins: 0,
+      // M5: board-objective evaluation/sacking (engine/objectives.js) and
+      // the job market (engine/jobs.js) — plan1.md: "manager rep (1-20
+      // scale)". Persisted as part of `manager` (core/db.js serializes it
+      // wholesale), no separate db.js change needed.
+      rep: 5,
+      warned: false,
+      sacked: false,
     },
 
     club,
@@ -359,24 +385,32 @@ export function createCareerState({ managerName, club, league, world, seasonStar
     // "fixtures/inbox persist, in-flight UI doesn't" convention).
     matchday: null,
 
+    // M5: CPU-club managerial vacancies the user can apply to — always
+    // starts empty; engine/jobs.js's refreshJobMarket populates it at every
+    // rollover (and immediately if the user is sacked).
+    jobMarket: { vacancies: [] },
+
     ...createStubExtras(today),
     ui: createUiDefaults(today),
   };
 
-  return deriveIndices(state, { allClubs: world.clubs, allLeagues: world.leagues });
+  return deriveIndices(state, { allClubs: world.clubs, allLeagues: world.leagues, allNations: world.nations, allCups: world.cups });
 }
 
 /**
  * Rebuilds a GameState from a loaded save (core/db.js's deserializeSave)
- * plus freshly-fetched static data (leagues/clubs/nations aren't persisted
- * in the save — see db.js's header comment for why). The inbox IS persisted
- * (unlike fixtures, which regenerate deterministically from the seed) since
- * read/unread state and any mail accumulated during play must survive a
- * reload.
+ * plus freshly-fetched static data (leagues/clubs/nations/cups aren't
+ * persisted in the save — see db.js's header comment for why). The inbox IS
+ * persisted (unlike fixtures, which regenerate deterministically from the
+ * seed) since read/unread state and any mail accumulated during play must
+ * survive a reload — likewise `clubLeague` (promotion/relegation history)
+ * and `cups` (in-progress knockout brackets), neither of which is
+ * re-derivable from the seed alone (see deriveIndices's header).
  */
-export function hydrateFromSave(saved, { leagues, clubs }) {
+export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
   const club = clubs.find((c) => c.id === saved.clubId);
-  const league = leagues.find((l) => l.id === club.leagueId);
+  const leagueId = saved.clubLeague ? saved.clubLeague.get(club.id) ?? club.leagueId : club.leagueId;
+  const league = leagues.find((l) => l.id === leagueId) || leagues.find((l) => l.id === club.leagueId);
   const today = saved.calendarToday;
 
   const state = {
@@ -394,11 +428,15 @@ export function hydrateFromSave(saved, { leagues, clubs }) {
     },
     inbox: { emails: saved.inbox },
     matchday: null,
+    jobMarket: saved.jobMarket || { vacancies: [] },
     ...createStubExtras(today),
     ui: createUiDefaults(today),
   };
 
-  return deriveIndices(state, { allClubs: clubs, allLeagues: leagues, results: saved.results });
+  return deriveIndices(state, {
+    allClubs: clubs, allLeagues: leagues, allNations: nations, allCups: cups,
+    results: saved.results, clubLeague: saved.clubLeague, cups: saved.cupsState,
+  });
 }
 
 /**
@@ -515,17 +553,48 @@ export class Store {
    */
   advanceToDate(targetDate) {
     if (this.state.matchday && !this.state.matchday.finished) return; // a live match must finish first
+    // Sacked (M5, engine/objectives.js's end-of-season evaluation): no
+    // further advancing until a new job is accepted (Browse Jobs) — playing
+    // on as a manager who's just been fired wouldn't make sense.
+    if (this.state.manager.sacked) return;
     const { date } = advanceTowards(
       this.state.fixtures, this.state.club.id, this.state.calendar.today, targetDate,
-      (day) => simulateWorldDay(this.state, day),
+      (day) => this._processCalendarDay(day),
     );
     this.state.calendar.today = date;
     this.state.calendar.strip = buildDayStrip(date, 5);
     refreshLeagueTable(this.state);
     this.emit("advance", null);
 
+    // Getting sacked (M5) takes priority over anything else this Advance
+    // click might otherwise have triggered — plan1.md's own M5 acceptance
+    // check: "getting sacked sends you to Browse Jobs".
+    if (this.state.manager.sacked) {
+      this.openBrowseJobs();
+      return;
+    }
+
     const fixture = fixtureOnDate(this.state.fixtures, this.state.club.id, date);
     if (fixture) this.openMatchday(fixture);
+  }
+
+  /** Runs for every calendar day the Advance loop steps into (fable-plans/
+   * plan1.md M5): non-user fixtures + cup ties always resolve
+   * (engine/sim/worldsim.js), and the season's fixed dates trigger their
+   * engine/season.js hooks — mid-season growth (Feb 1), the board review +
+   * retirement announcements (January), and the full rollover pipeline
+   * (July 1, which is also next season's kickoff). `state.calendar.today`
+   * is updated *first* (advanceToDate's own copy at the end of its own walk
+   * is just a redundant, harmless final sync) so any email these hooks
+   * build (buildMidSeasonReviewEmail, buildSeasonEndEmail, ...) is dated
+   * the day it's actually sent on, not the previous day. */
+  _processCalendarDay(day) {
+    this.state.calendar.today = day;
+    const events = eventsOnDate(day, this.state.seasonStartYear);
+    if (events.includes("growth")) applyMidSeasonGrowth(this.state);
+    if (events.includes("board-review")) applyBoardReview(this.state);
+    simulateWorldDay(this.state, day);
+    if (events.includes("season-rollover")) rolloverSeason(this.state);
   }
 
   /* ----- Match Day (M4): engine/sim/match.js owns the actual state
@@ -674,5 +743,30 @@ export class Store {
   openPlayerBio(playerId) {
     this.state.ui.bioPlayerId = playerId;
     this.openOverlay("playerbio");
+  }
+
+  /* ----- Browse Jobs (M5, engine/jobs.js) ----- */
+
+  openBrowseJobs() {
+    this.state.ui.jobsSelectedIndex = this.state.jobMarket.vacancies.length ? 0 : -1;
+    this.openOverlay("jobs");
+  }
+
+  selectJobRow(idx) {
+    this.state.ui.jobsSelectedIndex = idx;
+    this.emit("jobs:select", idx);
+  }
+
+  /** Accepts the selected vacancy — see engine/jobs.js's header for this
+   * milestone's "apply == instant accept" scope decision. */
+  applyForSelectedJob() {
+    const idx = this.state.ui.jobsSelectedIndex;
+    const clubId = this.state.jobMarket.vacancies[idx];
+    if (!clubId) return;
+    acceptJob(this.state, clubId);
+    this.state.ui.jobsSelectedIndex = -1;
+    this.closeOverlay();
+    this.emit("advance", null); // reuse Central/Season's re-render hook — club/league/squad all changed
+    this.emit("jobs:accepted", clubId);
   }
 }

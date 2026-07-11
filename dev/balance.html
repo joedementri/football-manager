@@ -3,26 +3,36 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balance Sim — M4 dev page</title>
+  <title>Balance Sim — M5 dev page</title>
   <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@400;500;600;700&family=Saira:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="dev.css" />
 </head>
 <body>
   <header class="hdr">
     <h1>Balance Sim</h1>
-    <p class="sub">M4 verification page — headless-sims one full season (Jul 2014 → Jul 2015) through
-      the same <code>engine/sim/quick.js</code> + <code>engine/sim/worldsim.js</code> path Advance uses,
-      with no user club (every fixture in every league resolves). Checks the M4 ✔ criterion "strong
-      teams top tables at season end when auto-simming" — reports a position↔prestige correlation per
-      league and shows full final standings for the three highest-prestige leagues.</p>
+    <p class="sub">M4/M5 verification page — headless-sims N full seasons chained through
+      <code>engine/season.js</code>'s rollover (growth, retirement/regens, promotion/relegation, new
+      fixtures/cup brackets) via the same day-by-day path core/store.js's Advance button drives, with no
+      user club (every fixture in every league, and every domestic cup tie, resolves). Reports a
+      position↔prestige correlation per league (M4's "strong teams top tables" check), a young-player
+      growth trajectory across seasons, English-pyramid promotion/relegation movement, F.A. Cup champions,
+      and world population stability (M5's checks).</p>
   </header>
 
   <div class="counts">
-    <button id="balance-run" class="tab" style="border:1px solid var(--panel-line);border-radius:6px;">Re-run a fresh season</button>
+    <label for="balance-seasons" style="align-self:center;">Seasons to simulate:</label>
+    <input id="balance-seasons" type="number" min="1" max="15" value="5" style="width:60px;" />
+    <button id="balance-run" class="tab" style="border:1px solid var(--panel-line);border-radius:6px;">Run</button>
   </div>
   <div id="balance-progress" class="test-summary">Starting…</div>
   <main>
+    <h2>League balance (final season)</h2>
     <div id="balance-summary" class="counts"></div>
+    <h2>Growth trajectory</h2>
+    <div id="balance-growth" class="counts"></div>
+    <h2>Rollover sanity (population, promotion/relegation, cup champions)</h2>
+    <div id="balance-rollover"></div>
+    <h2>Top-league final standings</h2>
     <div id="balance-tables"></div>
   </main>
 

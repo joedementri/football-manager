@@ -61,9 +61,13 @@ function assignMatchdayDates(numRounds, kickoff, blackoutRanges) {
  * @param {import("../../core/rng.js").RngStream} opts.rng
  * @param {Date} opts.kickoff - first matchday date
  * @param {{start:Date,end:Date}[]} opts.blackoutRanges - international-break weeks to skip
+ * @param {number} opts.seasonStartYear - namespaces fixture ids so a second
+ *   season's schedule (M5's rollover, `js/engine/season.js`) never collides
+ *   with the first's in `state.results` — the same two clubs can easily meet
+ *   on "matchday 1" again next season otherwise.
  * @returns {object[]} flat fixture list: { id, leagueId, matchday, date, homeClubId, awayClubId }
  */
-export function generateLeagueFixtures({ league, clubIds, rng, kickoff, blackoutRanges }) {
+export function generateLeagueFixtures({ league, clubIds, rng, kickoff, blackoutRanges, seasonStartYear }) {
   const shuffled = rng.shuffle(clubIds);
   const rounds = doubleRoundRobinRounds(shuffled);
   const dates = assignMatchdayDates(rounds.length, kickoff, blackoutRanges);
@@ -74,7 +78,7 @@ export function generateLeagueFixtures({ league, clubIds, rng, kickoff, blackout
     const date = dates[roundIdx];
     round.forEach(({ home, away }) => {
       fixtures.push({
-        id: `${league.id}-md${matchday}-${home}-${away}`,
+        id: `${league.id}-${seasonStartYear}-md${matchday}-${home}-${away}`,
         leagueId: league.id,
         matchday,
         date,

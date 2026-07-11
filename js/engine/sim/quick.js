@@ -121,15 +121,18 @@ function buildPlayerStats({ homeXI, awayXI, homeGoals, awayGoals, homeGoalEvents
  * @param {object[]} opts.homeRoster - state.playersByClub.get(homeClubId)
  * @param {object[]} opts.awayRoster
  * @param {import("../../core/rng.js").RngStream} opts.rng
+ * @param {boolean} [opts.neutral] - true for a cup final at a neutral venue
+ *   (engine/comps/cup.js, M5, plan1.md: "final at neutral venue") — neither
+ *   side gets [INFLUENCE].HOMEADV.
  * @returns {{ homeGoals, awayGoals, playerStats: Map }}
  */
-export function simulateQuickMatch({ fixture, homeClub, awayClub, homeRoster, awayRoster, rng }) {
+export function simulateQuickMatch({ fixture, homeClub, awayClub, homeRoster, awayRoster, rng, neutral = false }) {
   const homeXI = pickBestAvailableXI(homeRoster);
   const awayXI = pickBestAvailableXI(awayRoster);
 
   const xiAvgHome = xiStrength(homeXI);
   const xiAvgAway = xiStrength(awayXI);
-  const strengthHome = teamStrength({ xiAvg: xiAvgHome, opponentXiAvg: xiAvgAway, club: homeClub, isHome: true });
+  const strengthHome = teamStrength({ xiAvg: xiAvgHome, opponentXiAvg: xiAvgAway, club: homeClub, isHome: !neutral });
   const strengthAway = teamStrength({ xiAvg: xiAvgAway, opponentXiAvg: xiAvgHome, club: awayClub, isHome: false });
   const gap = strengthHome - strengthAway;
 

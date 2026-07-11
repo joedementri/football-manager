@@ -116,8 +116,19 @@ class ArrayCursor {
 
 /** Player -> flat array of ints/strings, fixed order (plan1.md: "compact
  * arrays (attributes in a fixed order, ints) so a ~15k-player world stays a
- * few MB"). careerStats is intentionally not persisted yet — M2 always
- * generates it empty; season rollover (M5) is what gives it real content. */
+ * few MB"). careerStats is still intentionally not persisted: M5's
+ * engine/season.js now computes it for real at every rollover (a season-end
+ * snapshot per player, unbounded length over a long career, unlike the
+ * fixed-cap ratingHistory below) but nothing yet displays trophy/career
+ * history — that first consumer is M11's My Career screen, which is the
+ * more sensible place to also design this field's persisted shape (fixed
+ * per-player slots would waste space for the common case of a short
+ * career; a variable-length side-table is the likely answer, but isn't
+ * worth building before anything reads it). Round-tripping a save today
+ * simply forgets career-stats history accumulated so far — every other M5
+ * field below (growthPeriod, retiringAnnounced) *is* persisted, since losing
+ * those mid-career would visibly break growth/retirement, not just a
+ * not-yet-built stats screen. */
 export function serializePlayer(p) {
   return [
     p.id, p.firstName, p.lastName, p.commonName,
@@ -141,6 +152,10 @@ export function serializePlayer(p) {
     p.kitNumber, p.isYouth ? 1 : 0,
     p.scouting.level, p.scouting.ovrRange[0], p.scouting.ovrRange[1], p.scouting.potRange[0], p.scouting.potRange[1],
     ...Array.from({ length: RATING_HISTORY_SLOTS }, (_, i) => p.ratingHistory[i] ?? -1),
+    // M5 additions: engine/growth.js's per-period accumulator + engine/
+    // retirement.js's "announced but not yet retired" flag.
+    p.growthPeriod.minutes, p.growthPeriod.ratingSum, p.growthPeriod.ratingCount,
+    p.retiringAnnounced ? 1 : 0,
   ];
 }
 
@@ -167,6 +182,8 @@ export function deserializePlayer(arr) {
   const kitNumber = c.next(), isYouth = c.next();
   const scoutLevel = c.next(), ovrLo = c.next(), ovrHi = c.next(), potLo = c.next(), potHi = c.next();
   const ratingHistory = c.take(RATING_HISTORY_SLOTS).filter((v) => v >= 0);
+  const growthMinutes = c.next(), growthRatingSum = c.next(), growthRatingCount = c.next();
+  const retiringAnnounced = c.next();
 
   return {
     id, firstName, lastName, commonName, nationId, clubId, natTeamId,
@@ -180,6 +197,8 @@ export function deserializePlayer(arr) {
     careerStats: [],
     kitNumber, isYouth: !!isYouth,
     scouting: { level: scoutLevel, ovrRange: [ovrLo, ovrHi], potRange: [potLo, potHi] },
+    growthPeriod: { minutes: growthMinutes, ratingSum: growthRatingSum, ratingCount: growthRatingCount },
+    retiringAnnounced: !!retiringAnnounced,
   };
 }
 
@@ -200,6 +219,26 @@ function serializeEmail(e) {
 }
 function deserializeEmail(e) {
   return { ...e, date: fromEpochDay(e.date) };
+}
+
+/** engine/comps/cup.js's CupRuntime is otherwise plain JSON (strings/
+ * numbers/nested arrays) — only its Date fields need db.js's usual
+ * epoch-day treatment. Persisted directly (like `results` below) since a
+ * knockout round's pairing depends on who actually won the previous round,
+ * not just the save's seed — see core/store.js's deriveIndices header. */
+function serializeCupState(cup) {
+  return {
+    ...cup,
+    nextRoundDate: toEpochDay(cup.nextRoundDate),
+    ties: cup.ties.map((t) => ({ ...t, date: toEpochDay(t.date) })),
+  };
+}
+function deserializeCupState(cup) {
+  return {
+    ...cup,
+    nextRoundDate: fromEpochDay(cup.nextRoundDate),
+    ties: cup.ties.map((t) => ({ ...t, date: fromEpochDay(t.date) })),
+  };
 }
 
 /** GameState -> a small, IndexedDB-ready blob: static reference data
@@ -224,6 +263,13 @@ export function serializeSave(state) {
     // seed alone can't reproduce, so every finished fixture's scoreline is
     // persisted directly, same rationale as the inbox above.
     results: [...state.results.entries()],
+    // M5 additions: promotion/relegation's club->league overrides, each
+    // domestic cup's live bracket, and the Browse Jobs vacancy list — none
+    // of these are re-derivable from the seed alone (see deriveIndices'
+    // header in core/store.js), so all three persist directly.
+    clubLeague: [...state.clubLeague.entries()],
+    cupsState: [...state.cups.entries()].map(([id, cup]) => [id, serializeCupState(cup)]),
+    jobMarket: state.jobMarket,
   };
 }
 
@@ -241,6 +287,9 @@ export function deserializeSave(saved) {
     lineup: saved.lineup,
     inbox: (saved.inbox || []).map(deserializeEmail),
     results: new Map(saved.results || []),
+    clubLeague: new Map(saved.clubLeague || []),
+    cupsState: new Map((saved.cupsState || []).map(([id, cup]) => [id, deserializeCupState(cup)])),
+    jobMarket: saved.jobMarket || { vacancies: [] },
   };
 }
 

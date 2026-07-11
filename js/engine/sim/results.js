@@ -53,5 +53,12 @@ export function applyMatchResult(state, fixture, result) {
       player.injury = { type: stat.injury.type, daysLeft: stat.injury.daysLeft };
       player.fitness = Math.max(0, player.fitness - stat.injury.energyDrop);
     }
+
+    // Feeds engine/growth.js's (M5) match-rating/playtime growth bonuses —
+    // reset every growth application, accumulated here match-by-match same
+    // as seasonStats above.
+    player.growthPeriod.minutes += stat.minutesPlayed;
+    player.growthPeriod.ratingSum += stat.rating;
+    player.growthPeriod.ratingCount += 1;
   }
 }

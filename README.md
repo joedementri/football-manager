@@ -4,11 +4,14 @@ A static, browser-based recreation of the **FIFA 15 Manager Career Mode**, built
 GitHub Pages. The UI is a faithful recreation of the original menu screens; underneath it now
 generates a full, real football world — ~35 leagues, ~600 clubs, ~50 nations, and a randomly
 generated ~15,000-player database — lets you start a career as any club, browse your real,
-generated squad, and **play out a full season of real matches**: every league's fixtures resolve
-as you Advance, and your own club's matches play out on a live minute-by-minute ticker with
-subs, cards, injuries and a full-time report. See `fable-plans/plan1.md` for the full build plan
-and milestone list (this is M0–M4 of that plan; transfers/scouting/youth/continental & intl
-football/season rollover are still ahead).
+generated squad, and **play out full seasons, one after another, forever**: every league's
+fixtures and every country's domestic cup resolve as you Advance, your own club's league matches
+play out on a live minute-by-minute ticker with subs/cards/injuries/a full-time report, and every
+July 1st the season properly rolls over — growth, ageing, retirements and regens, promotion/
+relegation, board objective grading (with sacking if you fail badly enough), and a fresh
+next-season schedule. See `fable-plans/plan1.md` for the full build plan and milestone list (this
+is M0–M5 of that plan; transfers/scouting/youth/continental & international football are still
+ahead).
 
 ## https://joedementri.github.io/football-manager/
 
@@ -46,12 +49,30 @@ football/season rollover are still ahead).
 - **Board objective emails**: a real "League Objective" and "Domestic Cup Objective" email
   from your club's board arrive on day one, addressed to your manager name with an objective
   matched to the club's board-expectation tier.
+- **Domestic cups**: all ~29 countries' cups (FA Cup/League Cup with England's real lower-tier
+  entry rounds, one cup per other country) run as real single-leg knockouts alongside the league
+  — penalty shootouts if level, a neutral-venue final. Season's Tables tile shows your club's
+  current round and next/last tie.
+- **Growth & ageing**: every player's overall grows or declines twice a season (Feb 1 and July 1)
+  from their hidden potential, position-appropriate growth curve, playing time and match ratings
+  — no separate training minigame, just "play your youngsters."
+- **Retirement & regens**: ageing players retire (announced in January, effective in July) and are
+  replaced by a fresh 16-18-y-o prospect at the same club, keeping every squad at 24.
+- **Promotion & relegation**: every multi-tier country's table-based movement is applied at
+  rollover (England's 4 tiers move 3 up/3 down each), and next season's fixtures/cup brackets are
+  built for the new club/league picture.
+- **Board review & sacking**: a real mid-season review email in January, and a real end-of-season
+  verdict in July — miss your board's objective badly enough (an outright domestic cup win can
+  save you) and you're sacked, sent straight to a real **Browse Jobs** screen to pick up a new club.
+- **Season rollover**: every July 1st the above all happens together, plus an end-of-season
+  awards email (champion, golden boot, cup winner, team of the season) and a fresh next-season
+  schedule — advance through as many seasons as you like.
 
 Screens/systems not wired up yet (still hardcoded placeholder content pending later
-milestones — transfers, scouting, youth, continental/international football, season rollover,
-etc.): Central's news list/headline, Transfers, most of Office, Season's cup bracket, promotion/
-relegation, growth/ageing/retirement. These render the same placeholder content the original
-prototype always had.
+milestones — transfers, scouting, youth, continental/international football, etc.): Central's
+news list/headline, Transfers, most of Office (Contracts/Youth Staff/My Career/Request Funds/
+Settings), Season's Other Leagues/Team Stats/Player Stats. These render the same placeholder
+content the original prototype always had.
 
 ## Screens
 
@@ -61,8 +82,8 @@ prototype always had.
 | **Central** | Advance day-strip (click to advance, real dates + match-day opponent crest), news headline *(placeholder)*, Global Transfer Network *(placeholder)*, News *(placeholder)*, real league mini-table (live pld/pts once matches are played) |
 | **Squad** | Formation pitch with your real best-XI → **Club Squad** tile opens **Squad List** → select a player and open **Player Bio** |
 | **Transfers** | Scouted strikers, Search/Sell Players, GTN, Finances *(placeholder content)* |
-| **Office** | Inbox (real unread-count + latest-subject preview), Contracts, Youth Staff, My Career, Request Funds, Browse Jobs, Settings *(rest still placeholder)* |
-| **Season** | **Calendar** tile opens a real full month-view grid (fixtures/windows/breaks), Other Leagues/Team Stats/Player Stats *(placeholder)*, Tables *(cup bracket still placeholder)*, real upcoming Fixtures |
+| **Office** | Inbox (real unread-count + latest-subject preview), **Browse Jobs** (real vacancy list + apply), Contracts, Youth Staff, My Career, Request Funds, Settings *(rest still placeholder)* |
+| **Season** | **Calendar** tile opens a real full month-view grid (fixtures/windows/breaks), Other Leagues/Team Stats/Player Stats *(placeholder)*, Tables (real current domestic-cup round/tie for your club), real upcoming Fixtures |
 | **Match Day** | Pre-match lineups → live ticker (minute clock, event feed, score, speed control, other same-day results) → substitution picker → full-time report (scorers, Man of the Match) |
 | **Email** | Inbox overlay (Emails / Player Conversations / Message Archive) with reading pane — real day-1 board objective emails, per-email detail, read/unread tracking |
 
@@ -88,6 +109,10 @@ flag (~50 nations).
   **← / →**) to change month, **B / Esc** to close.
 - **Email inbox** — press **Y** or **E** (or click the *Email Inbox* prompt) to open;
   press **B** or **Esc** (or click *Close Inbox*) to return.
+- **Browse Jobs** — Office → click the *Browse Jobs* tile (or, if you're sacked, it opens
+  automatically); **↑ / ↓** to move between vacancies, **A** (or click the selected row again, or
+  the *Apply* footer prompt) to accept it on the spot. Advance stays locked out while sacked until
+  you accept a job.
 - **Save** — click the *Save* footer prompt to write your career to IndexedDB.
 - **Deep links** — jump straight to a screen either via hash or query string, e.g.
   `index.html#season` / `index.html?screen=season`, or `index.html#email` /
@@ -121,21 +146,30 @@ the site in a private/incognito window, or DevTools → Application → IndexedD
   Verifies milestone M1 (world data) — counts should read ~35 leagues / ~600 clubs / ~50
   nations.
 - `dev/tests.html` — live assert harness verifying milestones M2 (player/world generation),
-  M3 (calendar/fixtures) and M4 (match simulation): the mandatory overall-calculation test
-  vectors (Messi → 93±1, Neuer → 88), growth-curve sanity, a full world generation with a
-  performance budget (<3s), RNG determinism, a compact-save serialization round-trip
-  (including M4's `ratingHistory`/match-`results` fields), every league's fixture-count/
+  M3 (calendar/fixtures), M4 (match simulation) and M5 (full season loop): the mandatory
+  overall-calculation test vectors (Messi → 93±1, Neuer → 88), growth-curve sanity, a full world
+  generation with a performance budget (<3s), RNG determinism, a compact-save serialization
+  round-trip (including M4's `ratingHistory`/match-`results` and M5's `growthPeriod`/
+  `retiringAnnounced`/`clubLeague`/cup-bracket/job-market fields), every league's fixture-count/
   home-away-balance/no-self-play/no-double-booking invariants, international-break exclusion,
   fixture-schedule determinism, Advance's stop-on-match-day behaviour, the board
   objective-email builder, CPU-vs-CPU match-sim determinism/rating sanity, an even-strength
   goals/match sanity check, a strong-vs-weak-club win-rate check, matchday-XI/form-calc
-  sanity, and per-day batch simulation populating results/league tables. Should read
-  **all assertions passing**.
-- `dev/balance.html` — headless auto-sim of one full season (Jul → Jul) across every league
-  with no user club, through the same match-sim path Advance uses. Reports a position↔prestige
-  correlation per league (want notably negative) and shows full final standings for the three
-  highest-prestige leagues, to eyeball "do strong teams finish near the top" (M4's balance
-  spot-check).
+  sanity, per-day batch simulation populating results/league tables, M5's growth-application
+  tuning tables/retirement-chance table, domestic-cup entry-round staggering (FA Cup's League
+  One/Two-enter-R1-vs-Premier-League/Championship-enter-R3 split), board-objective evaluation/
+  sacking logic, and — the milestone's own headline check — a full season simulated end-to-end
+  through a real `Store` (every league match, every cup tie, growth, retirements/regens,
+  promotion/relegation, and the July 1 rollover into next season, auto-accepting a job if
+  sacked along the way). Should read **all assertions passing**.
+- `dev/balance.html` — headless auto-sim of N full seasons (Jul → Jul, chained via
+  `engine/season.js`'s rollover — pick how many with the on-page field) across every league and
+  every domestic cup, with no user club, through the same day-by-day path Advance uses. Reports
+  a position↔prestige correlation per league for the final season (want notably negative, M4's
+  "strong teams top tables" check), a young-player growth trajectory season-by-season (should
+  trend up, and never exceed any tracked player's own potential), English-pyramid promotion/
+  relegation movement, F.A. Cup champions by season, and world population stability (retirements
+  1-for-1 replaced by regens) — M5's balance spot-checks.
 
 Visit either at `http://localhost:8000/dev/<page>.html` while serving locally.
 
@@ -152,6 +186,7 @@ css/bio.css                 # Player Bio overlay
 css/calendar.css             # Calendar overlay: full month-view grid
 css/flags.css               # nation flags for Player Bio (all ~50 nations, pure CSS)
 css/matchday.css             # Match Day overlay: pre-match/ticker/full-time/sub picker
+css/jobs.css                # Browse Jobs overlay: vacancy list
 js/main.js                 # bootstrap: loads a save or runs New Game, then wires up the game
 js/stage.js                 # scales the 16:9 stage to the window
 js/carousel.js               # generic [data-carousel] tile paging widget
@@ -167,16 +202,23 @@ js/ui/squadlist.js           # Squad List screen renderer
 js/ui/playerbio.js           # Player Bio screen renderer
 js/ui/calendarui.js          # Calendar overlay: month-view grid renderer
 js/ui/matchday.js            # Match Day overlay: pre-match/ticker/full-time/sub-picker renderer + ticker timer
+js/ui/jobsui.js              # Browse Jobs overlay: vacancy list renderer
 js/gen/names.js              # deterministic player-name generation from data/names/*.json
-js/gen/crest.js              # procedural crest + kit SVG generator, keyed off club colours
+js/gen/crest.js              # procedural crest + kit SVG generator, keyed off club colours + shared SVG-sprite injector
 js/gen/overall.js            # attribute → overall calculation (position weight tables)
 js/gen/archetypes.js         # per-position mean-attribute templates used by gen/player.js
 js/gen/player.js             # generates one Player (schema in fable-plans/plan1.md)
 js/gen/squad.js              # generates one club's 24-man squad + best-XI
 js/gen/world.js              # generates the full world (every club, ~15k players)
-js/engine/calendar.js        # fixture generation across every league, Advance/stop logic, month cells
+js/engine/calendar.js        # fixture generation across every league, Advance/stop logic, month cells, season-event dates
 js/engine/comps/league.js    # double round-robin fixture scheduler + league table builder
-js/engine/objectives.js      # day-1 board objective emails (League + Domestic Cup)
+js/engine/comps/cup.js       # domestic cup knockout brackets: entry rounds, lazy round-by-round draw, penalty shootouts
+js/engine/objectives.js      # day-1 board objective emails + M5 mid-season/end-of-season evaluation + sacking
+js/engine/growth.js          # applies player growth/decline twice a season (Feb 1 + July 1)
+js/engine/retirement.js      # retirement announcements (Jan) + retire-and-regen (July)
+js/engine/awards.js          # end-of-season awards email (champion, golden boot, cup winner, team of the season)
+js/engine/jobs.js            # Browse Jobs vacancy market (CPU sackings) + apply/accept
+js/engine/season.js          # M5 orchestrator: board review (Jan) + full rollover pipeline (July 1)
 js/engine/form.js            # rolling match-rating average → 1-10 form
 js/engine/fitness.js         # matchday fatigue loss, daily recovery, injury rolls
 js/engine/sim/core.js        # shared strength/Poisson/weighted-incident-selection primitives
@@ -184,13 +226,15 @@ js/engine/sim/lineup.js      # picks a club's current best-available (fitness/in
 js/engine/sim/quick.js       # CPU-vs-CPU match simulation (statistical, no timeline)
 js/engine/sim/events.js      # per-segment minute timeline generator for the live user match
 js/engine/sim/match.js       # interactive Match Day state machine (kickoff→half→full time, subs)
-js/engine/sim/results.js     # applies a finished match's outcome to league.table/player stats
-js/engine/sim/worldsim.js    # per-day batch CPU-vs-CPU simulation hook (every non-user fixture)
+js/engine/sim/results.js     # applies a finished match's outcome to league.table/player stats/growth-period
+js/engine/sim/worldsim.js    # per-day batch CPU-vs-CPU simulation hook (every non-user fixture + every cup tie)
 js/config/positions.js       # the 28 FIFA position codes + grouping tables
-js/config/growth.js          # playergrowth.ini age→ratio curves (potential inversion)
+js/config/growth.js          # playergrowth.ini age→ratio curves + M5's growth-application weight/modifier tables
+js/config/retirement.js      # playerretirement.ini position-mapping + age-percentage retirement-chance tables
+js/config/objectives.js      # seasonobjectives.ini OBJ_INDEX/DOM_CUP_OBJ_INDEX tables + board-tier mapping
 js/config/playergen.js       # scout.ini workrate/skillmove/weakfoot tables + squad templates
 js/config/attributes.js      # the 29 outfield + 5 GK attribute names/groupings
-js/config/calendar.js        # season key dates: transfer windows, deadline days, growth days, intl breaks
+js/config/calendar.js        # season key dates: transfer windows, deadline days, growth/board-review days, intl breaks, cup round dates
 js/config/sim.js             # simsettings.ini match-sim tuning (chances, cards, injuries, ratings)
 js/config/form.js            # formsettings.ini form-calculation weights
 data/leagues.json            # ~35 leagues (ported from reference/ini/playerwages.ini)
@@ -199,8 +243,8 @@ data/nations.json            # ~50 national teams: prestige, quality weighting, 
 data/cups.json               # domestic cups, continental comps, international tournaments
 data/names/*.json            # first/last name pools, one file per nation (50 nations)
 dev/world.html, dev/world.js # dev page: every league→club with generated crests + nations/cups/pools
-dev/tests.html, dev/tests.js # dev page: assert harness for player/world generation + calendar/fixtures/match sim
-dev/balance.html, dev/balance.js # dev page: headless one-season auto-sim, position↔prestige balance check
+dev/tests.html, dev/tests.js # dev page: assert harness for generation/calendar/match-sim/M5 full-season-loop
+dev/balance.html, dev/balance.js # dev page: headless N-season auto-sim, position↔prestige + growth/promotion/cup balance
 reference/ini/                # FIFA 17 career-mode INI files, ported for tuning-number reference
 fable-plans/plan1.md          # the full build plan (milestones M0–M11)
 .nojekyll                     # tells GitHub Pages to serve files as-is

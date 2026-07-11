@@ -9,6 +9,8 @@ import {
 } from "../core/format.js";
 import { upcomingFixtures, fixtureOnDate } from "../engine/calendar.js";
 import { toEpochDay } from "../core/clock.js";
+import { domesticCupFor } from "../engine/objectives.js";
+import { cupStatusForClub } from "../engine/comps/cup.js";
 
 function flagSpan(code) {
   return `<span class="flag" data-flag="${code}"></span>`;
@@ -166,7 +168,7 @@ export function renderTransfers(state) {
  * empty state (static markup, not state-driven at all). Now that day-1
  * board objective emails always exist (engine/objectives.js), it shows a
  * real unread-count + latest-subject preview instead. */
-function renderOffice(state) {
+export function renderOffice(state) {
   const body = document.getElementById("of-inbox-body");
   const emails = state.inbox.emails;
   if (!emails.length) {
@@ -190,8 +192,29 @@ function renderOffice(state) {
 }
 
 /* ----------------------------- Season -------------------------------------- */
+/** Real domestic-cup status for the user's club (M5, engine/comps/cup.js) —
+ * replaces the old hand-authored "F.A. Cup — Round 2" stub. Always returns
+ * exactly 2 team rows (the tile's markup has exactly 2 `.trow` elements):
+ * the user's own club, and whatever's most relevant for the second row
+ * (next/last opponent, "TBD" while a round hasn't been drawn yet, or a
+ * "Champions!" flourish). */
+function cupTileData(state) {
+  const cup = domesticCupFor(state.league, state.staticData.cups);
+  const selfRow = { crest: `crest-${state.club.id}`, name: state.club.shortName };
+  if (!cup) return { name: "—", round: "—", teams: [selfRow, { crest: selfRow.crest, name: "—" }] };
+
+  const runtime = state.cups.get(cup.id);
+  const status = cupStatusForClub(runtime, state.club.id);
+  const opponent = status.opponentClubId ? state.clubsById.get(status.opponentClubId) : null;
+  const secondRow = opponent
+    ? { crest: `crest-${opponent.id}`, name: opponent.shortName }
+    : { crest: selfRow.crest, name: status.roundLabel === "Champions" ? "Champions!" : "TBD" };
+
+  return { name: cup.name, round: status.roundLabel, teams: [selfRow, secondRow] };
+}
+
 export function renderSeason(state) {
-  const cup = state.season.cup;
+  const cup = cupTileData(state);
   document.querySelector(".se-tables .cup").textContent = cup.name;
   document.querySelector(".se-tables .round").textContent = cup.round;
   const trows = document.querySelectorAll(".se-tables .trow");

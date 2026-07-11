@@ -31,7 +31,12 @@ function buildSlotPlan(rng) {
 // bonus) vs. squad depth (small penalty) — roughly a 4-4-2's 1/4/4/2 split.
 const STARTER_COUNT = { GK: 1, DEF: 4, MID: 4, ATT: 2 };
 
-function pickNation(rng, club, league, nationsById, nationsByName) {
+// Exported for reuse by engine/retirement.js (M5 regens: a new prospect
+// needs a plausible nationality the same way an initial-squad player does)
+// and engine/jobs.js (a manager switching clubs mid-career doesn't regenerate
+// players, but shares no nation-picking need — kept here for one call site,
+// documented so a future one doesn't reinvent it).
+export function pickNation(rng, club, league, nationsById, nationsByName) {
   const homeNation = nationsByName.get(league.country);
   if (homeNation && rng.chance(0.65)) return homeNation;
   const pool = [...nationsById.values()];
@@ -83,8 +88,11 @@ const XI_TEMPLATE = [
 ];
 
 /** Picks a believable best-XI (by overall) and maps it onto the existing
- * 4-4-2 pitch layout (js/core/store.js's stub used the same x/y grid). */
-function pickBestXI(players) {
+ * 4-4-2 pitch layout (js/core/store.js's stub used the same x/y grid).
+ * Exported for reuse by engine/jobs.js (M5): accepting a new job needs a
+ * fresh lineup built from the new club's existing roster, not a freshly
+ * generated squad. */
+export function pickBestXI(players) {
   const remaining = new Set(players);
   const take = (predicate, sortDesc = true) => {
     const pool = [...remaining].filter(predicate);

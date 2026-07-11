@@ -12,6 +12,7 @@ import { fixturesOnDate } from "../calendar.js";
 import { simulateQuickMatch } from "./quick.js";
 import { applyMatchResult } from "./results.js";
 import { applyDailyRecoveryToAll } from "../fitness.js";
+import { advanceCupsForDate } from "../comps/cup.js";
 import { RngStream, deriveSeed } from "../../core/rng.js";
 
 /**
@@ -34,4 +35,10 @@ export function simulateWorldDay(state, date) {
     const result = simulateQuickMatch({ fixture, homeClub, awayClub, homeRoster, awayRoster, rng });
     applyMatchResult(state, fixture, result);
   }
+
+  // Domestic cup ties (M5): every club's cup fixtures resolve statistically,
+  // including the user's own (see engine/comps/cup.js's header for the
+  // scope decision — no interactive Match Day ticker for cup matches this
+  // milestone).
+  if (state.cups) advanceCupsForDate(state, date);
 }

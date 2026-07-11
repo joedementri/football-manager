@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="css/calendar.css" />
   <link rel="stylesheet" href="css/flags.css" />
   <link rel="stylesheet" href="css/matchday.css" />
+  <link rel="stylesheet" href="css/jobs.css" />
 </head>
 <body>
 
@@ -442,7 +443,7 @@
           <div class="tile__title">Request Funds</div>
           <div class="tile__desc">Request additional funds from the Board</div>
         </div>
-        <div class="tile has-photo of-jobs">
+        <div class="tile has-photo of-jobs is-link" data-open="jobs">
           <div class="tile__title">Browse Jobs</div>
           <div class="tile__desc">View job openings</div>
           <div class="dots"><i class="on"></i><i></i><i></i></div>
@@ -625,6 +626,16 @@
         <div class="md-body" id="md-body"><!-- built by ui/matchday.js --></div>
       </div>
 
+      <!-- =====================  BROWSE JOBS OVERLAY  ================= -->
+      <div id="jobs-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">OFFICE</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">BROWSE JOBS</span>
+        </div>
+        <div class="jb-body" id="jobs-body"><!-- built by ui/jobsui.js --></div>
+      </div>
+
       <!-- =====================  FOOTER PROMPTS  ==================== -->
       <footer class="footer" id="footer-main">
         <span class="prompt" data-prompt="select"><span class="btn-glyph a">A</span> Select</span>
@@ -654,6 +665,10 @@
         <span class="prompt"><span class="btn-glyph b">B</span> Back</span>
       </footer>
       <footer class="footer" id="footer-matchday" hidden><!-- built by ui/matchday.js (prompts change per phase) --></footer>
+      <footer class="footer" id="footer-jobs" hidden>
+        <span class="prompt" data-action="apply"><span class="btn-glyph a">A</span> Apply</span>
+        <span class="prompt" data-action="back"><span class="btn-glyph b">B</span> Back</span>
+      </footer>
 
       <!-- =====================  DELETE SAVE CONFIRM  ================ -->
       <div class="confirm-modal" id="confirm-delete-modal" hidden>

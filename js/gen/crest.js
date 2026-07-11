@@ -96,6 +96,20 @@ export function mountCrest(container, club, width = 48) {
   container.innerHTML = crestSVGString(club, width);
 }
 
+/** Ensures every given club has a `#crest-<id>` <symbol> in the page's SVG
+ * sprite, skipping any already injected. js/main.js calls this at boot for
+ * the user's own league; js/core/router.js (M5) calls it again after
+ * accepting a Browse Jobs offer, since a new club/league means new crests
+ * that were never in the sprite (the whole world's ~600 clubs aren't
+ * pre-injected up front — see main.js's header for why). */
+export function injectClubCrestSymbols(clubs) {
+  const sprite = document.querySelector(".svg-sprite");
+  for (const club of clubs) {
+    if (sprite.querySelector(`#crest-${club.id}`)) continue;
+    sprite.insertAdjacentHTML("beforeend", crestSymbolMarkup(club));
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Kit (jersey) generator — reuses the existing #kit icon glyph (index.html),
 // recoloured per club. Not needed for M1's dev-page acceptance check, but

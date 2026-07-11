@@ -31,7 +31,11 @@ import { RngStream, deriveSeed } from "../core/rng.js";
  *             byDate: Map<number,object[]> }}
  */
 export function buildFixtures({ leagues, clubs, seed, seasonStartYear }) {
-  const rng = new RngStream(deriveSeed(seed, "fixtures"));
+  // Season-scoped RNG key (M5): a career now regenerates fixtures every July
+  // 1 rollover (engine/season.js) with the same save seed but a new
+  // seasonStartYear — without the year in the key, every season would
+  // reshuffle from the exact same starting draw.
+  const rng = new RngStream(deriveSeed(seed, `fixtures-${seasonStartYear}`));
   const kickoff = leagueKickoff(seasonStartYear);
   const blackoutRanges = intlBreakWeeks(seasonStartYear);
   const clubsByLeague = new Map();
@@ -48,7 +52,7 @@ export function buildFixtures({ leagues, clubs, seed, seasonStartYear }) {
 
   for (const league of leagues) {
     const clubIds = clubsByLeague.get(league.id) || [];
-    const fixtures = generateLeagueFixtures({ league, clubIds, rng, kickoff, blackoutRanges });
+    const fixtures = generateLeagueFixtures({ league, clubIds, rng, kickoff, blackoutRanges, seasonStartYear });
     byLeague.set(league.id, fixtures);
     for (const fx of fixtures) {
       byId.set(fx.id, fx);
@@ -94,7 +98,7 @@ export function eventsOnDate(date, seasonStartYear) {
   const events = [];
   const windows = transferWindows(seasonStartYear);
   const deadlines = deadlineDays(seasonStartYear).map(toEpochDay);
-  const growth = growthDays(seasonStartYear).map(toEpochDay);
+  const [growthFeb1, growthJul1] = growthDays(seasonStartYear).map(toEpochDay);
   const day = toEpochDay(date);
 
   if (day === toEpochDay(windows.summer.open)) events.push("window-open");
@@ -102,7 +106,12 @@ export function eventsOnDate(date, seasonStartYear) {
   if (day === toEpochDay(windows.winter.open)) events.push("window-open");
   if (day === toEpochDay(windows.winter.close)) events.push("window-close");
   if (deadlines.includes(day)) events.push("deadline-day");
-  if (growth.includes(day)) events.push("growth");
+  // Feb 1 is a mid-season growth application only; Jul 1 is also next
+  // season's kickoff, so it gets the fuller "season-rollover" event instead
+  // (engine/season.js's rolloverSeason applies growth as one step of that
+  // larger pipeline — see its header for the ordering).
+  if (day === growthFeb1) events.push("growth");
+  if (day === growthJul1) events.push("season-rollover");
   if (day === toEpochDay(boardReviewDate(seasonStartYear))) events.push("board-review");
   if (intlBreakWeeks(seasonStartYear).some((r) => isDateInRange(date, r.start, r.end))) events.push("intl-break");
 

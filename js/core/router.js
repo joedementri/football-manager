@@ -11,7 +11,7 @@
 
 import { SCREENS } from "./store.js";
 import {
-  renderCentral, renderSeason,
+  renderAll, renderCentral, renderSeason, renderOffice,
   renderEmailList, renderEmailDetail,
   renderNewsCategoryTabs, renderNewsList,
 } from "../ui/render.js";
@@ -19,6 +19,8 @@ import { renderSquadList } from "../ui/squadlist.js";
 import { renderPlayerBio } from "../ui/playerbio.js";
 import { renderCalendar, initCalendarHeaders } from "../ui/calendarui.js";
 import { renderMatchday, initMatchdayTicker } from "../ui/matchday.js";
+import { renderJobsOverlay } from "../ui/jobsui.js";
+import { injectClubCrestSymbols } from "../gen/crest.js";
 import { fromEpochDay } from "./clock.js";
 
 export function initRouter(store) {
@@ -39,6 +41,9 @@ export function initRouter(store) {
   const footerMatchday = document.getElementById("footer-matchday");
   const matchdayOverlay = document.getElementById("matchday-overlay");
   const mdBodyEl = document.getElementById("md-body");
+  const footerJobs = document.getElementById("footer-jobs");
+  const jobsOverlay = document.getElementById("jobs-overlay");
+  const jobsBodyEl = document.getElementById("jobs-body");
   const newsTabsEl = document.getElementById("news-tabs");
   const newsListEl = document.getElementById("news-list");
   const squadlistBodyEl = document.getElementById("squadlist-body");
@@ -74,6 +79,10 @@ export function initRouter(store) {
       matchdayOverlay.classList.toggle("is-active", open);
       footerMatchday.hidden = !open;
       if (open) renderMatchday(store.state);
+    } else if (name === "jobs") {
+      jobsOverlay.classList.toggle("is-active", open);
+      footerJobs.hidden = !open;
+      if (open) renderJobsOverlay(store.state);
     }
     const anyOverlayOpen = !!store.state.ui.overlay;
     tabbar.style.display = anyOverlayOpen ? "none" : "";
@@ -97,11 +106,22 @@ export function initRouter(store) {
   store.on("advance", () => {
     renderCentral(store.state);
     renderSeason(store.state);
+    renderOffice(store.state); // M5: board-review/season-end/awards/sacking emails can land mid-advance
     if (store.state.ui.overlay === "calendar") renderCalendar(store.state);
   });
   store.on("calendar:view", () => renderCalendar(store.state));
   store.on("matchday", () => renderMatchday(store.state));
   initMatchdayTicker(store);
+  store.on("jobs:select", () => renderJobsOverlay(store.state));
+  // Accepting a job offer (M5) changes club/league/squad wholesale — a full
+  // re-render (same as boot's startGame) is simplest and correct here,
+  // rather than trying to enumerate every screen that might reference the
+  // old club. New clubs' crests may never have been injected into the SVG
+  // sprite (only the starting league's are, at boot — see gen/crest.js).
+  store.on("jobs:accepted", () => {
+    injectClubCrestSymbols(store.state.league.table.map((r) => r.club));
+    renderAll(store.state);
+  });
 
   /* ----- DOM -> store wiring ---------------------------------------------- */
   tabs.forEach((t) => t.addEventListener("click", () => store.setScreen(t.dataset.screen)));
@@ -128,13 +148,33 @@ export function initRouter(store) {
 
   // Generic: any tile with data-open="<overlayName>" opens that overlay
   // (news, squadlist, ...) — matches store.openOverlay's signature directly.
-  // "calendar" is the one exception: openCalendar() also resets the month
-  // view to the current date before opening.
+  // "calendar"/"jobs" are the exceptions: each needs a bit of state reset
+  // before opening (openCalendar() resets the month view; openBrowseJobs()
+  // picks an initial selected row).
   document.querySelectorAll("[data-open]").forEach((tile) => {
     tile.addEventListener("click", () => {
       if (tile.dataset.open === "calendar") store.openCalendar();
+      else if (tile.dataset.open === "jobs") store.openBrowseJobs();
       else store.openOverlay(tile.dataset.open);
     });
+  });
+
+  // Browse Jobs overlay (M5): click a vacancy row to select it (or click the
+  // already-selected row / footer Apply to accept it on the spot — see
+  // engine/jobs.js's header for this milestone's "apply == instant accept"
+  // scope decision).
+  jobsBodyEl.addEventListener("click", (e) => {
+    const row = e.target.closest(".jb-row");
+    if (!row) return;
+    const idx = Number(row.dataset.idx);
+    if (idx === store.state.ui.jobsSelectedIndex) store.applyForSelectedJob();
+    else store.selectJobRow(idx);
+  });
+  footerJobs.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    if (el.dataset.action === "apply") store.applyForSelectedJob();
+    else if (el.dataset.action === "back") store.closeOverlay();
   });
 
   // Central's Advance tile (fable-plans/plan1.md M3): clicking the "A
@@ -256,6 +296,13 @@ export function initRouter(store) {
         if (row) store.openPlayerBio(Number(row.dataset.player));
         return;
       }
+    }
+    if (store.state.ui.overlay === "jobs") {
+      const n = store.state.jobMarket.vacancies.length;
+      const idx = store.state.ui.jobsSelectedIndex;
+      if (e.key === "ArrowDown") { store.selectJobRow(Math.min(n - 1, idx + 1)); return; }
+      if (e.key === "ArrowUp") { store.selectJobRow(Math.max(0, idx - 1)); return; }
+      if (e.key === "Enter") { store.applyForSelectedJob(); return; }
     }
     switch (e.key) {
       case "ArrowLeft": store.page(-1); break;

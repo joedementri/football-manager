@@ -11,10 +11,11 @@
 // e.g. 2014 for the 2014/15 season) so these functions work for any season,
 // not just the career's first one.
 
-import { firstWeekdayOnOrAfter, nthWeekdayOfMonth } from "../core/clock.js";
+import { firstWeekdayOnOrAfter, nthWeekdayOfMonth, addDays, isDateInRange } from "../core/clock.js";
 
 const SATURDAY = 6;
 const MONDAY = 1;
+const TUESDAY = 2;
 
 /** Career/season start: always July 1st (plan1.md ground rule #5 / M3 note). */
 export function seasonStart(seasonStartYear) {
@@ -69,4 +70,27 @@ export function intlBreakWeeks(seasonStartYear) {
     nthWeekdayOfMonth(seasonStartYear + 1, 2, MONDAY, 2), // March
   ];
   return starts.map((start) => ({ start, end: new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6) }));
+}
+
+/** Domestic cup round dates (plan1.md M5 "Competitions": "Domestic cups:
+ * knockout with round draws ... midweek dates" is said of continental comps,
+ * extended here to domestic cups too so they never collide with the weekly
+ * Saturday league fixtures). Not in any INI (cup *scheduling* is a plan-
+ * authored decision, same footing as this file's other non-INI dates — see
+ * header). First round: first Tuesday of August; subsequent rounds step 21
+ * days at a time (skipping international-break weeks like league fixtures),
+ * giving England's deepest bracket (~9 rounds) room to finish by ~April,
+ * clear of the July 1 season rollover. engine/comps/cup.js draws each round's
+ * pairing from the previous round's results, so round dates are produced
+ * lazily (one at a time, via nextCupRoundDate) rather than all upfront —
+ * there is no fixed round count to precompute. */
+export function firstCupRoundDate(seasonStartYear) {
+  return firstWeekdayOnOrAfter(seasonStartYear, 7, TUESDAY); // August
+}
+
+export function nextCupRoundDate(fromDate, seasonStartYear) {
+  const blackoutRanges = intlBreakWeeks(seasonStartYear);
+  let d = addDays(fromDate, 21);
+  while (blackoutRanges.some((r) => isDateInRange(d, r.start, r.end))) d = addDays(d, 7);
+  return d;
 }
