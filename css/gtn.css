@@ -1,0 +1,98 @@
+/* ===========================================================================
+   gtn.css — M8's Global Transfer Network overlay: scout roster + market pool
+   (hub), the new-mission builder, and a mission's found-player report.
+   Reuses .news-crumb for the breadcrumb, .ct-body's 56%/1fr list+detail
+   split and .ct-fact/.ct-actions/.ct-btn look (css/contracts.css), .sr-row/
+   .sr-results/.sr-areapicker/.sr-area-btn (css/transfers.css) and .ct-stepper
+   for every stepper — per ground rule #1 (new CSS in new files, extend —
+   don't rewrite — the existing tokens).
+   =========================================================================== */
+
+#gtn-overlay { display: none; }
+#gtn-overlay.is-active { display: block; }
+
+.gtn-body {
+  position: absolute;
+  top: 160px; left: 36px; right: 36px; bottom: 56px;
+  z-index: 7;
+}
+
+/* ----- Hub: hired scouts + market pool (left) / detail panel (right) ----- */
+.gtn-hub { display: grid; grid-template-columns: 56% 1fr; gap: 0 18px; height: 100%; }
+
+.gtn-col { display: flex; flex-direction: column; overflow-y: auto; }
+.gtn-col::-webkit-scrollbar { width: 8px; }
+.gtn-col::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+
+.gtn-section-label {
+  font-family: var(--font-ui); font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
+  color: var(--ink-dim); text-transform: uppercase;
+  padding: 10px 6px 6px;
+}
+.gtn-rows { display: flex; flex-direction: column; }
+
+.gtn-row {
+  display: grid; grid-template-columns: 30px 1.8fr 0.9fr 0.9fr 1.2fr;
+  align-items: center; gap: 8px;
+  padding: 8px 10px; cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-family: var(--font-ui); font-size: 14px;
+}
+.gtn-row:hover { background: rgba(255, 255, 255, 0.03); }
+.gtn-row__name { font-family: var(--font-cond); font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gtn-row__stars { font-size: 11px; color: var(--gold); white-space: nowrap; }
+.gtn-row.is-sel { background: linear-gradient(180deg, var(--gold-bright), var(--gold-deep)); border-radius: 4px; }
+.gtn-row.is-sel .gtn-row__name { color: var(--gold-text-dark); }
+.gtn-row.is-sel .gtn-row__stars { color: var(--gold-text-dark); }
+
+.gtn-chip {
+  justify-self: end; padding: 3px 9px; border-radius: 10px;
+  font-family: var(--font-ui); font-size: 11px; font-weight: 700; white-space: nowrap;
+}
+.gtn-chip--idle { background: rgba(255, 255, 255, 0.08); color: var(--ink-dim); }
+.gtn-chip--active { background: rgba(89, 193, 77, 0.18); color: #a7e6a0; border: 1px solid rgba(89, 193, 77, 0.35); }
+.gtn-chip--cost { background: rgba(242, 193, 78, 0.15); color: var(--gold); border: 1px solid rgba(242, 193, 78, 0.3); }
+
+.gtn-detail {
+  position: relative;
+  background: linear-gradient(160deg, rgba(30, 36, 43, 0.92), rgba(18, 22, 27, 0.92));
+  border-radius: 8px;
+  padding: 18px 20px;
+  overflow-y: auto;
+}
+.gtn-detail::-webkit-scrollbar { width: 8px; }
+.gtn-detail::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+
+/* ----- Mission form ----- */
+.gtn-form__head { font-family: var(--font-cond); font-size: 22px; font-weight: 700; margin-bottom: 14px; }
+.gtn-form__row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+.gtn-form__row--tags { align-items: flex-start; }
+.gtn-form__label { font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim); width: 110px; flex: 0 0 auto; }
+
+.gtn-tag-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.gtn-tag {
+  padding: 5px 12px; border-radius: 14px; cursor: pointer;
+  font-family: var(--font-ui); font-size: 12px; font-weight: 600;
+  border: 1px solid rgba(120, 140, 160, 0.25); background: rgba(255, 255, 255, 0.05); color: var(--ink-dim);
+}
+.gtn-tag.is-sel { background: linear-gradient(180deg, var(--gold-bright), var(--gold-deep)); color: var(--gold-text-dark); border-color: transparent; }
+
+/* ----- Report: found players (left, reuses .sr-row/.sr-results) / detail (right) ----- */
+.gtn-report__head { font-family: var(--font-cond); font-size: 22px; font-weight: 700; margin-bottom: 12px; }
+.gtn-report__body { display: grid; grid-template-columns: 56% 1fr; gap: 0 18px; height: calc(100% - 40px); }
+.gtn-report__body .sr-results { flex: initial; }
+
+#gtn-report-detail {
+  position: relative;
+  background: linear-gradient(160deg, rgba(30, 36, 43, 0.92), rgba(18, 22, 27, 0.92));
+  border-radius: 8px;
+  padding: 18px 20px;
+  overflow-y: auto;
+}
+#gtn-report-detail::-webkit-scrollbar { width: 8px; }
+#gtn-report-detail::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+#gtn-report-detail .ct-detail__head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+
+/* A fuzzy "62-74" range reads wider than a single number — trimmed down a
+   touch so it still lines up with the rest of a .sr-row/.gtn-row's numbers. */
+.gtn-fuzzy { font-size: 13px; }

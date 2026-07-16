@@ -14,6 +14,7 @@ import { money } from "../core/format.js";
 import { positionInfo, AREAS } from "../config/positions.js";
 import { eligibleFreeAgentTargets } from "../engine/freeagents.js";
 import { MAX_COUNTER_OFFERS } from "../config/transferai.js";
+import { fuzzyDisplay } from "./gtnui.js";
 
 function prompt(glyphClass, glyphLabel, action, label) {
   return `<span class="prompt" data-action="${action}"><span class="btn-glyph ${glyphClass}">${glyphLabel}</span> ${label}</span>`;
@@ -28,10 +29,12 @@ function roleLabel(role) {
  * Search Players
  * ========================================================================== */
 
-/** World-wide search pool (real numbers — fuzzy GTN ranges for un-scouted
- * players land in M8), filtered by the Search Players form. Capped at 60
- * results, sorted by overall — a search-refinement nudge doubles as the
- * result-count limiter. */
+/** World-wide search pool, filtered by the Search Players form. Capped at 60
+ * results, sorted by *true* overall — filtering/sorting always uses the real
+ * number (the engine always knows it), only the OVR column's *display*
+ * degrades to engine/gtn.js's fuzzy range for a player the user hasn't fully
+ * scouted (M8: "Un-scouted players in Search show ranges too — scouting is
+ * the only way to see true numbers"). */
 export function computeSearchResults(state) {
   const f = state.ui.transferSearch;
   let pool = f.freeAgentsOnly
@@ -85,7 +88,7 @@ function renderSearchResults(state) {
         `<span class="sr-row__name">${p.commonName}</span>` +
         `<span class="sr-row__pos">${p.position}</span>` +
         `<span class="sr-row__age num">${p.age}</span>` +
-        `<span class="sr-row__ovr num">${p.overall}</span>` +
+        `<span class="sr-row__ovr num gtn-fuzzy">${fuzzyDisplay(p.scouting.ovrRange, p.scouting.level)}</span>` +
         `<span class="sr-row__value num">${money(p.value)}</span>` +
         `<svg class="crest crest--xs"><use href="#crest-${club.id}"></use></svg>` +
       `</div>`

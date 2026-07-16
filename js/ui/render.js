@@ -12,6 +12,9 @@ import { toEpochDay } from "../core/clock.js";
 import { domesticCupFor } from "../engine/objectives.js";
 import { cupStatusForClub } from "../engine/comps/cup.js";
 import { squadWageBill } from "../engine/wage.js";
+import {
+  primaryMission, missionNewCount, missionUpdateCount, missionTitle, missionTagsLabel,
+} from "../engine/gtn.js";
 
 function flagSpan(code) {
   return `<span class="flag" data-flag="${code}"></span>`;
@@ -63,19 +66,39 @@ function renderDayStrip(state) {
   }).join("");
 }
 
+/** M8: replaces the M0-era stub with the same "one group at a time" preview
+ * the Transfers hub tile shows (engine/gtn.js's primaryMission) — the most
+ * attention-worthy active mission, or an empty state before the user has
+ * ever hired a scout. */
 function renderGtn(state) {
-  const g = state.central.gtn;
-  document.querySelector(".c-gtn__scout .name").textContent = g.scoutName;
+  const mission = primaryMission(state.gtn.missions);
+  const scoutName = document.querySelector(".c-gtn__scout .name");
   const counts = document.querySelectorAll(".c-gtn__scout .counts .c");
-  counts[0].innerHTML = `<span class="pip green">+</span> ${g.newCount} New`;
-  counts[1].innerHTML = `<span class="pip blue">i</span> ${g.updateCount} Updates`;
-  document.querySelector(".scout-list").innerHTML = g.rows.map((r) => (
-    `<div class="scout-row">` +
-      `<span class="avatar"></span>` +
-      `<span class="who"><b>${r.name}</b><span class="pos">${r.pos} ${flagSpan(r.flag)}</span></span>` +
-      `<svg class="crest club-crest"><use href="#${r.clubCrest}"></use></svg>` +
-    `</div>`
-  )).join("");
+  const list = document.querySelector(".scout-list");
+
+  if (!mission) {
+    scoutName.textContent = state.gtn.scouts.length ? "No active missions" : "No scouts hired";
+    counts[0].innerHTML = `<span class="pip green">+</span> 0 New`;
+    counts[1].innerHTML = `<span class="pip blue">i</span> 0 Updates`;
+    list.innerHTML = "";
+    return;
+  }
+
+  const scout = state.gtn.scouts.find((s) => s.id === mission.scoutId);
+  scoutName.textContent = `${missionTitle(mission)} — ${missionTagsLabel(mission)}`;
+  counts[0].innerHTML = `<span class="pip green">+</span> ${missionNewCount(mission)} New`;
+  counts[1].innerHTML = `<span class="pip blue">i</span> ${missionUpdateCount(mission)} Updates`;
+  const players = mission.foundPlayerIds.slice(-3).reverse().map((id) => state.playersById.get(id)).filter(Boolean);
+  list.innerHTML = players.map((p) => {
+    const club = state.clubsById.get(p.clubId);
+    return (
+      `<div class="scout-row">` +
+        `<span class="avatar"></span>` +
+        `<span class="who"><b>${p.commonName}</b><span class="pos">${p.position} ${flagSpan(p.nationId)}</span></span>` +
+        `<svg class="crest club-crest"><use href="#crest-${club.id}"></use></svg>` +
+      `</div>`
+    );
+  }).join("") || `<div class="empty"><span class="lbl">Awaiting first report from ${scout ? scout.commonName : "your scout"}</span></div>`;
 }
 
 function renderCentralNewsList(state) {
@@ -144,20 +167,39 @@ export function renderSquad(state) {
 }
 
 /* ----------------------------- Transfers ----------------------------------- */
+/** M8: the scouted-group tile now previews engine/gtn.js's primaryMission —
+ * same data source/logic as Central's renderGtn above, just laid out in this
+ * tile's own markup (title+tags header, up to 4 player cards). */
 export function renderTransfers(state) {
-  const g = state.transfers.scoutedGroup;
-  document.querySelector(".tr-striker__title").textContent = g.title;
-  document.querySelector(".tr-striker__tags").textContent = g.tags;
+  const mission = primaryMission(state.gtn.missions);
+  const titleEl = document.querySelector(".tr-striker__title");
+  const tagsEl = document.querySelector(".tr-striker__tags");
   const counts = document.querySelectorAll(".tr-striker__top .counts .c");
-  counts[0].innerHTML = `<span class="pip green">+</span> ${g.newCount} New`;
-  counts[1].innerHTML = `<span class="pip blue">i</span> ${g.updateCount} Updates`;
-  document.querySelector(".tr-striker .pcards").innerHTML = g.players.map((p) => (
-    `<div class="pcard">` +
-      `<span class="avatar"></span>` +
-      `<div class="meta"><div class="nm">${p.name}</div><div class="pos">${p.pos} ${flagSpan(p.flag)}</div></div>` +
-      `<svg class="crest club-crest"><use href="#${p.clubCrest}"></use></svg>` +
-    `</div>`
-  )).join("");
+  const cardsEl = document.querySelector(".tr-striker .pcards");
+
+  if (!mission) {
+    titleEl.textContent = state.gtn.scouts.length ? "NO ACTIVE MISSIONS" : "NO SCOUTS HIRED";
+    tagsEl.textContent = "Visit the Global Transfer Network tile to get started";
+    counts[0].innerHTML = `<span class="pip green">+</span> 0 New`;
+    counts[1].innerHTML = `<span class="pip blue">i</span> 0 Updates`;
+    cardsEl.innerHTML = "";
+  } else {
+    titleEl.textContent = missionTitle(mission).toUpperCase();
+    tagsEl.textContent = missionTagsLabel(mission);
+    counts[0].innerHTML = `<span class="pip green">+</span> ${missionNewCount(mission)} New`;
+    counts[1].innerHTML = `<span class="pip blue">i</span> ${missionUpdateCount(mission)} Updates`;
+    const players = mission.foundPlayerIds.slice(-4).reverse().map((id) => state.playersById.get(id)).filter(Boolean);
+    cardsEl.innerHTML = players.map((p) => {
+      const club = state.clubsById.get(p.clubId);
+      return (
+        `<div class="pcard">` +
+          `<span class="avatar"></span>` +
+          `<div class="meta"><div class="nm">${p.commonName}</div><div class="pos">${p.position} ${flagSpan(p.nationId)}</div></div>` +
+          `<svg class="crest club-crest"><use href="#crest-${club.id}"></use></svg>` +
+        `</div>`
+      );
+    }).join("") || `<div class="empty"><span class="lbl">Awaiting first report</span></div>`;
+  }
 
   // M6: real numbers — remaining transfer budget (spent by engine/
   // contracts.js's renewal fees, reset every rollover) and remaining weekly

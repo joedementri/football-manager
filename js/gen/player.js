@@ -26,6 +26,7 @@ import { randomName } from "./names.js";
 import { ARCHETYPES } from "./archetypes.js";
 import { computeWage } from "../engine/wage.js";
 import { computeValue } from "../engine/value.js";
+import { scoutingRangeFor } from "../config/scouting.js";
 
 let nextPlayerId = 1;
 export function resetPlayerIdCounter(start = 1) {
@@ -220,7 +221,13 @@ export function generatePlayer(opts) {
     growthPeriod: { minutes: 0, ratingSum: 0, ratingCount: 0 },
     kitNumber: null, // assigned by gen/squad.js once the full 24-man list exists
     isYouth: false,
-    scouting: { level: 3, ovrRange: [overall, overall], potRange: [potential, potential] },
+    // M8: nobody starts fully known — generation stays club-agnostic (this
+    // file never sees which club the user picked, see the header's "keep
+    // generation and consumption strictly separated"). core/store.js's
+    // createCareerState raises the user's own starting squad to level 3
+    // right after world-gen; engine/contracts.js's movePlayerToClub does the
+    // same the moment any player later joins the user's club.
+    scouting: { level: 0, ovrRange: scoutingRangeFor(overall, 0), potRange: scoutingRangeFor(potential, 0) },
     // Set true by engine/retirement.js (M5) once a player's retirement roll
     // hits at the January board-review date; they actually retire (and a
     // regen replaces them) at the July 1 rollover — plan1.md: "announce in

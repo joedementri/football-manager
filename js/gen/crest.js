@@ -98,10 +98,11 @@ export function mountCrest(container, club, width = 48) {
 
 /** Ensures every given club has a `#crest-<id>` <symbol> in the page's SVG
  * sprite, skipping any already injected. js/main.js calls this at boot for
- * the user's own league; js/core/router.js (M5) calls it again after
- * accepting a Browse Jobs offer, since a new club/league means new crests
- * that were never in the sprite (the whole world's ~600 clubs aren't
- * pre-injected up front — see main.js's header for why). */
+ * every club in the world (M8: GTN missions and Search Players both surface
+ * players from any club, not just the user's own league); js/core/router.js
+ * (M5) calls it again after accepting a Browse Jobs offer, which is a no-op
+ * today but stays as a safety net for any future save that starts a fresh
+ * job without going through the boot path above. */
 export function injectClubCrestSymbols(clubs) {
   const sprite = document.querySelector(".svg-sprite");
   for (const club of clubs) {

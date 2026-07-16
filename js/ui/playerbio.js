@@ -28,12 +28,14 @@ function cmToFtIn(cm) {
   return `${ft}'${inch}"`;
 }
 
-function stars(n) {
+// Exported for reuse by ui/gtnui.js (M8's scout Experience/Judgment stars +
+// a fully-scouted GTN find's potential-band line share this exact look).
+export function stars(n) {
   return "&#9733;".repeat(n) + "&#9734;".repeat(5 - n);
 }
 
 /** plan1.md's potential-band table. */
-function potentialBand(player, seasonStartYear) {
+export function potentialBand(player, seasonStartYear) {
   const youngWithUpside = player.age <= 23 && player.potential > player.overall;
   if (youngWithUpside) {
     if (player.potential >= 90) return "Has potential to be special";

@@ -7,8 +7,10 @@
 // (engine/objectives.js's board emails). createCareerState()
 // builds a fresh GameState from a New Game wizard's choices + gen/world.js's
 // output, and hydrateFromSave() rebuilds one from a loaded save
-// (core/db.js). Remaining stub content (news articles, Transfers' scouted
-// group, Season's cup bracket) awaits later milestones (news.js, M7, M5).
+// (core/db.js). Remaining stub content (the Central/Season news articles'
+// body copy) awaits a later milestone (news.js) — everything else
+// createStubExtras() once stood in for (Transfers' scouted group, Season's
+// cup bracket, GTN) is real as of M5/M7/M8.
 // UI modules (js/ui/*, js/core/router.js) must only ever read from
 // `store.state` and call mutator methods below — never mutate state or hold
 // game logic themselves, so the sim stays testable headless later.
@@ -27,6 +29,7 @@ import * as negotiation from "../engine/negotiation.js";
 import * as freeagents from "../engine/freeagents.js";
 import * as transferai from "../engine/transferai.js";
 import { reallocateBudget, requestFundsFromBoard } from "../engine/finances.js";
+import * as gtnEngine from "../engine/gtn.js";
 
 export const SCREENS = ["central", "squad", "transfers", "office", "season"];
 
@@ -201,16 +204,9 @@ function createStubExtras(today) {
         title: "ACCRINGTON FACE DIFFICULT SEASON",
         date: today,
       },
-      gtn: {
-        scoutName: "G. SHENTON",
-        newCount: 12,
-        updateCount: 0,
-        rows: [
-          { name: "James Wilson", pos: "ST", flag: "eng", clubCrest: "crest-a" },
-          { name: "Darren Bent", pos: "ST", flag: "eng", clubCrest: "crest-b" },
-          { name: "Daniel Nardiello", pos: "ST", flag: "wal", clubCrest: "crest-c" },
-        ],
-      },
+      // M8: the GTN preview (ui/render.js's renderGtn) now reads real data
+      // (state.gtn.missions via engine/gtn.js's primaryMission) instead of a
+      // stub — see this file's own header for the "no longer a stub" list.
       newsList: [
         { text: "Digby Declines Move to Newport County", accent: "" },
         { text: "LOSC Lille and Juventus in Llorente Talks", accent: "r" },
@@ -218,20 +214,11 @@ function createStubExtras(today) {
       ],
     },
 
-    transfers: {
-      scoutedGroup: {
-        title: "STRIKER",
-        tags: "Pacey, Prolific",
-        newCount: 5,
-        updateCount: 0,
-        players: [
-          { name: "Brian Montenegro", pos: "ST", flag: "par", clubCrest: "crest-c" },
-          { name: "Dwight Gayle", pos: "ST", flag: "eng", clubCrest: "crest-a" },
-          { name: "Nouha Dicko", pos: "ST", flag: "mli", clubCrest: "crest-d" },
-          { name: "Matěj Vydra", pos: "ST", flag: "cze", clubCrest: "crest-b" },
-        ],
-      },
-    },
+    // M8: the Transfers hub's scouted-group tile (ui/render.js's
+    // renderTransfers) reads real data the same way — state.transfers itself
+    // still needs to exist as a plain object here since deriveIndices()
+    // below attaches `.listings`/`.pendingOffers`/`.negotiation` onto it.
+    transfers: {},
 
     news: NEWS_DATA,
   };
@@ -276,6 +263,20 @@ function createUiDefaults(today) {
     // Request Funds overlay: the amount being adjusted before submission, and
     // the outcome of the last request/reallocation (shown as a banner).
     requestFunds: { amount: 100000, lastResult: null },
+
+    // M8 (ui/gtnui.js): the GTN overlay is one overlay with 3 internal
+    // views — 'hub' (hired scouts + market pool + mission list), 'missionForm'
+    // (new-mission builder for the selected idle scout) and 'report' (one
+    // mission's found players, fuzzy ratings, Bid/Loan actions). Purely
+    // presentational, same footing as transferSearch/sellList above — the
+    // real data (state.gtn.scouts/pool/missions) lives outside `ui`.
+    gtn: {
+      view: "hub",
+      selectedScoutId: null, selectedIsPool: false,
+      missionDraft: { scoutId: null, region: "ALL", area: "ALL", tags: [], minAge: 15, maxAge: 35, maxValue: 0, tierIndex: 0 },
+      reportMissionId: null, reportSelectedPlayerId: null,
+      lastError: null,
+    },
   };
 }
 
@@ -447,7 +448,19 @@ export function createCareerState({ managerName, club, league, world, seasonStar
     ui: createUiDefaults(today),
   };
 
-  return deriveIndices(state, { allClubs: world.clubs, allLeagues: world.leagues, allNations: world.nations, allCups: world.cups });
+  const built = deriveIndices(state, { allClubs: world.clubs, allLeagues: world.leagues, allNations: world.nations, allCups: world.cups });
+
+  // M8: the user's own starting XI/squad is always fully known from day one
+  // (gen/player.js generates every player at scouting level 0 — see its own
+  // header — since generation can't know which club the user picked; this is
+  // the one place that does). Every player who joins the user's club later
+  // gets the same treatment via engine/contracts.js's movePlayerToClub.
+  for (const p of built.squad.roster) {
+    p.scouting = { level: 3, ovrRange: [p.overall, p.overall], potRange: [p.potential, p.potential] };
+  }
+  gtnEngine.createInitialGtnState(built);
+
+  return built;
 }
 
 /**
@@ -493,12 +506,18 @@ export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
   // pre-M7 save that never had this field at all (undefined, not just empty).
   if (saved.newsTransfer !== undefined) state.news.transfer = saved.newsTransfer;
 
-  return deriveIndices(state, {
+  const built = deriveIndices(state, {
     allClubs: clubs, allLeagues: leagues, allNations: nations, allCups: cups,
     results: saved.results, clubLeague: saved.clubLeague, cups: saved.cupsState, finances: saved.finances,
     transferListings: saved.transferListings, transferPendingOffers: saved.transferPendingOffers,
     clubTransferBudgets: saved.clubTransferBudgets,
   });
+
+  // M8: a pre-M8 save never had state.gtn at all — same "fresh default for
+  // an older save" footing as jobMarket's own `|| { vacancies: [] }` above.
+  built.gtn = saved.gtn || gtnEngine.createInitialGtnState(built);
+
+  return built;
 }
 
 /**
@@ -673,6 +692,7 @@ export class Store {
     transferai.runWeeklyTransferActivity(this.state, day);
     transferai.checkIncomingBidsOnListedPlayers(this.state, day);
     negotiation.resolveLoanReturns(this.state, day);
+    gtnEngine.runDailyGtnActivity(this.state, day);
     simulateWorldDay(this.state, day);
     if (events.includes("season-rollover")) rolloverSeason(this.state);
   }
@@ -1106,5 +1126,198 @@ export class Store {
     r.lastResult = requestFundsFromBoard(this.state, r.amount);
     this.emit("requestfunds", null);
     this.emit("advance", null);
+  }
+
+  /* ============================================================================
+   * M8: Global Transfer Network — engine/gtn.js owns the actual state
+   * machine (scout market, missions, fuzzy-range reveal); these methods just
+   * call into it and emit "gtn" for ui/gtnui.js to re-render from, same
+   * contract as every other M7 section above.
+   * ========================================================================== */
+
+  /** Opens the GTN hub (scout roster + market pool + mission list),
+   * defaulting the selection to the first hired scout, or the first market
+   * candidate if none are hired yet. */
+  openGtn() {
+    const g = this.state.gtn, ui = this.state.ui.gtn;
+    ui.view = "hub";
+    ui.lastError = null;
+    const firstScout = g.scouts[0];
+    ui.selectedScoutId = firstScout ? firstScout.id : (g.pool[0] ? g.pool[0].id : null);
+    ui.selectedIsPool = !firstScout && !!g.pool[0];
+    this.openOverlay("gtn");
+  }
+
+  /** Central's GTN tile / Transfers' scouted-group tile: jump straight to
+   * the most attention-worthy mission's report (most new finds + updates),
+   * or fall back to the hub if no mission has ever been started. */
+  openGtnHubTile() {
+    const primary = gtnEngine.primaryMission(this.state.gtn.missions);
+    if (primary) this.openGtnMissionReport(primary.id);
+    else this.openGtn();
+  }
+
+  selectGtnRow(id, isPool) {
+    const ui = this.state.ui.gtn;
+    ui.selectedScoutId = id;
+    ui.selectedIsPool = isPool;
+    ui.lastError = null;
+    this.emit("gtn", null);
+  }
+
+  gtnHireSelected() {
+    const ui = this.state.ui.gtn;
+    if (!ui.selectedIsPool) return;
+    const idx = this.state.gtn.pool.findIndex((c) => c.id === ui.selectedScoutId);
+    if (idx === -1) return;
+    const result = gtnEngine.hireScout(this.state, idx);
+    ui.lastError = result.error || null;
+    if (result.ok) { ui.selectedScoutId = result.scout.id; ui.selectedIsPool = false; }
+    this.emit("gtn", null);
+    this.emit("advance", null); // Transfers hub's Finances tile reflects the spend
+  }
+
+  gtnSackSelected() {
+    const ui = this.state.ui.gtn;
+    if (ui.selectedIsPool || ui.selectedScoutId == null) return;
+    const result = gtnEngine.sackScout(this.state, ui.selectedScoutId);
+    if (result.ok) {
+      const g = this.state.gtn;
+      ui.selectedScoutId = g.scouts[0] ? g.scouts[0].id : (g.pool[0] ? g.pool[0].id : null);
+      ui.selectedIsPool = !g.scouts[0] && !!g.pool[0];
+    }
+    this.emit("gtn", null);
+    this.emit("advance", null);
+  }
+
+  /** Opens the new-mission builder for the currently selected (hired, idle)
+   * scout — a no-op for a pool candidate or a scout already on a mission. */
+  gtnOpenMissionForm() {
+    const ui = this.state.ui.gtn;
+    if (ui.selectedIsPool) return;
+    const scout = this.state.gtn.scouts.find((s) => s.id === ui.selectedScoutId);
+    if (!scout || scout.missionId) return;
+    ui.missionDraft = { scoutId: scout.id, region: "ALL", area: "ALL", tags: [], minAge: 15, maxAge: 35, maxValue: 0, tierIndex: 0 };
+    ui.lastError = null;
+    ui.view = "missionForm";
+    this.emit("gtn", null);
+  }
+
+  gtnCancelMissionForm() {
+    this.state.ui.gtn.view = "hub";
+    this.emit("gtn", null);
+  }
+
+  gtnSetMissionArea(area) {
+    this.state.ui.gtn.missionDraft.area = area;
+    this.emit("gtn", null);
+  }
+
+  /** Cycles the mission's target nation through an alphabetised list (plus
+   * "ALL" at the front) — the plan's "map-ish region picker" simplified to a
+   * stepper, same footing as this project's other non-visual-map pickers. */
+  gtnCycleMissionRegion(delta) {
+    const ids = ["ALL", ...this.state.staticData.nations.slice().sort((a, b) => a.name.localeCompare(b.name)).map((n) => n.id)];
+    const d = this.state.ui.gtn.missionDraft;
+    const idx = Math.max(0, ids.indexOf(d.region));
+    d.region = ids[(idx + delta + ids.length) % ids.length];
+    this.emit("gtn", null);
+  }
+
+  /** Toggles a player-type tag (config/scouting.js's SCOUT_TAGS) on/off, up
+   * to 2 at once (plan1.md's own example: "Pacey, Prolific") — a 3rd pick
+   * bumps the oldest one off rather than being ignored outright. */
+  gtnToggleMissionTag(tagId) {
+    const tags = this.state.ui.gtn.missionDraft.tags;
+    const i = tags.indexOf(tagId);
+    if (i !== -1) tags.splice(i, 1);
+    else {
+      if (tags.length >= 2) tags.shift();
+      tags.push(tagId);
+    }
+    this.emit("gtn", null);
+  }
+
+  gtnAdjustMissionAge(field, delta) {
+    const d = this.state.ui.gtn.missionDraft;
+    d[field] = Math.max(15, Math.min(40, d[field] + delta));
+    if (d.minAge > d.maxAge) { if (field === "minAge") d.maxAge = d.minAge; else d.minAge = d.maxAge; }
+    this.emit("gtn", null);
+  }
+
+  gtnAdjustMissionValue(deltaAbs) {
+    const d = this.state.ui.gtn.missionDraft;
+    d.maxValue = Math.max(0, d.maxValue + deltaAbs);
+    this.emit("gtn", null);
+  }
+
+  gtnSetMissionTier(tierIndex) {
+    this.state.ui.gtn.missionDraft.tierIndex = tierIndex;
+    this.emit("gtn", null);
+  }
+
+  gtnSubmitMission() {
+    const ui = this.state.ui.gtn;
+    const result = gtnEngine.startMission(this.state, ui.missionDraft);
+    ui.lastError = result.error || null;
+    if (result.ok) {
+      ui.view = "hub";
+      ui.selectedScoutId = ui.missionDraft.scoutId;
+      ui.selectedIsPool = false;
+    }
+    this.emit("gtn", null);
+    this.emit("advance", null); // Finances tile changes on spend
+  }
+
+  /** Opens (or switches to, if the overlay's already open) a specific
+   * mission's report — marks its finds "seen" (engine/gtn.js's viewMission)
+   * so the New/Updates badges clear the moment the user actually looks. */
+  openGtnMissionReport(missionId) {
+    gtnEngine.viewMission(this.state, missionId);
+    const mission = this.state.gtn.missions.find((m) => m.id === missionId);
+    const ui = this.state.ui.gtn;
+    ui.reportMissionId = missionId;
+    ui.reportSelectedPlayerId = mission && mission.foundPlayerIds.length ? mission.foundPlayerIds[mission.foundPlayerIds.length - 1] : null;
+    ui.view = "report";
+    if (this.state.ui.overlay !== "gtn") this.openOverlay("gtn");
+    else this.emit("gtn", null);
+  }
+
+  gtnSelectReportPlayer(playerId) {
+    this.state.ui.gtn.reportSelectedPlayerId = playerId;
+    this.emit("gtn", null);
+  }
+
+  /** The report footer's R1 prompt — cycles to the next mission's report
+   * without leaving the overlay (matches the reference screenshot's R-button
+   * group-cycling on the Transfers hub tile, applied here to the full report
+   * view instead of just the tile preview). */
+  gtnCycleReportMission(delta) {
+    const missions = this.state.gtn.missions;
+    if (missions.length < 2) return;
+    const idx = missions.findIndex((m) => m.id === this.state.ui.gtn.reportMissionId);
+    const next = missions[(idx + delta + missions.length) % missions.length];
+    this.openGtnMissionReport(next.id);
+  }
+
+  /** Abandons a mission (hub detail panel's "Cancel Mission") — the scout
+   * goes idle immediately; anything already discovered stays known
+   * (cancelling doesn't un-scout). Backs out to the hub if the mission being
+   * cancelled is also the one currently open in the report view. */
+  gtnCancelMission(missionId) {
+    gtnEngine.cancelMission(this.state, missionId);
+    if (this.state.ui.gtn.reportMissionId === missionId) this.state.ui.gtn.view = "hub";
+    this.emit("gtn", null);
+    this.emit("advance", null);
+  }
+
+  /** Footer/keyboard Back: steps out of a nested view (missionForm/report)
+   * to the hub first, only closing the overlay once already there — same
+   * "Back backs out one level at a time" precedent as closeOverlay's own
+   * overlayStack nesting. */
+  gtnBack() {
+    const ui = this.state.ui.gtn;
+    if (ui.view !== "hub") { ui.view = "hub"; this.emit("gtn", null); }
+    else this.closeOverlay();
   }
 }

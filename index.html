@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="css/jobs.css" />
   <link rel="stylesheet" href="css/contracts.css" />
   <link rel="stylesheet" href="css/transfers.css" />
+  <link rel="stylesheet" href="css/gtn.css" />
 </head>
 <body>
 
@@ -204,7 +205,7 @@
           <div class="dots"><i class="on"></i><i></i><i></i><i></i><i></i></div>
         </div>
 
-        <div class="tile c-gtn">
+        <div class="tile c-gtn is-link" data-open="gtnreport">
           <div class="panel-title">GLOBAL TRANSFER NETWORK</div>
           <div class="c-gtn__scout">
             <span class="name">G. SHENTON</span>
@@ -381,7 +382,7 @@
 
       <!-- =====================  TRANSFERS  ========================= -->
       <section class="screen screen--transfers" data-screen="transfers">
-        <div class="tile tr-striker">
+        <div class="tile tr-striker is-link" data-open="gtnreport">
           <div class="tr-striker__top">
             <div>
               <div class="tr-striker__title">STRIKER</div>
@@ -411,7 +412,7 @@
           <div class="tile__desc">Make players available for transfer or loan</div>
           <div class="dots"><i class="on"></i><i></i><i></i></div>
         </div>
-        <div class="tile has-photo tr-gtn">
+        <div class="tile has-photo tr-gtn is-link" data-open="gtn">
           <div class="tile__title">Global Transfer<br>Network</div>
           <div class="tile__desc">Find players worldwide by building your transfer network</div>
         </div>
@@ -698,6 +699,16 @@
         <div class="rf-body" id="rf-body"><!-- built by ui/transfersui.js --></div>
       </div>
 
+      <!-- =====================  GLOBAL TRANSFER NETWORK OVERLAY  ====== -->
+      <div id="gtn-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">TRANSFERS</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur" id="gtn-crumb-cur">GLOBAL TRANSFER NETWORK</span>
+        </div>
+        <div class="gtn-body" id="gtn-body"><!-- built by ui/gtnui.js --></div>
+      </div>
+
       <!-- =====================  FOOTER PROMPTS  ==================== -->
       <footer class="footer" id="footer-main">
         <span class="prompt" data-prompt="select"><span class="btn-glyph a">A</span> Select</span>
@@ -740,6 +751,7 @@
       <footer class="footer" id="footer-negotiation" hidden><!-- built by ui/transfersui.js (prompts change per phase) --></footer>
       <footer class="footer" id="footer-selllist" hidden><!-- built by ui/transfersui.js (prompts change with selection) --></footer>
       <footer class="footer" id="footer-requestfunds" hidden><!-- built by ui/transfersui.js --></footer>
+      <footer class="footer" id="footer-gtn" hidden><!-- built by ui/gtnui.js (prompts change per view) --></footer>
 
       <!-- =====================  DELETE SAVE CONFIRM  ================ -->
       <div class="confirm-modal" id="confirm-delete-modal" hidden>

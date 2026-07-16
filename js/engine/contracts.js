@@ -177,6 +177,16 @@ export function movePlayerToClub(state, player, newClubId) {
   player.clubId = newClubId;
   if (!state.playersByClub.has(newClubId)) state.playersByClub.set(newClubId, []);
   state.playersByClub.get(newClubId).push(player);
+
+  // M8: signing for the user's own club always reveals a player fully —
+  // every path that acquires a player for state.club.id (negotiation.js's
+  // fee-talk completion, freeagents.js's lapsed pre-contract, this file's
+  // own Bosman safety net) funnels through here, so this is the one place
+  // that needs to raise scouting.level rather than each of those files
+  // remembering to do it themselves.
+  if (newClubId === state.club.id) {
+    player.scouting = { level: 3, ovrRange: [player.overall, player.overall], potRange: [player.potential, player.potential] };
+  }
 }
 
 /** Weighted pick toward clubs whose generation-time mean overall is close to

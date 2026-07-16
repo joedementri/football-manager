@@ -280,6 +280,44 @@ function deserializePendingOffer(o) {
   return { ...o, dueDate: fromEpochDay(o.dueDate) };
 }
 
+/** M8: state.gtn (engine/gtn.js — hired scouts, the weekly hire pool, and
+ * every mission's live progress) — persists directly, same rationale as
+ * transferListings/clubTransferBudgets above (none of it is re-derivable
+ * from the seed alone: which scouts are hired, what a mission has already
+ * found, is genuine play history). Only the Date fields need the usual
+ * epoch-day round-trip; everything else (stars, ids, tag lists, found-player
+ * id arrays) is already plain JSON. */
+function serializeGtnState(g) {
+  return {
+    nextId: g.nextId,
+    lastSalaryPeriod: g.lastSalaryPeriod,
+    poolRefreshDate: toEpochDay(g.poolRefreshDate),
+    pool: g.pool,
+    scouts: g.scouts.map((s) => ({ ...s, hiredDate: toEpochDay(s.hiredDate) })),
+    missions: g.missions.map((m) => ({
+      ...m,
+      startDate: toEpochDay(m.startDate),
+      endDate: toEpochDay(m.endDate),
+      nextReportDate: toEpochDay(m.nextReportDate),
+    })),
+  };
+}
+function deserializeGtnState(g) {
+  return {
+    nextId: g.nextId,
+    lastSalaryPeriod: g.lastSalaryPeriod,
+    poolRefreshDate: fromEpochDay(g.poolRefreshDate),
+    pool: g.pool,
+    scouts: g.scouts.map((s) => ({ ...s, hiredDate: fromEpochDay(s.hiredDate) })),
+    missions: g.missions.map((m) => ({
+      ...m,
+      startDate: fromEpochDay(m.startDate),
+      endDate: fromEpochDay(m.endDate),
+      nextReportDate: fromEpochDay(m.nextReportDate),
+    })),
+  };
+}
+
 /** GameState -> a small, IndexedDB-ready blob: static reference data
  * (leagues/clubs/nations/cups) is deliberately excluded — gen/world.js
  * re-fetches it from data/*.json on load — only what generation/play
@@ -329,6 +367,9 @@ export function serializeSave(state) {
     // fields to convert) so a session's transfer news survives a reload
     // instead of silently reverting to the hardcoded stub headlines.
     newsTransfer: state.news?.transfer || [],
+    // M8: guarded like transferListings above — dev/tests.js's hand-built
+    // fake states from earlier milestones predate state.gtn entirely.
+    gtn: state.gtn ? serializeGtnState(state.gtn) : null,
   };
 }
 
@@ -354,6 +395,7 @@ export function deserializeSave(saved) {
     transferPendingOffers: (saved.transferPendingOffers || []).map(deserializePendingOffer),
     clubTransferBudgets: new Map(saved.clubTransferBudgets || []),
     newsTransfer: saved.newsTransfer,
+    gtn: saved.gtn ? deserializeGtnState(saved.gtn) : null,
   };
 }
 

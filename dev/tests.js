@@ -51,6 +51,15 @@ import { eligibleFreeAgentTargets, startApproach, submitApproach } from "../js/e
 import {
   runWeeklyTransferActivity, checkIncomingBidsOnListedPlayers, acceptIncomingBid, rejectIncomingBid,
 } from "../js/engine/transferai.js";
+import {
+  createInitialGtnState, hireScout, sackScout, startMission, cancelMission, viewMission,
+  runDailyGtnActivity, missionNewCount, missionUpdateCount, primaryMission,
+} from "../js/engine/gtn.js";
+import {
+  POOL_SIZE, MAX_HIRED_SCOUTS, hireCost, sackCost, missionCost, scoutingRangeFor,
+  RANGE_HALF_WIDTH_BY_LEVEL, FIRST_REPORT_DAYS, REPORT_INTERVAL_DAYS,
+} from "../js/config/scouting.js";
+import { movePlayerToClub } from "../js/engine/contracts.js";
 
 const groups = []; // [{ title, results: [{name, pass, detail}] }]
 let current = null;
@@ -1041,6 +1050,168 @@ async function run() {
       const result = rejectIncomingBid(rejectState, rejectEmail.action.bidId);
       assert("rejectIncomingBid succeeds and leaves the player at the user's club", result.ok === true && otherPlayer.clubId === clubIdBefore);
     }
+  }
+
+  /* ================= M8 — GTN scouting ================= */
+
+  group("gen/player.js — M8 default scouting (level 0, no INI leak)");
+  {
+    const sample = world.players.slice(0, 500);
+    assert("every freshly generated player starts at scouting level 0", sample.every((p) => p.scouting.level === 0));
+    const p = sample[0];
+    assert("level-0 ovrRange matches config/scouting.js's ±12 half-width (clamped 1-99)",
+      deepEqual(p.scouting.ovrRange, scoutingRangeFor(p.overall, 0)));
+    assert("level-0 potRange matches the same half-width table", deepEqual(p.scouting.potRange, scoutingRangeFor(p.potential, 0)));
+  }
+
+  group("config/scouting.js — scoutingRangeFor half-widths (plan1.md M8 verbatim: ±6/±3/exact)");
+  {
+    assert("half-width table is [12, 6, 3, 0] (level 0 authored, 1-3 are plan1.md's own numbers)",
+      deepEqual(RANGE_HALF_WIDTH_BY_LEVEL, [12, 6, 3, 0]));
+    assert("level 1 -> ±6", deepEqual(scoutingRangeFor(70, 1), [64, 76]));
+    assert("level 2 -> ±3", deepEqual(scoutingRangeFor(70, 2), [67, 73]));
+    assert("level 3 -> exact", deepEqual(scoutingRangeFor(70, 3), [70, 70]));
+    assert("range never drops below 1 or exceeds 99", deepEqual(scoutingRangeFor(3, 1), [1, 9]) && deepEqual(scoutingRangeFor(97, 1), [91, 99]));
+  }
+
+  group("engine/contracts.js — movePlayerToClub reveals full knowledge on signing for the user's club (M8)");
+  {
+    const state = buildM7FakeState();
+    const target = state.players.find((p) => p.clubId !== state.club.id && p.scouting.level < 3);
+    assert("sampled target isn't already fully scouted before the move (else the assertion below proves nothing)", !!target);
+    movePlayerToClub(state, target, state.club.id);
+    assert("signing for the user's club sets scouting level to 3", target.scouting.level === 3);
+    assert("...and both ranges collapse to the exact true value", deepEqual(target.scouting.ovrRange, [target.overall, target.overall]) && deepEqual(target.scouting.potRange, [target.potential, target.potential]));
+  }
+
+  group("engine/gtn.js — scout market (hire pool, hire, sack)");
+  {
+    const state = buildM7FakeState();
+    createInitialGtnState(state);
+    assert(`createInitialGtnState seeds a pool of ${POOL_SIZE} candidates`, state.gtn.pool.length === POOL_SIZE);
+    assert("every candidate's Experience/Judgment stars are within 1-5", state.gtn.pool.every((c) => c.experience >= 1 && c.experience <= 5 && c.judgment >= 1 && c.judgment <= 5));
+    assert("every candidate has a unique id", new Set(state.gtn.pool.map((c) => c.id)).size === state.gtn.pool.length);
+
+    const budgetBefore = state.finances.transferBudget;
+    const candidate = state.gtn.pool[0];
+    const expectedCost = hireCost(candidate.experience, candidate.judgment);
+    const hireResult = hireScout(state, 0);
+    assert("hireScout succeeds for a valid pool index", hireResult.ok === true);
+    assert("hiring deducts the exact hire-cost curve figure from the transfer budget", state.finances.transferBudget === budgetBefore - expectedCost);
+    assert("the hired scout moves out of the pool and into the roster", state.gtn.pool.length === POOL_SIZE - 1 && state.gtn.scouts.length === 1);
+    assert("hireScout on an out-of-range index reports not-found", hireScout(state, 99).error === "not-found");
+
+    // MAX_HIRED_SCOUTS guard — pushed directly rather than hiring 6 for real,
+    // since the pool only refills weekly (scout.ini's own SCOUT_NUM_DAYS_FOR_
+    // POOL_UPDATE=7) and this is purely a roster-size unit check.
+    while (state.gtn.scouts.length < MAX_HIRED_SCOUTS) {
+      state.gtn.scouts.push({ id: `filler-${state.gtn.scouts.length}`, commonName: "Filler", nationId: "england", experience: 2, judgment: 2, hiredDate: state.calendar.today, missionId: null });
+    }
+    assert(`hireScout refuses a 7th scout past the ${MAX_HIRED_SCOUTS}-scout cap`, hireScout(state, 0).error === "roster-full");
+
+    const sackBudgetBefore = state.finances.transferBudget;
+    const scoutToSack = state.gtn.scouts[0];
+    const expectedSackCost = sackCost(scoutToSack);
+    const sackResult = sackScout(state, scoutToSack.id);
+    assert("sackScout succeeds for a hired scout", sackResult.ok === true);
+    assert("sacking deducts the £5,000/star cost (scout.ini SCOUT_SACKING_COST_PER_LEVEL)", state.finances.transferBudget === sackBudgetBefore - expectedSackCost);
+    assert("the sacked scout leaves the roster", !state.gtn.scouts.some((s) => s.id === scoutToSack.id));
+  }
+
+  group("engine/gtn.js — missions: assign, budget guard, cancel");
+  {
+    const state = buildM7FakeState();
+    createInitialGtnState(state);
+    hireScout(state, 0);
+    const scout = state.gtn.scouts[0];
+
+    const missionOpts = { scoutId: scout.id, region: "ALL", area: "ATT", tags: ["pacey", "prolific"], minAge: 16, maxAge: 32, maxValue: 0, tierIndex: 0 };
+    const budgetBefore = state.finances.transferBudget;
+    const expectedCost = missionCost(0, scout);
+    const result = startMission(state, missionOpts);
+    assert("startMission succeeds for an idle, affordable scout", result.ok === true);
+    assert("mission cost is deducted from the transfer budget", state.finances.transferBudget === budgetBefore - expectedCost);
+    assert("the scout is now marked busy (missionId set)", scout.missionId === result.mission.id);
+    assert("a 'Pacey, Prolific' ST mission carries both tags (plan1.md's own example)", deepEqual(result.mission.tags, ["pacey", "prolific"]));
+
+    assert("startMission on an already-busy scout is refused", startMission(state, missionOpts).error === "scout-busy");
+
+    const poorState = buildM7FakeState();
+    createInitialGtnState(poorState);
+    hireScout(poorState, 0);
+    poorState.finances.transferBudget = 0;
+    assert("startMission on an unaffordable mission is refused (insufficient-funds)",
+      startMission(poorState, { ...missionOpts, scoutId: poorState.gtn.scouts[0].id }).error === "insufficient-funds");
+
+    cancelMission(state, result.mission.id);
+    assert("cancelMission removes the mission from state.gtn.missions", !state.gtn.missions.some((m) => m.id === result.mission.id));
+    assert("...and frees the scout back to idle", scout.missionId === null);
+  }
+
+  group("engine/gtn.js — report cadence (plan1.md M8 verbatim: day 10 first report, then weekly, ranges narrow to exact)");
+  {
+    const state = buildM7FakeState();
+    createInitialGtnState(state);
+    hireScout(state, 0);
+    const scout = state.gtn.scouts[0];
+    const start = startMission(state, { scoutId: scout.id, region: "ALL", area: "ALL", tags: [], minAge: 15, maxAge: 40, maxValue: 0, tierIndex: 2 }); // Long (9mo) so it doesn't auto-complete mid-test
+    const mission = start.mission;
+
+    for (let d = 1; d < FIRST_REPORT_DAYS; d++) {
+      runDailyGtnActivity(state, new Date(state.seasonStartYear, 8, 1 + d));
+    }
+    assert(`no players are found before day ${FIRST_REPORT_DAYS} (mission.nextReportDate hasn't been reached yet)`, mission.foundPlayerIds.length === 0);
+
+    runDailyGtnActivity(state, new Date(state.seasonStartYear, 8, 1 + FIRST_REPORT_DAYS));
+    assert(`the first report (day ${FIRST_REPORT_DAYS}) finds at least one player`, mission.foundPlayerIds.length > 0);
+    const firstFind = state.playersById.get(mission.foundPlayerIds[0]);
+    assert("a freshly found player starts at scouting level 1", firstFind.scouting.level === 1);
+    assert("...with a ±6 range around their true overall (plan1.md M8 verbatim)", deepEqual(firstFind.scouting.ovrRange, scoutingRangeFor(firstFind.overall, 1)));
+
+    for (let week = 1; week <= 3; week++) {
+      runDailyGtnActivity(state, new Date(state.seasonStartYear, 8, 1 + FIRST_REPORT_DAYS + REPORT_INTERVAL_DAYS * week));
+    }
+    assert("after 3 further weekly reports (~3 weeks) the first find has narrowed all the way to exact (level 3)",
+      firstFind.scouting.level === 3 && firstFind.scouting.ovrRange[0] === firstFind.scouting.ovrRange[1]);
+
+    assert("newCount reflects finds not yet viewed", missionNewCount(mission) === mission.foundPlayerIds.length);
+    viewMission(state, mission.id);
+    assert("viewMission marks every current find as seen (newCount -> 0)", missionNewCount(mission) === 0);
+    assert("...and clears the updated-since-seen list", missionUpdateCount(mission) === 0);
+  }
+
+  group("engine/gtn.js — primaryMission (Central/Transfers tile preview)");
+  {
+    assert("primaryMission is null with no missions at all", primaryMission([]) === null);
+    const quiet = { id: "m1", foundPlayerIds: ["a", "b"], seenPlayerIds: ["a", "b"], updatedPlayerIds: [], startDate: new Date(2014, 6, 1) };
+    const loud = { id: "m2", foundPlayerIds: ["c", "d", "e"], seenPlayerIds: [], updatedPlayerIds: ["c"], startDate: new Date(2014, 6, 5) };
+    assert("the mission with more New+Updates wins over a quieter, earlier one", primaryMission([quiet, loud]).id === "m2");
+    const tie = { id: "m3", foundPlayerIds: ["c", "d", "e"], seenPlayerIds: [], updatedPlayerIds: ["c"], startDate: new Date(2014, 6, 10) };
+    assert("a New+Updates tie breaks toward the more recently started mission", primaryMission([loud, tie]).id === "m3");
+  }
+
+  group("core/db.js — state.gtn compact round-trip (M8)");
+  {
+    // buildM7FakeState() is a lightweight fixture for engine/transferai.js's
+    // own tests and doesn't carry results/cups/jobMarket — serializeSave
+    // needs all three (see its own M4/M5 fields), so they're filled in here
+    // the same way the pre-existing "compact serialization round-trip" group
+    // above does for its own hand-built fakeSaveState.
+    const state = buildM7FakeState();
+    state.results = new Map();
+    state.cups = new Map();
+    state.jobMarket = { vacancies: [] };
+    createInitialGtnState(state);
+    hireScout(state, 0);
+    startMission(state, { scoutId: state.gtn.scouts[0].id, region: "ALL", area: "MID", tags: ["creative"], minAge: 17, maxAge: 30, maxValue: 5000000, tierIndex: 1 });
+    runDailyGtnActivity(state, new Date(state.seasonStartYear, 8, 1 + FIRST_REPORT_DAYS));
+
+    const roundTripped = deserializeSave(serializeSave(state));
+    assert("scouts round-trip (stars, ids, hiredDate)", deepEqual(roundTripped.gtn.scouts, state.gtn.scouts));
+    assert("pool round-trips", deepEqual(roundTripped.gtn.pool, state.gtn.pool));
+    assert("missions round-trip, including Date fields (startDate/endDate/nextReportDate) and found-player id lists",
+      deepEqual(roundTripped.gtn.missions, state.gtn.missions));
+    assert("nextId/lastSalaryPeriod round-trip", roundTripped.gtn.nextId === state.gtn.nextId && roundTripped.gtn.lastSalaryPeriod === state.gtn.lastSalaryPeriod);
   }
 
   render();

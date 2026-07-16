@@ -86,7 +86,13 @@ function wireHeaderMenu() {
 }
 
 function startGame(state) {
-  injectClubCrestSymbols(state.league.table.map((r) => r.club));
+  // M8: widened from just the user's starting league to every club in the
+  // world — GTN missions (engine/gtn.js) and Search Players (M7) both
+  // surface players from any of the ~600 clubs, not just the user's own
+  // league, so their crests need to already be in the sprite too. Cheap
+  // (plain string templates, no network/image assets — gen/crest.js's own
+  // header) even at full ~600-club scale.
+  injectClubCrestSymbols(state.staticData.clubs);
 
   document.getElementById("newgame-root").hidden = true;
   document.getElementById("game-root").hidden = false;

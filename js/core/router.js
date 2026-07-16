@@ -22,6 +22,7 @@ import { renderMatchday, initMatchdayTicker } from "../ui/matchday.js";
 import { renderJobsOverlay } from "../ui/jobsui.js";
 import { renderContracts } from "../ui/contractsui.js";
 import { renderSearch, renderNegotiation, renderSellList, renderRequestFunds } from "../ui/transfersui.js";
+import { renderGtn } from "../ui/gtnui.js";
 import { injectClubCrestSymbols } from "../gen/crest.js";
 import { fromEpochDay } from "./clock.js";
 
@@ -64,6 +65,9 @@ export function initRouter(store) {
   const footerRequestfunds = document.getElementById("footer-requestfunds");
   const requestfundsOverlay = document.getElementById("requestfunds-overlay");
   const rfBodyEl = document.getElementById("rf-body");
+  const footerGtn = document.getElementById("footer-gtn");
+  const gtnOverlay = document.getElementById("gtn-overlay");
+  const gtnBodyEl = document.getElementById("gtn-body");
   const newsTabsEl = document.getElementById("news-tabs");
   const newsListEl = document.getElementById("news-list");
   const squadlistBodyEl = document.getElementById("squadlist-body");
@@ -123,6 +127,10 @@ export function initRouter(store) {
       requestfundsOverlay.classList.toggle("is-active", open);
       footerRequestfunds.hidden = !open;
       if (open) renderRequestFunds(store.state);
+    } else if (name === "gtn") {
+      gtnOverlay.classList.toggle("is-active", open);
+      footerGtn.hidden = !open;
+      if (open) renderGtn(store.state);
     }
     const anyOverlayOpen = !!store.state.ui.overlay;
     tabbar.style.display = anyOverlayOpen ? "none" : "";
@@ -158,12 +166,17 @@ export function initRouter(store) {
     if (store.state.ui.overlay === "requestfunds") renderRequestFunds(store.state);
     if (store.state.ui.overlay === "search") renderSearch(store.state);
     if (store.state.ui.overlay === "email") { renderEmailList(store.state); renderEmailDetail(store.state); }
+    // M8: a mission's report/salary tick can land mid-advance same as the M7
+    // cases above, and every screen's GTN preview tile needs the same
+    // refresh growth/rollover already give Central/Season/Office/Transfers.
+    if (store.state.ui.overlay === "gtn") renderGtn(store.state);
   });
   store.on("contracts", () => renderContracts(store.state));
   store.on("search", () => renderSearch(store.state));
   store.on("negotiation", () => renderNegotiation(store.state));
   store.on("selllist", () => renderSellList(store.state));
   store.on("requestfunds", () => renderRequestFunds(store.state));
+  store.on("gtn", () => renderGtn(store.state));
   store.on("calendar:view", () => renderCalendar(store.state));
   store.on("matchday", () => renderMatchday(store.state));
   initMatchdayTicker(store);
@@ -224,6 +237,8 @@ export function initRouter(store) {
       else if (tile.dataset.open === "search") store.openTransferSearch();
       else if (tile.dataset.open === "selllist") store.openSellList();
       else if (tile.dataset.open === "requestfunds") store.openRequestFunds();
+      else if (tile.dataset.open === "gtn") store.openGtn();
+      else if (tile.dataset.open === "gtnreport") store.openGtnHubTile();
       else store.openOverlay(tile.dataset.open);
     });
   });
@@ -382,6 +397,48 @@ export function initRouter(store) {
   footerRequestfunds.addEventListener("click", (e) => {
     const el = e.target.closest("[data-action]");
     if (el) handleRequestFundsAction(el.dataset.action);
+  });
+
+  // Global Transfer Network (M8): one body element re-rendered per internal
+  // view (hub/missionForm/report — see ui/gtnui.js's header), so wiring is
+  // fully delegated (data-action, same rationale as the email list/Match Day
+  // above) rather than per-element like Search/Contracts' static filter row.
+  function handleGtnAction(action, target) {
+    switch (action) {
+      case "hire": store.gtnHireSelected(); break;
+      case "sack": store.gtnSackSelected(); break;
+      case "assign-mission": store.gtnOpenMissionForm(); break;
+      case "view-report": store.openGtnMissionReport(target.dataset.mission); break;
+      case "cancel-mission": store.gtnCancelMission(target.dataset.mission); break;
+      case "set-area": store.gtnSetMissionArea(target.dataset.value); break;
+      case "region-prev": store.gtnCycleMissionRegion(-1); break;
+      case "region-next": store.gtnCycleMissionRegion(1); break;
+      case "toggle-tag": store.gtnToggleMissionTag(target.dataset.value); break;
+      case "minage-down": store.gtnAdjustMissionAge("minAge", -1); break;
+      case "minage-up": store.gtnAdjustMissionAge("minAge", 1); break;
+      case "maxage-down": store.gtnAdjustMissionAge("maxAge", -1); break;
+      case "maxage-up": store.gtnAdjustMissionAge("maxAge", 1); break;
+      case "maxvalue-down": store.gtnAdjustMissionValue(-500000); break;
+      case "maxvalue-up": store.gtnAdjustMissionValue(500000); break;
+      case "set-tier": store.gtnSetMissionTier(Number(target.dataset.value)); break;
+      case "start-mission": store.gtnSubmitMission(); break;
+      case "bid": if (store.state.ui.gtn.reportSelectedPlayerId != null) store.startBid(store.state.ui.gtn.reportSelectedPlayerId); break;
+      case "loan": if (store.state.ui.gtn.reportSelectedPlayerId != null) store.startLoanBid(store.state.ui.gtn.reportSelectedPlayerId, "season"); break;
+      case "next-mission": store.gtnCycleReportMission(1); break;
+      case "back": store.gtnBack(); break;
+    }
+  }
+  gtnBodyEl.addEventListener("click", (e) => {
+    const row = e.target.closest(".gtn-row");
+    if (row) { store.selectGtnRow(row.dataset.scout, row.dataset.pool === "1"); return; }
+    const srRow = e.target.closest(".sr-row");
+    if (srRow) { store.gtnSelectReportPlayer(Number(srRow.dataset.player)); return; }
+    const el = e.target.closest("[data-action]");
+    if (el) handleGtnAction(el.dataset.action, el);
+  });
+  footerGtn.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (el) handleGtnAction(el.dataset.action, el);
   });
 
   // Central's Advance tile (fable-plans/plan1.md M3): clicking the "A
