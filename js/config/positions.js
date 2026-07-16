@@ -90,3 +90,10 @@ export const AREAS = ["GK", "DEF", "MID", "ATT"];
 export function codesForOverallGroup(group) {
   return POSITION_CODES.filter((c) => POSITION_INFO[c].overallGroup === group);
 }
+
+// M9 (engine/academy.js): youth-scout "player type" requests resolve to a
+// workrateGroup first (config/youth.js's TYPE_POSITION_WEIGHTS, ported from
+// scout.ini's own type->position-group table), then a concrete code here.
+export function codesForWorkrateGroup(group) {
+  return POSITION_CODES.filter((c) => POSITION_INFO[c].workrateGroup === group);
+}

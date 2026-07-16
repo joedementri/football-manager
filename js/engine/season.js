@@ -31,6 +31,7 @@ import { recomputeAllValues } from "./value.js";
 import { computeWageCeiling } from "./wage.js";
 import { buildBosmanApproachEmails, resolveExpiredContracts, buildBosmanDepartureEmailsForUser } from "./contracts.js";
 import { resetAllClubBudgets } from "./clubbudget.js";
+import { ageUpAcademyRoster } from "./academy.js";
 
 /** clubs.json entries with `.leagueId` overridden by the current-season
  * clubLeague map (M5: promotion/relegation moves clubs between leagues
@@ -130,6 +131,10 @@ export function rolloverSeason(state) {
 
   /* ---- 6. Age up ---- */
   for (const p of state.players) p.age += 1;
+  // M9: state.academy.roster lives outside state.players (see
+  // engine/academy.js's header) — aged up here too so a youth prospect
+  // discovered at 15 eventually reaches MIN_PROMOTION_AGE.
+  ageUpAcademyRoster(state);
 
   // M6: value recomputed once growth + age-up have both landed for the
   // season that's ending (engine/value.js's header explains why wage isn't

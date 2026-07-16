@@ -1,0 +1,68 @@
+/* ===========================================================================
+   youth.css — M9's Youth Staff overlay: hired youth scouts + market pool
+   (hub), the send-scout assignment form, and the Youth Squad roster + one
+   prospect's fuzzy-revealed detail. Reuses .news-crumb for the breadcrumb,
+   css/gtn.css's .gtn-hub/.gtn-col/.gtn-row/.gtn-section-label/.gtn-chip/
+   .gtn-form__ and .gtn-tag classes (this overlay is structurally identical to
+   the GTN hub/mission-form), css/contracts.css's .ct-detail/.ct-facts/.ct-fact/
+   .ct-actions/.ct-btn/.ct-warning, and css/tables.css's .tbl/.sl-table/
+   .sl-row look for the Youth Squad list — per ground rule #1 (new CSS in new
+   files, extend — don't rewrite — the existing tokens).
+   =========================================================================== */
+
+#youth-overlay { display: none; }
+#youth-overlay.is-active { display: block; }
+
+.youth-body {
+  position: absolute;
+  top: 160px; left: 36px; right: 36px; bottom: 56px;
+  z-index: 7;
+}
+
+/* ----- Hub's "Youth Squad (N/16)" quick-nav row ----- */
+.ys-squad-link {
+  cursor: pointer;
+  color: var(--gold);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.ys-squad-link:hover { color: var(--gold-bright); }
+
+/* ----- Youth Squad list: ELIGIBLE column lock icon ----- */
+.ys-eligible { text-align: center; }
+.ys-eligible .icon { width: 15px; height: 15px; color: var(--ink-dim); }
+
+/* ----- Prospect detail: OVR/POT fuzzy-range boxes (bio.css's .bio-ovr look,
+   sized for a wider "58-68" string instead of a bare number) ----- */
+.ys-ovr-row { display: flex; gap: 14px; margin: 10px 0 14px; }
+.ys-ovr {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 10px 6px; border-radius: 8px;
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold-deep));
+  color: var(--gold-text-dark);
+}
+.ys-ovr--pot { background: linear-gradient(180deg, #7fb8e6, #2f6fa8); color: #0d1e2c; }
+.ys-ovr__num { font-family: var(--font-cond); font-size: 22px; font-weight: 700; line-height: 1; }
+.ys-ovr__lbl { font-family: var(--font-ui); font-size: 10px; letter-spacing: 0.5px; margin-top: 3px; }
+
+/* ----- Prospect detail: Physical/Mental/Technical/Goalkeeping attribute
+   panels, each attribute either a fuzzy range or a locked "?" ----- */
+.ys-attrs {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px;
+  margin-top: 10px;
+}
+.ys-attr-group {
+  background: linear-gradient(160deg, var(--tile-hi), var(--tile));
+  border: 1px solid rgba(120, 140, 160, 0.10);
+  border-radius: 7px;
+  padding: 8px 12px;
+}
+.ys-attr-group__title {
+  font-family: var(--font-cond); font-weight: 700; font-size: 14px; letter-spacing: 0.4px;
+  color: var(--ink); padding-bottom: 4px; margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.ys-attr-row { display: flex; justify-content: space-between; font-family: var(--font-ui); font-size: 12px; padding: 2px 0; }
+.ys-attr-name { color: var(--ink-dim); }
+.ys-attr-val { color: var(--ink); font-weight: 600; }
+.ys-attr-val--locked { color: var(--ink-dim); font-weight: 400; }

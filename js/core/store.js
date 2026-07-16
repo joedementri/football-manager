@@ -30,6 +30,7 @@ import * as freeagents from "../engine/freeagents.js";
 import * as transferai from "../engine/transferai.js";
 import { reallocateBudget, requestFundsFromBoard } from "../engine/finances.js";
 import * as gtnEngine from "../engine/gtn.js";
+import * as academyEngine from "../engine/academy.js";
 
 export const SCREENS = ["central", "squad", "transfers", "office", "season"];
 
@@ -277,6 +278,21 @@ function createUiDefaults(today) {
       reportMissionId: null, reportSelectedPlayerId: null,
       lastError: null,
     },
+
+    // M9 (ui/youthui.js): the Youth Staff overlay, same 3-views-in-one-
+    // overlay shape as gtn above — 'hub' (hired youth scouts + market pool,
+    // plus a "Youth Squad (N/16)" link into the roster), 'assignForm' (the
+    // nation/type/duration picker for the selected idle scout) and 'squad'
+    // (the youth roster list + one prospect's fuzzy-revealed detail,
+    // Promote/Release actions). Purely presentational — the real data
+    // (state.academy.scouts/pool/roster) lives outside `ui`.
+    youth: {
+      view: "hub",
+      selectedScoutId: null, selectedIsPool: false,
+      assignDraft: { scoutId: null, nationId: null, type: null, tierIndex: 0 },
+      squadSelectedPlayerId: null,
+      lastError: null,
+    },
   };
 }
 
@@ -459,6 +475,7 @@ export function createCareerState({ managerName, club, league, world, seasonStar
     p.scouting = { level: 3, ovrRange: [p.overall, p.overall], potRange: [p.potential, p.potential] };
   }
   gtnEngine.createInitialGtnState(built);
+  academyEngine.createInitialAcademyState(built);
 
   return built;
 }
@@ -516,6 +533,8 @@ export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
   // M8: a pre-M8 save never had state.gtn at all — same "fresh default for
   // an older save" footing as jobMarket's own `|| { vacancies: [] }` above.
   built.gtn = saved.gtn || gtnEngine.createInitialGtnState(built);
+  // M9: ditto for state.academy on a pre-M9 save.
+  built.academy = saved.academy || academyEngine.createInitialAcademyState(built);
 
   return built;
 }
@@ -693,6 +712,7 @@ export class Store {
     transferai.checkIncomingBidsOnListedPlayers(this.state, day);
     negotiation.resolveLoanReturns(this.state, day);
     gtnEngine.runDailyGtnActivity(this.state, day);
+    academyEngine.runDailyAcademyActivity(this.state, day);
     simulateWorldDay(this.state, day);
     if (events.includes("season-rollover")) rolloverSeason(this.state);
   }
@@ -1318,6 +1338,194 @@ export class Store {
   gtnBack() {
     const ui = this.state.ui.gtn;
     if (ui.view !== "hub") { ui.view = "hub"; this.emit("gtn", null); }
+    else this.closeOverlay();
+  }
+
+  /* ============================================================================
+   * M9: Youth Academy — engine/academy.js owns the actual state machine
+   * (scout market, assignments, roster development/reveal/retirement-threat,
+   * promote/release); these methods just call into it and emit "youth" for
+   * ui/youthui.js to re-render from, same contract as the M8 GTN section
+   * above.
+   * ========================================================================== */
+
+  /** Opens the Youth Staff hub, defaulting the selection to the first hired
+   * scout, or the first market candidate if none are hired yet. */
+  openYouth() {
+    const a = this.state.academy, ui = this.state.ui.youth;
+    ui.view = "hub";
+    ui.lastError = null;
+    const firstScout = a.scouts[0];
+    ui.selectedScoutId = firstScout ? firstScout.id : (a.pool[0] ? a.pool[0].id : null);
+    ui.selectedIsPool = !firstScout && !!a.pool[0];
+    this.openOverlay("youth");
+  }
+
+  selectYouthRow(id, isPool) {
+    const ui = this.state.ui.youth;
+    ui.selectedScoutId = id;
+    ui.selectedIsPool = isPool;
+    ui.lastError = null;
+    this.emit("youth", null);
+  }
+
+  youthHireSelected() {
+    const ui = this.state.ui.youth;
+    if (!ui.selectedIsPool) return;
+    const idx = this.state.academy.pool.findIndex((c) => c.id === ui.selectedScoutId);
+    if (idx === -1) return;
+    const result = academyEngine.hireYouthScout(this.state, idx);
+    ui.lastError = result.error || null;
+    if (result.ok) { ui.selectedScoutId = result.scout.id; ui.selectedIsPool = false; }
+    this.emit("youth", null);
+    this.emit("advance", null); // Finances tile reflects the spend
+  }
+
+  youthSackSelected() {
+    const ui = this.state.ui.youth;
+    if (ui.selectedIsPool || ui.selectedScoutId == null) return;
+    const result = academyEngine.sackYouthScout(this.state, ui.selectedScoutId);
+    if (result.ok) {
+      const a = this.state.academy;
+      ui.selectedScoutId = a.scouts[0] ? a.scouts[0].id : (a.pool[0] ? a.pool[0].id : null);
+      ui.selectedIsPool = !a.scouts[0] && !!a.pool[0];
+    }
+    this.emit("youth", null);
+    this.emit("advance", null);
+  }
+
+  /** Opens the assignment form for the currently selected (hired, idle)
+   * scout — a no-op for a pool candidate or a scout already assigned. */
+  youthOpenAssignForm() {
+    const ui = this.state.ui.youth;
+    if (ui.selectedIsPool) return;
+    const scout = this.state.academy.scouts.find((s) => s.id === ui.selectedScoutId);
+    if (!scout || scout.assignment) return;
+    const firstNation = this.state.staticData.nations.slice().sort((a, b) => a.name.localeCompare(b.name))[0];
+    ui.assignDraft = { scoutId: scout.id, nationId: firstNation ? firstNation.id : null, type: null, tierIndex: 0 };
+    ui.lastError = null;
+    ui.view = "assignForm";
+    this.emit("youth", null);
+  }
+
+  youthCancelAssignForm() {
+    this.state.ui.youth.view = "hub";
+    this.emit("youth", null);
+  }
+
+  youthSetAssignType(type) {
+    const d = this.state.ui.youth.assignDraft;
+    d.type = d.type === type ? null : type; // click again to clear back to "Any"
+    this.emit("youth", null);
+  }
+
+  /** Cycles the assignment's target nation through an alphabetised list —
+   * same "map-ish region picker simplified to a stepper" precedent as
+   * store.gtnCycleMissionRegion, minus GTN's "ALL"/worldwide option (a youth
+   * scout is always sent to one specific nation — plan1.md M9: "Send to a
+   * nation"). */
+  youthCycleAssignNation(delta) {
+    const ids = this.state.staticData.nations.slice().sort((a, b) => a.name.localeCompare(b.name)).map((n) => n.id);
+    const d = this.state.ui.youth.assignDraft;
+    const idx = Math.max(0, ids.indexOf(d.nationId));
+    d.nationId = ids[(idx + delta + ids.length) % ids.length];
+    this.emit("youth", null);
+  }
+
+  youthSetAssignTier(tierIndex) {
+    this.state.ui.youth.assignDraft.tierIndex = tierIndex;
+    this.emit("youth", null);
+  }
+
+  youthSubmitAssignment() {
+    const ui = this.state.ui.youth;
+    const result = academyEngine.assignScout(this.state, ui.assignDraft);
+    ui.lastError = result.error || null;
+    if (result.ok) {
+      ui.view = "hub";
+      ui.selectedScoutId = ui.assignDraft.scoutId;
+      ui.selectedIsPool = false;
+    }
+    this.emit("youth", null);
+  }
+
+  /** Hub detail panel's "Recall Scout" — ends an assignment early (no
+   * refund; assigning is free — see engine/academy.js's header). */
+  youthRecallSelected() {
+    const ui = this.state.ui.youth;
+    if (ui.selectedIsPool || ui.selectedScoutId == null) return;
+    academyEngine.recallScout(this.state, ui.selectedScoutId);
+    this.emit("youth", null);
+  }
+
+  /** Opens the Youth Squad roster list (hub's "Youth Squad (N/16)" link),
+   * defaulting the selection to the first prospect, if any. */
+  openYouthSquad() {
+    const ui = this.state.ui.youth;
+    const roster = this.state.academy.roster;
+    ui.squadSelectedPlayerId = roster[0] ? roster[0].id : null;
+    ui.view = "squad";
+    ui.lastError = null;
+    if (this.state.ui.overlay !== "youth") this.openOverlay("youth");
+    else this.emit("youth", null);
+  }
+
+  selectYouthSquadPlayer(id) {
+    this.state.ui.youth.squadSelectedPlayerId = id;
+    this.emit("youth", null);
+  }
+
+  promoteSelectedYouthPlayer() {
+    const ui = this.state.ui.youth;
+    if (ui.squadSelectedPlayerId == null) return;
+    const result = academyEngine.promoteProspect(this.state, ui.squadSelectedPlayerId);
+    ui.lastError = result.error || null;
+    if (result.ok) {
+      const roster = this.state.academy.roster;
+      ui.squadSelectedPlayerId = roster[0] ? roster[0].id : null;
+    }
+    this.emit("youth", null);
+    this.emit("advance", null); // Squad List/Contracts/wage bill all gained a player
+  }
+
+  releaseSelectedYouthPlayer() {
+    const ui = this.state.ui.youth;
+    if (ui.squadSelectedPlayerId == null) return;
+    ui.lastError = null;
+    academyEngine.releaseProspect(this.state, ui.squadSelectedPlayerId);
+    const roster = this.state.academy.roster;
+    ui.squadSelectedPlayerId = roster[0] ? roster[0].id : null;
+    this.emit("youth", null);
+  }
+
+  /** Email inbox's youth-retirement-warning decision (ui/render.js's
+   * renderEmailActions) — Promote acts immediately from the inbox;
+   * dismissing without acting just leaves the warning's own
+   * RETIREMENT_WARNING_DAYS clock running (engine/academy.js's
+   * resolveRetirementDepartures). */
+  promoteFromYouthWarningEmail(prospectId) {
+    const result = academyEngine.promoteProspect(this.state, Number(prospectId));
+    if (result.ok) {
+      const email = this.state.inbox.emails.find((e) => e.action && e.action.prospectId === Number(prospectId));
+      if (email) { email.read = true; email.action = null; }
+    }
+    this.emit("email:select", this.state.ui.emailSelectedIndex);
+    this.emit("advance", null);
+  }
+
+  releaseFromYouthWarningEmail(prospectId) {
+    academyEngine.releaseProspect(this.state, Number(prospectId));
+    const email = this.state.inbox.emails.find((e) => e.action && e.action.prospectId === Number(prospectId));
+    if (email) { email.read = true; email.action = null; }
+    this.emit("email:select", this.state.ui.emailSelectedIndex);
+  }
+
+  /** Footer/keyboard Back: steps out of a nested view (assignForm/squad) to
+   * the hub first, only closing the overlay once already there — same
+   * precedent as store.gtnBack. */
+  youthBack() {
+    const ui = this.state.ui.youth;
+    if (ui.view !== "hub") { ui.view = "hub"; this.emit("youth", null); }
     else this.closeOverlay();
   }
 }

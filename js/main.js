@@ -133,11 +133,16 @@ async function boot() {
       if (saved) {
         const staticData = await loadStaticRefData();
         const state = hydrateFromSave(saved, staticData);
-        // A regen (engine/retirement.js) assigns ids from where world-gen
-        // left off; gen/player.js's module-level counter resets to 1 on
-        // every fresh page load, so it must fast-forward past every id
-        // already in this save before any regen can run this session.
-        resetPlayerIdCounter(state.players.reduce((max, p) => Math.max(max, p.id), 0) + 1);
+        // A regen (engine/retirement.js) or a freshly-scouted youth prospect
+        // (engine/academy.js, M9 — state.academy.roster lives outside
+        // state.players, see that file's own header) assigns ids from where
+        // world-gen left off; gen/player.js's module-level counter resets to
+        // 1 on every fresh page load, so it must fast-forward past every id
+        // already in this save, from *both* collections, before either can
+        // run this session.
+        const maxWorldId = state.players.reduce((max, p) => Math.max(max, p.id), 0);
+        const maxAcademyId = (state.academy?.roster || []).reduce((max, p) => Math.max(max, p.id), 0);
+        resetPlayerIdCounter(Math.max(maxWorldId, maxAcademyId) + 1);
         startGame(state);
         return;
       }

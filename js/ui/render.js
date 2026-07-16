@@ -317,6 +317,12 @@ function renderEmailActions(d) {
     el.innerHTML =
       `<button type="button" class="email-action-btn email-action-btn--yes" data-action="accept-bid" data-bid="${d.action.bidId}">Accept Bid</button>` +
       `<button type="button" class="email-action-btn email-action-btn--no" data-action="reject-bid" data-bid="${d.action.bidId}">Reject Bid</button>`;
+  } else if (d.action.type === "youth-retirement-warning") {
+    // M9: engine/academy.js's retirement-threat email (plan1.md: "prospects
+    // may threaten to leave if not promoted").
+    el.innerHTML =
+      `<button type="button" class="email-action-btn email-action-btn--yes" data-action="promote-youth" data-prospect="${d.action.prospectId}">Promote Him Now</button>` +
+      `<button type="button" class="email-action-btn email-action-btn--no" data-action="release-youth" data-prospect="${d.action.prospectId}">Let Him Go</button>`;
   }
 }
 

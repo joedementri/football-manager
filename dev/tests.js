@@ -60,6 +60,16 @@ import {
   RANGE_HALF_WIDTH_BY_LEVEL, FIRST_REPORT_DAYS, REPORT_INTERVAL_DAYS,
 } from "../js/config/scouting.js";
 import { movePlayerToClub } from "../js/engine/contracts.js";
+import { generatePlayer } from "../js/gen/player.js";
+import {
+  createInitialAcademyState, hireYouthScout, sackYouthScout, assignScout, recallScout,
+  isPromotable, promoteProspect, releaseProspect, ageUpAcademyRoster, runDailyAcademyActivity,
+} from "../js/engine/academy.js";
+import {
+  MAX_YOUTH_SCOUTS, POTENTIAL_TIERS, TIER_ODDS_BY_JUDGMENT, rollPotentialTier,
+  pickWorkrateGroupForType, retirementChancePct, RETIREMENT_WARNING_DAYS,
+  YOUTH_PLAYER_MIN_AGE, YOUTH_PLAYER_MAX_AGE,
+} from "../js/config/youth.js";
 
 const groups = []; // [{ title, results: [{name, pass, detail}] }]
 let current = null;
@@ -1212,6 +1222,234 @@ async function run() {
     assert("missions round-trip, including Date fields (startDate/endDate/nextReportDate) and found-player id lists",
       deepEqual(roundTripped.gtn.missions, state.gtn.missions));
     assert("nextId/lastSalaryPeriod round-trip", roundTripped.gtn.nextId === state.gtn.nextId && roundTripped.gtn.lastSalaryPeriod === state.gtn.lastSalaryPeriod);
+  }
+
+  /* ================= M9 — Youth academy ================= */
+
+  group("config/youth.js — potential tiers, tier odds, retirement chance (scout.ini verbatim)");
+  {
+    assert("4 potential tiers match plan1.md M9 verbatim (75-95/65-90/60-85/55-80)",
+      deepEqual(POTENTIAL_TIERS.map((t) => t.range), [[75, 95], [65, 90], [60, 85], [55, 80]]));
+    assert("a Judgment-5 scout's Tier-1/Tier-2 odds beat a Judgment-1 scout's (KNOWLEDGE_LEVEL_x_TIER_1/2_PERC rise with Judgment)",
+      (TIER_ODDS_BY_JUDGMENT[5][0] + TIER_ODDS_BY_JUDGMENT[5][1]) > (TIER_ODDS_BY_JUDGMENT[1][0] + TIER_ODDS_BY_JUDGMENT[1][1]));
+
+    const tierRng = new RngStream(deriveSeed(seed, "youth-tier-roll"));
+    const rolls = Array.from({ length: 200 }, () => rollPotentialTier(tierRng, 3));
+    assert("rollPotentialTier always returns one of the 4 POTENTIAL_TIERS entries", rolls.every((t) => POTENTIAL_TIERS.includes(t)));
+
+    assert("retirementChancePct is 0 below RETIREMENT_AGE_MIN (16 — PLAYER_RETIRE_AT_AGE_RANGE_0)", retirementChancePct(15, 50) === 0);
+    assert("retirementChancePct hits exactly 100% for an 18-y-o at season end (RETIREMENT_PERC_AGE_2_POINT_3)", retirementChancePct(18, 95) === 100);
+    assert("retirementChancePct for a fresh 16-y-o at season start is low (<=2%)", retirementChancePct(16, 10) <= 2);
+
+    const posRng = new RngStream(deriveSeed(seed, "youth-type-position"));
+    const gkGroups = Array.from({ length: 100 }, () => pickWorkrateGroupForType(posRng, "goalkeeper"));
+    assert("'goalkeeper' type always resolves to the GK position group (scout.ini's 4_TO_POS_0_PERC=100, all others 0)", gkGroups.every((g) => g === "GK"));
+    const defGroups = Array.from({ length: 200 }, () => pickWorkrateGroupForType(posRng, "defensive"));
+    assert("'defensive' type never resolves to GK or CAM (both 0% weight in scout.ini's own table)", defGroups.every((g) => g !== "GK" && g !== "CAM"));
+  }
+
+  group("gen/player.js — potentialOverride (M9: a youth prospect rolls potential first, overall second — the reverse of a normal player)");
+  {
+    const rng = new RngStream(deriveSeed(seed, "youth-potential-override"));
+    const club = world.clubs[0];
+    const league = world.leagues.find((l) => l.id === club.leagueId);
+    const p = generatePlayer({
+      rng, positionCode: "CM", nation: world.nations[0], club, league,
+      targetOverall: 50, seasonStartYear: 2014, ageOverride: 16, potentialOverride: 85,
+    });
+    assert("potentialOverride is used verbatim (no curve-inverted roll, no separate +upside roll)", p.potential === 85);
+    assert("ageOverride still applies", p.age === 16);
+  }
+
+  group("engine/academy.js — youth-scout market (hire pool, hire, sack)");
+  {
+    const state = buildM7FakeState();
+    createInitialAcademyState(state);
+    assert(`createInitialAcademyState seeds a pool of ${POOL_SIZE} candidates`, state.academy.pool.length === POOL_SIZE);
+    assert("every candidate's Experience/Judgment stars are within 1-5", state.academy.pool.every((c) => c.experience >= 1 && c.experience <= 5 && c.judgment >= 1 && c.judgment <= 5));
+    assert("every candidate has a unique id", new Set(state.academy.pool.map((c) => c.id)).size === state.academy.pool.length);
+
+    const budgetBefore = state.finances.transferBudget;
+    const candidate = state.academy.pool[0];
+    const expectedCost = hireCost(candidate.experience, candidate.judgment);
+    const hireResult = hireYouthScout(state, 0);
+    assert("hireYouthScout succeeds for a valid pool index", hireResult.ok === true);
+    assert("hiring deducts the exact shared hire-cost curve figure (config/scouting.js, ported from scout.ini's [YOUTH_SCOUT] section)", state.finances.transferBudget === budgetBefore - expectedCost);
+    assert("the hired scout moves out of the pool and into the roster", state.academy.pool.length === POOL_SIZE - 1 && state.academy.scouts.length === 1);
+    assert("hireYouthScout on an out-of-range index reports not-found", hireYouthScout(state, 99).error === "not-found");
+
+    while (state.academy.scouts.length < MAX_YOUTH_SCOUTS) {
+      state.academy.scouts.push({ id: `filler-${state.academy.scouts.length}`, commonName: "Filler", nationId: "england", experience: 2, judgment: 2, hiredDate: state.calendar.today, assignment: null });
+    }
+    assert(`hireYouthScout refuses past the ${MAX_YOUTH_SCOUTS}-scout cap (SCOUT_MAXIMUM_SCOUTS_NUMBER)`, hireYouthScout(state, 0).error === "roster-full");
+
+    const sackBudgetBefore = state.finances.transferBudget;
+    const scoutToSack = state.academy.scouts[0];
+    const expectedSackCost = sackCost(scoutToSack);
+    const sackResult = sackYouthScout(state, scoutToSack.id);
+    assert("sackYouthScout succeeds for a hired scout", sackResult.ok === true);
+    assert("sacking deducts the shared £5,000/star cost", state.finances.transferBudget === sackBudgetBefore - expectedSackCost);
+    assert("the sacked scout leaves the roster", !state.academy.scouts.some((s) => s.id === scoutToSack.id));
+  }
+
+  group("engine/academy.js — assignment (nation + player type + duration), recall");
+  {
+    const state = buildM7FakeState();
+    createInitialAcademyState(state);
+    hireYouthScout(state, 0);
+    hireYouthScout(state, 0); // pool index 0 now refers to the next candidate
+    const [scoutA, scoutB] = state.academy.scouts;
+    const budgetBefore = state.finances.transferBudget;
+
+    assert("assignScout on an unknown scout id is refused", assignScout(state, { scoutId: "no-such-scout", nationId: "brazil" }).error === "not-found");
+    assert("assignScout without a nation is refused", assignScout(state, { scoutId: scoutB.id, nationId: null }).error === "no-nation");
+
+    const assignResult = assignScout(state, { scoutId: scoutA.id, nationId: "brazil", type: "attacker", tierIndex: 2 });
+    assert("assignScout succeeds for an idle, hired scout", assignResult.ok === true);
+    assert("assigning a scout is free — only hiring/monthly salary cost money (see engine/academy.js's header)", state.finances.transferBudget === budgetBefore);
+    assert("assignment duration reuses config/scouting.js's own Long tier (9 months) — matches REFERENCE_PICS' \"Duration: 9 Months\"", scoutA.assignment.tierLabel === "Long");
+    assert("assignScout on an already-assigned scout is refused", assignScout(state, { scoutId: scoutA.id, nationId: "brazil", tierIndex: 0 }).error === "scout-busy");
+
+    recallScout(state, scoutA.id);
+    assert("recallScout clears the assignment (scout goes idle, no refund)", scoutA.assignment === null);
+  }
+
+  group("engine/academy.js — monthly reports generate 1-3 tier-banded prospects (plan1.md M9 verbatim)");
+  {
+    const state = buildM7FakeState(new Date(2014, 8, 1)); // Sep 1, 2014
+    createInitialAcademyState(state);
+    hireYouthScout(state, 0);
+    const scout = state.academy.scouts[0];
+    assignScout(state, { scoutId: scout.id, nationId: "brazil", type: null, tierIndex: 2 });
+
+    runDailyAcademyActivity(state, new Date(2014, 8, 20));
+    assert("no prospects found before the first monthly report", state.academy.roster.length === 0);
+
+    runDailyAcademyActivity(state, new Date(2014, 9, 1)); // +1 month
+    assert("the first monthly report finds 1-3 prospects (plan1.md M9: 'brings 1-3 prospects')", state.academy.roster.length >= 1 && state.academy.roster.length <= 3);
+    assert("every prospect is age 15-17 (YOUTH_PLAYER_AGE_RANGE)", state.academy.roster.every((p) => p.age >= YOUTH_PLAYER_MIN_AGE && p.age <= YOUTH_PLAYER_MAX_AGE));
+    assert("every prospect's potential falls inside one of the 4 tier bands",
+      state.academy.roster.every((p) => POTENTIAL_TIERS.some((t) => p.potential >= t.range[0] && p.potential <= t.range[1])));
+    assert("every prospect starts at scouting level 1 (visible immediately — unlike a world player's level 0)",
+      state.academy.roster.every((p) => p.scouting.level === 1));
+    const p0 = state.academy.roster[0];
+    assert("level-1 ovrRange matches config/scouting.js's shared fuzzy-range table", deepEqual(p0.scouting.ovrRange, scoutingRangeFor(p0.overall, 1)));
+  }
+
+  group("engine/academy.js — monthly development + progressive reveal (level 1 -> 2 at month 3, -> 3/exact at month 6)");
+  {
+    const state = buildM7FakeState(new Date(2014, 8, 1));
+    createInitialAcademyState(state);
+    hireYouthScout(state, 0);
+    assignScout(state, { scoutId: state.academy.scouts[0].id, nationId: "brazil", tierIndex: 2 });
+    runDailyAcademyActivity(state, new Date(2014, 9, 1)); // discovery, joined Oct 1 2014
+    assert("a prospect was found to run this test against", state.academy.roster.length > 0);
+    const prospect = state.academy.roster[0];
+
+    runDailyAcademyActivity(state, new Date(2015, 0, 1)); // Jan 1, 2015 = +3 months
+    assert("scouting narrows to level 2 at month 3 (MONTHS_BETWEEN_NARROW_STEPS)", prospect.scouting.level === 2);
+    assert("...with the ±3 range around the true overall", deepEqual(prospect.scouting.ovrRange, scoutingRangeFor(prospect.overall, 2)));
+
+    runDailyAcademyActivity(state, new Date(2015, 3, 1)); // Apr 1, 2015 = +6 months
+    assert("scouting reaches level 3 (exact) at month 6 (MONTHS_TO_UNCOVER_PLAYER_TYPE)", prospect.scouting.level === 3);
+    assert("...and the range collapses to a single exact value", prospect.scouting.ovrRange[0] === prospect.scouting.ovrRange[1]);
+    assert("monthly development never pushes overall past the prospect's own potential", prospect.overall <= prospect.potential);
+  }
+
+  group("engine/academy.js — ageUpAcademyRoster (July 1 rollover step)");
+  {
+    const state = buildM7FakeState();
+    createInitialAcademyState(state);
+    const p = { ...world.players[0], id: -3001, age: 15 };
+    state.academy.roster.push(p);
+    ageUpAcademyRoster(state);
+    assert("a roster prospect ages up at rollover the same as state.players — excluded from that loop since it lives outside state.players (see engine/academy.js's header)", p.age === 16);
+  }
+
+  group("engine/academy.js — promote/release, isPromotable (min age 16, 3-yr pro contract)");
+  {
+    const state = buildM7FakeState();
+    createInitialAcademyState(state);
+
+    const young = { ...world.players[0], id: -1001, age: 15, isYouth: true, academyJoinedDate: state.calendar.today, nextDevelopmentDate: state.calendar.today, retirementWarningDate: null, scouting: { level: 1, ovrRange: [50, 62], potRange: [70, 82] }, contract: { ...world.players[0].contract } };
+    const old = { ...world.players[1], id: -1002, age: 17, isYouth: true, academyJoinedDate: state.calendar.today, nextDevelopmentDate: state.calendar.today, retirementWarningDate: null, scouting: { level: 3, ovrRange: [60, 60], potRange: [80, 80] }, contract: { ...world.players[1].contract } };
+    state.academy.roster.push(young, old);
+
+    assert("a 15-y-o is not promotable (MIN_PLAYER_AGE_FOR_PROMOTION=16)", isPromotable(young) === false);
+    assert("a 17-y-o is promotable", isPromotable(old) === true);
+    assert("promoteProspect refuses a too-young prospect", promoteProspect(state, young.id).error === "too-young");
+
+    const rosterCountBefore = state.academy.roster.length;
+    const squadCountBefore = state.squad.roster.length;
+    const result = promoteProspect(state, old.id);
+    assert("promoteProspect succeeds for an eligible prospect", result.ok === true);
+    assert("the prospect leaves the youth academy roster", state.academy.roster.length === rosterCountBefore - 1);
+    assert("...and joins the senior squad", state.squad.roster.length === squadCountBefore + 1 && state.squad.roster.some((p) => p.id === old.id));
+    assert("a promoted player is no longer isYouth", old.isYouth === false);
+    assert("a promoted player signs exactly a 3-year contract (plan1.md M9 verbatim)", old.contract.endYear === state.seasonStartYear + 3);
+    assert("a promoted player is fully scouted (level 3, exact ranges) — same convention as engine/contracts.js's movePlayerToClub", old.scouting.level === 3 && old.scouting.ovrRange[0] === old.scouting.ovrRange[1]);
+    assert("playersById/playersByClub pick up the promotion immediately", state.playersById.get(old.id) === old && state.playersByClub.get(state.club.id).includes(old));
+
+    const releaseResult = releaseProspect(state, young.id);
+    assert("releaseProspect removes the prospect with no further consequence", releaseResult.ok === true && !state.academy.roster.some((p) => p.id === young.id));
+  }
+
+  group("engine/academy.js — retirement-threat warning + auto-departure if ignored (scout.ini [YOUTH_PLAYER_RETIREMENT])");
+  {
+    const state = buildM7FakeState(new Date(2014, 8, 1));
+    createInitialAcademyState(state);
+    // An 18-y-o already 9 months into the academy, right near season end —
+    // retirementChancePct(18, ~92%) === 100 (RETIREMENT_PERC_AGE_2_POINT_3),
+    // so the warning roll is deterministic regardless of seed.
+    const prospect = {
+      ...world.players[0], id: -2001, age: 18, isYouth: true,
+      // .attrs is cloned (not just .contract, like buildM7FakeState's own
+      // players do) because this fixture flows through engine/academy.js's
+      // developProspect, which mutates .attrs in place — sharing
+      // world.players[0]'s own attrs object would corrupt it for any other
+      // group still holding a reference (e.g. window.__testWorld below).
+      attrs: { ...world.players[0].attrs },
+      academyJoinedDate: new Date(2014, 8, 1), nextDevelopmentDate: new Date(2014, 8, 1),
+      retirementWarningDate: null, scouting: { level: 2, ovrRange: [55, 61], potRange: [70, 76] },
+      contract: { ...world.players[0].contract },
+    };
+    state.academy.roster.push(prospect);
+    const emailsBefore = state.inbox.emails.length;
+
+    const warnDay = new Date(2015, 5, 1); // Jun 1, 2015 — ~92% through the 2014/15 season
+    runDailyAcademyActivity(state, warnDay);
+    assert("a retirement-threat roll at guaranteed odds sets the warning date", prospect.retirementWarningDate !== null);
+    assert("...and sends a decision email carrying the youth-retirement-warning action",
+      state.inbox.emails.length === emailsBefore + 1 &&
+      state.inbox.emails[0].action.type === "youth-retirement-warning" &&
+      state.inbox.emails[0].action.prospectId === prospect.id);
+
+    const stillThere = addDays(prospect.retirementWarningDate, RETIREMENT_WARNING_DAYS - 1);
+    runDailyAcademyActivity(state, stillThere);
+    assert(`still in the academy ${RETIREMENT_WARNING_DAYS - 1} days after the warning`, state.academy.roster.some((p) => p.id === prospect.id));
+
+    const departed = addDays(prospect.retirementWarningDate, RETIREMENT_WARNING_DAYS + 1);
+    runDailyAcademyActivity(state, departed);
+    assert(`departs the academy once the ${RETIREMENT_WARNING_DAYS}-day grace period elapses unpromoted (plan1.md M9's own NUMBER_DAYS_TO_RETIRE_PLAYER wording)`,
+      !state.academy.roster.some((p) => p.id === prospect.id));
+  }
+
+  group("core/db.js — state.academy round-trip (M9)");
+  {
+    const state = buildM7FakeState(new Date(2014, 8, 1));
+    state.results = new Map();
+    state.cups = new Map();
+    state.jobMarket = { vacancies: [] };
+    createInitialAcademyState(state);
+    hireYouthScout(state, 0);
+    assignScout(state, { scoutId: state.academy.scouts[0].id, nationId: "brazil", type: "skilled", tierIndex: 1 });
+    runDailyAcademyActivity(state, new Date(2014, 9, 1)); // first monthly report
+
+    const roundTripped = deserializeSave(serializeSave(state));
+    assert("scouts round-trip, including the assignment's nation/type/duration/dates", deepEqual(roundTripped.academy.scouts, state.academy.scouts));
+    assert("pool round-trips", deepEqual(roundTripped.academy.pool, state.academy.pool));
+    assert("roster round-trips (prospects, incl. academyJoinedDate/nextDevelopmentDate/scouting ranges)", deepEqual(roundTripped.academy.roster, state.academy.roster));
+    assert("nextId/lastSalaryPeriod round-trip", roundTripped.academy.nextId === state.academy.nextId && roundTripped.academy.lastSalaryPeriod === state.academy.lastSalaryPeriod);
   }
 
   render();

@@ -128,9 +128,17 @@ function pickAltPositions(rng, positionCode) {
  * @param {number} opts.targetOverall - sampled by gen/squad.js from clubOverallTarget
  * @param {number} opts.seasonStartYear - e.g. 2014 for the 2014/15 season
  * @param {object} opts.league - a data/leagues.json entry (engine/wage.js's computeWage needs wageModifier)
+ * @param {number} [opts.potentialOverride] - M9, engine/academy.js: a youth
+ *   prospect's potential is rolled *first* (config/youth.js's tier bands),
+ *   with targetOverall then derived from it (see that file's own
+ *   generateProspect) — the reverse of this function's normal flow, which
+ *   derives potential from overall via the curve. When set, skips this
+ *   function's own overall->potential inversion (and the young-player
+ *   "upside" roll, which would otherwise fight the caller's own tier roll)
+ *   and uses the given value directly (still clamped to [overall, 99]).
  */
 export function generatePlayer(opts) {
-  const { rng, positionCode, nation, club, league, targetOverall, seasonStartYear, ageOverride } = opts;
+  const { rng, positionCode, nation, club, league, targetOverall, seasonStartYear, ageOverride, potentialOverride } = opts;
   const info = positionInfo(positionCode);
   const overallGroup = info.overallGroup;
 
@@ -142,9 +150,14 @@ export function generatePlayer(opts) {
   const overall = Math.round(Math.min(94, Math.max(40, targetOverall)));
   const attrs = sampleAttributesForTarget(rng, overallGroup, overall);
 
-  const curveRatio = ratioForAge(info.growthCurve, age);
-  let potential = Math.round(overall / curveRatio);
-  if (age <= 23 && rng.chance(0.12)) potential += rng.int(3, 10);
+  let potential;
+  if (potentialOverride != null) {
+    potential = Math.round(potentialOverride);
+  } else {
+    const curveRatio = ratioForAge(info.growthCurve, age);
+    potential = Math.round(overall / curveRatio);
+    if (age <= 23 && rng.chance(0.12)) potential += rng.int(3, 10);
+  }
   potential = Math.min(99, Math.max(overall, potential));
 
   const { heightCm, weightKg } = pickHeightWeight(rng, overallGroup);

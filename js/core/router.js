@@ -23,6 +23,7 @@ import { renderJobsOverlay } from "../ui/jobsui.js";
 import { renderContracts } from "../ui/contractsui.js";
 import { renderSearch, renderNegotiation, renderSellList, renderRequestFunds } from "../ui/transfersui.js";
 import { renderGtn } from "../ui/gtnui.js";
+import { renderYouth } from "../ui/youthui.js";
 import { injectClubCrestSymbols } from "../gen/crest.js";
 import { fromEpochDay } from "./clock.js";
 
@@ -68,6 +69,9 @@ export function initRouter(store) {
   const footerGtn = document.getElementById("footer-gtn");
   const gtnOverlay = document.getElementById("gtn-overlay");
   const gtnBodyEl = document.getElementById("gtn-body");
+  const footerYouth = document.getElementById("footer-youth");
+  const youthOverlay = document.getElementById("youth-overlay");
+  const youthBodyEl = document.getElementById("youth-body");
   const newsTabsEl = document.getElementById("news-tabs");
   const newsListEl = document.getElementById("news-list");
   const squadlistBodyEl = document.getElementById("squadlist-body");
@@ -131,6 +135,10 @@ export function initRouter(store) {
       gtnOverlay.classList.toggle("is-active", open);
       footerGtn.hidden = !open;
       if (open) renderGtn(store.state);
+    } else if (name === "youth") {
+      youthOverlay.classList.toggle("is-active", open);
+      footerYouth.hidden = !open;
+      if (open) renderYouth(store.state);
     }
     const anyOverlayOpen = !!store.state.ui.overlay;
     tabbar.style.display = anyOverlayOpen ? "none" : "";
@@ -170,6 +178,10 @@ export function initRouter(store) {
     // cases above, and every screen's GTN preview tile needs the same
     // refresh growth/rollover already give Central/Season/Office/Transfers.
     if (store.state.ui.overlay === "gtn") renderGtn(store.state);
+    // M9: ditto for the Youth Staff overlay — an assignment's monthly
+    // report, a prospect's development/reveal tick, or a retirement
+    // departure can all land mid-advance.
+    if (store.state.ui.overlay === "youth") renderYouth(store.state);
   });
   store.on("contracts", () => renderContracts(store.state));
   store.on("search", () => renderSearch(store.state));
@@ -177,6 +189,7 @@ export function initRouter(store) {
   store.on("selllist", () => renderSellList(store.state));
   store.on("requestfunds", () => renderRequestFunds(store.state));
   store.on("gtn", () => renderGtn(store.state));
+  store.on("youth", () => renderYouth(store.state));
   store.on("calendar:view", () => renderCalendar(store.state));
   store.on("matchday", () => renderMatchday(store.state));
   initMatchdayTicker(store);
@@ -222,6 +235,11 @@ export function initRouter(store) {
     if (!el) return;
     if (el.dataset.action === "accept-bid") store.acceptIncomingBid(el.dataset.bid);
     else if (el.dataset.action === "reject-bid") store.rejectIncomingBid(el.dataset.bid);
+    // M9: the youth-retirement-warning decision email (ui/render.js's
+    // renderEmailActions) — Promote acts immediately; Let Him Go releases
+    // him right away instead of waiting out the warning's own grace period.
+    else if (el.dataset.action === "promote-youth") store.promoteFromYouthWarningEmail(el.dataset.prospect);
+    else if (el.dataset.action === "release-youth") store.releaseFromYouthWarningEmail(el.dataset.prospect);
   });
 
   // Generic: any tile with data-open="<overlayName>" opens that overlay
@@ -239,6 +257,7 @@ export function initRouter(store) {
       else if (tile.dataset.open === "requestfunds") store.openRequestFunds();
       else if (tile.dataset.open === "gtn") store.openGtn();
       else if (tile.dataset.open === "gtnreport") store.openGtnHubTile();
+      else if (tile.dataset.open === "youth") store.openYouth();
       else store.openOverlay(tile.dataset.open);
     });
   });
@@ -439,6 +458,38 @@ export function initRouter(store) {
   footerGtn.addEventListener("click", (e) => {
     const el = e.target.closest("[data-action]");
     if (el) handleGtnAction(el.dataset.action, el);
+  });
+
+  // Youth Staff (M9): same fully-delegated wiring as GTN above — one body
+  // element re-rendered per internal view (hub/assignForm/squad).
+  function handleYouthAction(action, target) {
+    switch (action) {
+      case "hire": store.youthHireSelected(); break;
+      case "sack": store.youthSackSelected(); break;
+      case "assign": store.youthOpenAssignForm(); break;
+      case "recall": store.youthRecallSelected(); break;
+      case "open-squad": store.openYouthSquad(); break;
+      case "set-type": store.youthSetAssignType(target.dataset.value); break;
+      case "nation-prev": store.youthCycleAssignNation(-1); break;
+      case "nation-next": store.youthCycleAssignNation(1); break;
+      case "set-tier": store.youthSetAssignTier(Number(target.dataset.value)); break;
+      case "submit-assign": store.youthSubmitAssignment(); break;
+      case "promote": store.promoteSelectedYouthPlayer(); break;
+      case "release": store.releaseSelectedYouthPlayer(); break;
+      case "back": store.youthBack(); break;
+    }
+  }
+  youthBodyEl.addEventListener("click", (e) => {
+    const row = e.target.closest(".gtn-row");
+    if (row) { store.selectYouthRow(row.dataset.scout, row.dataset.pool === "1"); return; }
+    const slRow = e.target.closest(".sl-row");
+    if (slRow) { store.selectYouthSquadPlayer(Number(slRow.dataset.player)); return; }
+    const el = e.target.closest("[data-action]");
+    if (el) handleYouthAction(el.dataset.action, el);
+  });
+  footerYouth.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (el) handleYouthAction(el.dataset.action, el);
   });
 
   // Central's Advance tile (fable-plans/plan1.md M3): clicking the "A

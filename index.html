@@ -20,6 +20,7 @@
   <link rel="stylesheet" href="css/contracts.css" />
   <link rel="stylesheet" href="css/transfers.css" />
   <link rel="stylesheet" href="css/gtn.css" />
+  <link rel="stylesheet" href="css/youth.css" />
 </head>
 <body>
 
@@ -433,7 +434,7 @@
           <div class="tile__title">Contracts</div>
           <div class="tile__desc">Manage the contracts of the players in your squad</div>
         </div>
-        <div class="tile is-gold of-youth">
+        <div class="tile is-gold of-youth is-link" data-open="youth">
           <div class="tile__title">Youth<br>Staff</div>
           <div class="tile__desc">Find new talent for your youth squad</div>
         </div>
@@ -709,6 +710,16 @@
         <div class="gtn-body" id="gtn-body"><!-- built by ui/gtnui.js --></div>
       </div>
 
+      <!-- =====================  YOUTH STAFF OVERLAY  =================== -->
+      <div id="youth-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">OFFICE</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur" id="youth-crumb-cur">YOUTH STAFF</span>
+        </div>
+        <div class="youth-body" id="youth-body"><!-- built by ui/youthui.js --></div>
+      </div>
+
       <!-- =====================  FOOTER PROMPTS  ==================== -->
       <footer class="footer" id="footer-main">
         <span class="prompt" data-prompt="select"><span class="btn-glyph a">A</span> Select</span>
@@ -752,6 +763,7 @@
       <footer class="footer" id="footer-selllist" hidden><!-- built by ui/transfersui.js (prompts change with selection) --></footer>
       <footer class="footer" id="footer-requestfunds" hidden><!-- built by ui/transfersui.js --></footer>
       <footer class="footer" id="footer-gtn" hidden><!-- built by ui/gtnui.js (prompts change per view) --></footer>
+      <footer class="footer" id="footer-youth" hidden><!-- built by ui/youthui.js (prompts change per view) --></footer>
 
       <!-- =====================  DELETE SAVE CONFIRM  ================ -->
       <div class="confirm-modal" id="confirm-delete-modal" hidden>

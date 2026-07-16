@@ -318,6 +318,66 @@ function deserializeGtnState(g) {
   };
 }
 
+/** M9: state.academy (engine/academy.js — hired youth scouts, the weekly
+ * hire pool, and the youth squad roster). Same rationale as state.gtn above
+ * for persisting directly rather than re-deriving from the seed. Roster
+ * entries are full Player-shaped objects (plus a handful of academy-only
+ * fields — academyType/academyJoinedDate/nextDevelopmentDate/
+ * retirementWarningDate) but the roster is capped at 16 (MAX_YOUTH_SQUAD_SIZE),
+ * nowhere near the ~15k-player-world scale that motivates serializePlayer's
+ * compact array format above, so it's persisted as plain JSON (like a
+ * mission's found-player id list) with just its Date fields converted. */
+function serializeAcademyState(a) {
+  return {
+    nextId: a.nextId,
+    lastSalaryPeriod: a.lastSalaryPeriod,
+    poolRefreshDate: toEpochDay(a.poolRefreshDate),
+    pool: a.pool,
+    scouts: a.scouts.map((s) => ({
+      ...s,
+      hiredDate: toEpochDay(s.hiredDate),
+      assignment: s.assignment ? {
+        ...s.assignment,
+        startDate: toEpochDay(s.assignment.startDate),
+        endDate: toEpochDay(s.assignment.endDate),
+        nextReportDate: toEpochDay(s.assignment.nextReportDate),
+      } : null,
+    })),
+    roster: a.roster.map((p) => ({
+      ...p,
+      birthDate: toEpochDay(p.birthDate),
+      academyJoinedDate: toEpochDay(p.academyJoinedDate),
+      nextDevelopmentDate: toEpochDay(p.nextDevelopmentDate),
+      retirementWarningDate: p.retirementWarningDate ? toEpochDay(p.retirementWarningDate) : null,
+    })),
+  };
+}
+function deserializeAcademyState(a) {
+  return {
+    nextId: a.nextId,
+    lastSalaryPeriod: a.lastSalaryPeriod,
+    poolRefreshDate: fromEpochDay(a.poolRefreshDate),
+    pool: a.pool,
+    scouts: a.scouts.map((s) => ({
+      ...s,
+      hiredDate: fromEpochDay(s.hiredDate),
+      assignment: s.assignment ? {
+        ...s.assignment,
+        startDate: fromEpochDay(s.assignment.startDate),
+        endDate: fromEpochDay(s.assignment.endDate),
+        nextReportDate: fromEpochDay(s.assignment.nextReportDate),
+      } : null,
+    })),
+    roster: a.roster.map((p) => ({
+      ...p,
+      birthDate: fromEpochDay(p.birthDate),
+      academyJoinedDate: fromEpochDay(p.academyJoinedDate),
+      nextDevelopmentDate: fromEpochDay(p.nextDevelopmentDate),
+      retirementWarningDate: p.retirementWarningDate != null ? fromEpochDay(p.retirementWarningDate) : null,
+    })),
+  };
+}
+
 /** GameState -> a small, IndexedDB-ready blob: static reference data
  * (leagues/clubs/nations/cups) is deliberately excluded — gen/world.js
  * re-fetches it from data/*.json on load — only what generation/play
@@ -370,6 +430,8 @@ export function serializeSave(state) {
     // M8: guarded like transferListings above — dev/tests.js's hand-built
     // fake states from earlier milestones predate state.gtn entirely.
     gtn: state.gtn ? serializeGtnState(state.gtn) : null,
+    // M9: ditto for state.academy.
+    academy: state.academy ? serializeAcademyState(state.academy) : null,
   };
 }
 
@@ -396,6 +458,7 @@ export function deserializeSave(saved) {
     clubTransferBudgets: new Map(saved.clubTransferBudgets || []),
     newsTransfer: saved.newsTransfer,
     gtn: saved.gtn ? deserializeGtnState(saved.gtn) : null,
+    academy: saved.academy ? deserializeAcademyState(saved.academy) : null,
   };
 }
 
