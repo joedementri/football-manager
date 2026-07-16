@@ -25,6 +25,7 @@ import { recomputeValue } from "./value.js";
 import { movePlayerToClub } from "./contracts.js";
 import { getClubBudget, spendClubBudget, creditClubBudget } from "./clubbudget.js";
 import { buildBuyNewsArticle, buildLoanNewsArticle, pushTransferNews } from "./transfernews.js";
+import { recordTransferFeePaid } from "./career.js";
 
 let nextOfferId = 1;
 
@@ -198,6 +199,7 @@ function completeTransfer(state) {
 
   state.finances.transferBudget -= fee;
   creditClubBudget(state, sellingClub.id, fee);
+  recordTransferFeePaid(state, { fee, playerId: player.id }); // M11 My Career: "Record Transfer Fee"
 
   movePlayerToClub(state, player, state.club.id);
   player.contract = {

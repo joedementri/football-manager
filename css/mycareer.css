@@ -1,0 +1,47 @@
+/* ===========================================================================
+   mycareer.css — Office ▸ My Career overlay (fable-plans/plan1.md M11: "My
+   Career (manager rep, trophy cabinet, history table)"). Reuses .news-crumb
+   for the breadcrumb (OFFICE › MY CAREER) and jobs.css's .jb-body full-width
+   offset convention, per ground rule #1 (extend, don't rewrite).
+   =========================================================================== */
+
+#mycareer-overlay { display: none; }
+#mycareer-overlay.is-active { display: block; }
+
+.mc-body {
+  position: absolute;
+  top: 160px; left: 36px; right: 36px; bottom: 56px;
+  overflow-y: auto;
+  z-index: 7;
+}
+.mc-body::-webkit-scrollbar { width: 8px; }
+.mc-body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+
+.mc-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.mc-head .crest--sm { width: 40px; height: 40px; }
+.mc-head__manager { font-family: var(--font-cond); font-size: 22px; font-weight: 700; }
+.mc-head__role { font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim); }
+.mc-page-label {
+  margin-left: auto; font-family: var(--font-ui); font-size: 13px; font-weight: 600;
+  color: var(--gold); text-transform: uppercase; letter-spacing: 0.04em;
+}
+
+.mc-page { font-family: var(--font-ui); font-size: 14px; }
+
+.mc-fact {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  padding: 10px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.mc-fact .k { color: var(--ink-dim); }
+.mc-fact .v { font-weight: 600; text-align: right; }
+.mc-fact--record .v.mc-record b { color: var(--gold); font-weight: 700; margin-right: 2px; }
+.mc-fact--record .v.mc-record { display: flex; gap: 12px; }
+
+.mc-history { width: 100%; }
+.mc-history th { text-align: left; }
+.mc-history td { padding: 8px 10px; }
+
+.mc-body .empty {
+  display: flex; align-items: center; justify-content: center; height: 60%;
+  color: var(--ink-dim); font-family: var(--font-ui); text-align: center;
+}

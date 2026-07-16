@@ -40,13 +40,17 @@ export function xiStrength(lineupPlayers) {
  * weighted overall (rating influence 78%), + home adv 4, + prestige/
  * competition terms (per [INFLUENCE])"). `opponentXi` is the other side's
  * average overall, used for the small COMPETITION amplifier term.
+ * `tacticModifier` (M11, config/tactics.js) is a small ±fraction — 0 for
+ * every CPU side and for the user's own side when playing on Default — that
+ * scales the whole score, same "flat percentage nudge" shape the plan's own
+ * "affecting sim ±2%" spec describes.
  */
-export function teamStrength({ xiAvg, opponentXiAvg, club, isHome }) {
+export function teamStrength({ xiAvg, opponentXiAvg, club, isHome, tacticModifier = 0 }) {
   const rating = xiAvg * (INFLUENCE.RATING / 100);
   const homeAdv = isHome ? INFLUENCE.HOMEADV : 0;
   const prestige = (club.prestige * INFLUENCE.PRESTIGEMULTIPLER) * (INFLUENCE.DOMESTICPRESTIGE / 100);
   const competition = (xiAvg - opponentXiAvg) * (INFLUENCE.COMPETITION / 100);
-  return rating + homeAdv + prestige + competition;
+  return (rating + homeAdv + prestige + competition) * (1 + tacticModifier);
 }
 
 const LAMBDA_BASE = 1.35; // even teams ~1.3-1.5 goals each (plan1.md anchor)

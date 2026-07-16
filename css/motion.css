@@ -1,0 +1,68 @@
+/* ===========================================================================
+   motion.css — M11 "sound-free juice": small entrance transitions for screen
+   switches, overlay opens and confirm modals. Every target here already
+   toggles visibility via a class/attribute the existing JS sets (`.is-active`
+   for screens/overlays, `[hidden]` for confirm modals — see core/router.js
+   and js/main.js) — nothing here needed a single JS change: a CSS animation
+   simply (re)plays whenever `display` flips from none to its visible value,
+   which is exactly what those toggles already do. Kept subtle and short
+   (<250ms) per the plan's own "sound-free juice" framing — polish, not a
+   slideshow — and skipped entirely for anyone who's asked the OS for less
+   motion.
+   =========================================================================== */
+
+@media (prefers-reduced-motion: no-preference) {
+  /* ----- Screen switches (Central/Squad/Transfers/Office/Season) ----- */
+  .screen.is-active {
+    animation: fm-rise-in 0.22s ease-out;
+  }
+
+  /* ----- Every overlay (news/email/squadlist/gtn/mycareer/settings/...) -----
+     Every overlay's own CSS file names its own #foo-overlay id, but every one
+     of them ends in "-overlay" and toggles the exact same .is-active class
+     (see core/router.js's applyOverlay) — one rule covers all ~25 without
+     listing each file. */
+  [id$="-overlay"].is-active {
+    animation: fm-pop-in 0.18s ease-out;
+  }
+
+  /* ----- Confirm modals (Delete Save, Manage Saves' Load/Delete/Import) ----- */
+  .confirm-modal:not([hidden]) {
+    animation: fm-fade-in 0.15s ease-out;
+  }
+  .confirm-modal:not([hidden]) .confirm-modal__box {
+    animation: fm-pop-in 0.18s ease-out;
+  }
+
+  /* ----- Tab bar: the gold underline grows in from the middle rather than
+     just appearing, and the label color eases instead of snapping. ----- */
+  .tab { transition: color 0.15s ease; }
+  .tab.is-active::after {
+    animation: fm-underline-in 0.2s ease-out;
+  }
+
+  /* ----- Header menu dropdown ----- */
+  .menu-dropdown:not([hidden]) {
+    animation: fm-pop-in 0.15s ease-out;
+  }
+}
+
+@keyframes fm-rise-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fm-pop-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes fm-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fm-underline-in {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}

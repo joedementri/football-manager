@@ -28,6 +28,8 @@ import { roundLabel, resolvePenaltyShootout } from "./knockoututil.js";
 import { simulateQuickMatch } from "../sim/quick.js";
 import { applyMatchResult } from "../sim/results.js";
 import { pickBestAvailableXI } from "../sim/lineup.js";
+import { tacticById } from "../../config/tactics.js";
+import { difficultyById } from "../../config/settings.js";
 
 /** [judgment call, see plan] Champions Cup / South American Cup: 8 groups of
  * 4 (plan1.md's own "8 groups of 4" for the Champions Cup, extended to the
@@ -178,7 +180,19 @@ function resolveGroupMatchdayFixtures(state, compState, date) {
       const homeRoster = state.playersByClub.get(fx.homeClubId) || [];
       const awayRoster = state.playersByClub.get(fx.awayClubId) || [];
       const rng = new RngStream(deriveSeed(state.seed, `match-${fx.id}`));
-      const result = simulateQuickMatch({ fixture: fx, homeClub, awayClub, homeRoster, awayRoster, rng });
+      // M11: the user's own tactic + designated penalty taker — group-stage
+      // ties are quick-simmed even for the user's club (this file's header).
+      const isUserHome = fx.homeClubId === state.club.id, isUserAway = fx.awayClubId === state.club.id;
+      const userTacticModifier = isUserHome || isUserAway
+        ? tacticById(state.squad.tacticId).modifier + difficultyById(state.settings.difficulty).modifier
+        : 0;
+      const result = simulateQuickMatch({
+        fixture: fx, homeClub, awayClub, homeRoster, awayRoster, rng,
+        homeTacticModifier: isUserHome ? userTacticModifier : 0,
+        awayTacticModifier: isUserAway ? userTacticModifier : 0,
+        homePenaltyTakerId: isUserHome ? state.squad.penaltyTakerId : null,
+        awayPenaltyTakerId: isUserAway ? state.squad.penaltyTakerId : null,
+      });
       applyMatchResult(state, fx, result);
     }
   }
@@ -234,10 +248,23 @@ function resolveKnockoutRound(state, compState, date) {
     const fixtureId = `continental-ko-${compState.id}-${compState.seasonStartYear}-r${bracket.roundIndex}-${clubAId}-${clubBId}`;
     const matchRng = new RngStream(deriveSeed(state.seed, `match-${fixtureId}`));
 
+    // homeClubId/awayClubId (not just `id`) so engine/career.js's My Career
+    // club-match record can recognise the user's own club's knockout ties too.
+    const fixtureObj = { id: fixtureId, homeClubId: clubAId, awayClubId: clubBId };
+    // M11: the user's own tactic + designated penalty taker — same rationale
+    // as resolveGroupMatchdayFixtures above.
+    const isUserHome = clubAId === state.club.id, isUserAway = clubBId === state.club.id;
+    const userTacticModifier = isUserHome || isUserAway
+      ? tacticById(state.squad.tacticId).modifier + difficultyById(state.settings.difficulty).modifier
+      : 0;
     const result = simulateQuickMatch({
-      fixture: { id: fixtureId }, homeClub, awayClub, homeRoster, awayRoster, rng: matchRng, neutral: isFinal,
+      fixture: fixtureObj, homeClub, awayClub, homeRoster, awayRoster, rng: matchRng, neutral: isFinal,
+      homeTacticModifier: isUserHome ? userTacticModifier : 0,
+      awayTacticModifier: isUserAway ? userTacticModifier : 0,
+      homePenaltyTakerId: isUserHome ? state.squad.penaltyTakerId : null,
+      awayPenaltyTakerId: isUserAway ? state.squad.penaltyTakerId : null,
     });
-    applyMatchResult(state, { id: fixtureId }, result);
+    applyMatchResult(state, fixtureObj, result);
 
     let penalties = null;
     let winnerClubId;

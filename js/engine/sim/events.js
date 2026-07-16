@@ -36,7 +36,7 @@ function pickMinute(rng, fromMinute, toMinute) {
  * [SHOOTING_ATTRIBS]/[ASSIST_ATTRIBS]-weighted way sim/quick.js resolves a
  * whole match's scorers at once — or, per [PENALTY_CHANCE_OF_GOAL], a
  * penalty instead (taker picked by [PENALTY_ATTRIBS], no assist). */
-function rollChancesForSide({ side, xi, chanceTotal, goalTotal, fromMinute, toMinute, rng, events }) {
+function rollChancesForSide({ side, xi, chanceTotal, goalTotal, fromMinute, toMinute, rng, events, penaltyTakerId = null }) {
   const candidates = outfieldCandidates(xi);
   if (candidates.length === 0 || chanceTotal === 0) return;
 
@@ -49,7 +49,10 @@ function rollChancesForSide({ side, xi, chanceTotal, goalTotal, fromMinute, toMi
     const minute = pickMinute(rng, fromMinute, toMinute);
     if (goalAttemptIdx.has(i)) {
       const isPenalty = rng.chance(PENALTY_CHANCE_OF_GOAL / 100);
-      const scorer = pickWeighted(rng, candidates, isPenalty ? PENALTY_ATTRIBS : SHOOTING_ATTRIBS).player;
+      // M11 Player Roles: the user's designated penalty taker always steps up
+      // when they're on the pitch (same rule as sim/quick.js's rollGoals).
+      const designatedTaker = isPenalty && penaltyTakerId != null ? candidates.find((c) => c.player.id === penaltyTakerId) : null;
+      const scorer = designatedTaker ? designatedTaker.player : pickWeighted(rng, candidates, isPenalty ? PENALTY_ATTRIBS : SHOOTING_ATTRIBS).player;
       let assistId = null;
       if (!isPenalty && candidates.length > 1 && rng.chance(CHANCE_OF_ASSIST / 100)) {
         const assistPool = candidates.filter((c) => c.player.id !== scorer.id);
@@ -72,17 +75,28 @@ function rollChancesForSide({ side, xi, chanceTotal, goalTotal, fromMinute, toMi
  * @param {object[]} opts.homeXI - current on-pitch home players (post any subs)
  * @param {object[]} opts.awayXI
  * @param {import("../../core/rng.js").RngStream} opts.rng
+ * @param {number} [opts.homeTacticModifier] - M11: the home side's active
+ *   tactic modifier (config/tactics.js), 0 unless the user's own club is
+ *   home and has picked a non-Default tactic — see engine/sim/match.js's
+ *   regenerateSegment for where this comes from.
+ * @param {number} [opts.awayTacticModifier]
+ * @param {number|null} [opts.homePenaltyTakerId] - M11 Player Roles: ditto,
+ *   the user's state.squad.penaltyTakerId when their club is home.
+ * @param {number|null} [opts.awayPenaltyTakerId]
  * @returns {{ events: object[], homeGoals: number, awayGoals: number }}
  */
-export function simulateSegment({ fromMinute, toMinute, homeClub, awayClub, homeXI, awayXI, rng }) {
+export function simulateSegment({
+  fromMinute, toMinute, homeClub, awayClub, homeXI, awayXI, rng,
+  homeTacticModifier = 0, awayTacticModifier = 0, homePenaltyTakerId = null, awayPenaltyTakerId = null,
+}) {
   const fraction = Math.max(0, toMinute - fromMinute) / 90;
   const events = [];
   if (fraction <= 0) return { events, homeGoals: 0, awayGoals: 0 };
 
   const xiAvgHome = xiStrength(homeXI);
   const xiAvgAway = xiStrength(awayXI);
-  const strengthHome = teamStrength({ xiAvg: xiAvgHome, opponentXiAvg: xiAvgAway, club: homeClub, isHome: true });
-  const strengthAway = teamStrength({ xiAvg: xiAvgAway, opponentXiAvg: xiAvgHome, club: awayClub, isHome: false });
+  const strengthHome = teamStrength({ xiAvg: xiAvgHome, opponentXiAvg: xiAvgAway, club: homeClub, isHome: true, tacticModifier: homeTacticModifier });
+  const strengthAway = teamStrength({ xiAvg: xiAvgAway, opponentXiAvg: xiAvgHome, club: awayClub, isHome: false, tacticModifier: awayTacticModifier });
   const gap = strengthHome - strengthAway;
 
   const { lambdaHome, lambdaAway } = expectedGoals(gap, rng);
@@ -93,8 +107,8 @@ export function simulateSegment({ fromMinute, toMinute, homeClub, awayClub, home
   const homeChances = Math.max(homeGoals, Math.round((strongIsHome ? strongCount : weakCount) * fraction));
   const awayChances = Math.max(awayGoals, Math.round((strongIsHome ? weakCount : strongCount) * fraction));
 
-  rollChancesForSide({ side: "home", xi: homeXI, chanceTotal: homeChances, goalTotal: homeGoals, fromMinute, toMinute, rng, events });
-  rollChancesForSide({ side: "away", xi: awayXI, chanceTotal: awayChances, goalTotal: awayGoals, fromMinute, toMinute, rng, events });
+  rollChancesForSide({ side: "home", xi: homeXI, chanceTotal: homeChances, goalTotal: homeGoals, fromMinute, toMinute, rng, events, penaltyTakerId: homePenaltyTakerId });
+  rollChancesForSide({ side: "away", xi: awayXI, chanceTotal: awayChances, goalTotal: awayGoals, fromMinute, toMinute, rng, events, penaltyTakerId: awayPenaltyTakerId });
 
   // Cards: same 50%/-10%-per-card/[CARD].MAX_CARDS shape as quick.js's whole
   // match roll, just gated per-attempt by the segment's share of 90 minutes.

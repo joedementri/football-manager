@@ -18,12 +18,14 @@
 import { buildFixtures } from "./calendar.js";
 import { buildLeagueTable } from "./comps/league.js";
 import { buildCupState, cupStatusForClub } from "./comps/cup.js";
-import { rebuildContinentalForRollover } from "./comps/continental.js";
+import { rebuildContinentalForRollover, findClubContinentalCompetition } from "./comps/continental.js";
 import { refreshIntlCompetitionsForRollover } from "./comps/intl.js";
 import {
   buildObjectiveEmails, domesticCupFor, leagueIndex, leagueObjectiveMet,
   evaluateSeasonEnd, buildSeasonEndEmail, buildMidSeasonReviewEmail,
+  leagueObjectiveText, cupObjectiveText,
 } from "./objectives.js";
+import { recordSeasonHistory } from "./career.js";
 import { applyGrowthToWorld } from "./growth.js";
 import { announceRetirements, applyRetirementsAndRegens } from "./retirement.js";
 import { buildSeasonAwardsEmail } from "./awards.js";
@@ -126,6 +128,32 @@ export function rolloverSeason(state) {
   const sackedClubId = verdict.sacked ? state.club.id : null;
   if (verdict.sacked) state.manager.sacked = true;
 
+  /* ---- 3b. Manager career-history snapshot (M11 My Career) — read
+   *      state.continental *before* step 11 below rebuilds it for next
+   *      season, so this season's actual continental result is still live. ---- */
+  const continentalFound = findClubContinentalCompetition(state, state.club.id);
+  recordSeasonHistory(state, {
+    seasonStartYear: state.seasonStartYear,
+    clubId: state.club.id, clubName: state.club.name,
+    leagueId: userLeague.id, leagueName: userLeague.name,
+    position: userPos ? userPos.position : null, numClubs: userPos ? userPos.numClubs : null,
+    leagueChampion: userPos ? userPos.position === 1 : false,
+    leagueObjectiveText: leagueObjectiveText(state.club.boardExpectationTier),
+    leagueObjectiveAchieved: verdict.leaguePass,
+    cupName: userCup ? userCup.name : null,
+    cupObjectiveText: userCup ? cupObjectiveText(state.club.boardExpectationTier, userCup) : null,
+    cupRoundLabel: userCupStatus.roundLabel,
+    cupObjectiveAchieved: verdict.cupPass,
+    cupWon: verdict.wonCup,
+    continentalName: continentalFound ? continentalFound.compState.name : null,
+    continentalRoundLabel: continentalFound ? continentalFound.status.roundLabel : null,
+    continentalWon: continentalFound ? continentalFound.status.roundLabel === "Champions" : false,
+    promoted: !!(userLeague.promotion && userPos && userPos.position <= userLeague.promotion.slots),
+    relegated: !!(userLeague.relegation && userPos && userPos.position > userPos.numClubs - userLeague.relegation.slots),
+    sacked: verdict.sacked,
+    repDelta: verdict.repDelta,
+  });
+
   /* ---- 4. Job market refresh (CPU sackings + the user's own vacancy) ---- */
   refreshJobMarket(state, { positionByClub, seed: state.seed, seasonStartYear: state.seasonStartYear, sackedClubId });
   // M10: the NT job market — a no-op below the reputation threshold (see
@@ -180,6 +208,20 @@ export function rolloverSeason(state) {
   state.seasonStartYear = newSeasonStartYear;
   const newUserLeagueId = state.clubLeague.get(state.club.id);
   if (newUserLeagueId && newUserLeagueId !== state.league.id) state.league = leaguesById.get(newUserLeagueId);
+
+  // M11 "multi-season save stays < 10MB": state.results accumulates every
+  // league/cup/continental/intl match's scoreline for the *entire* career —
+  // fixture ids are season-scoped (never collide across seasons — see this
+  // file's own step-9 comment), so a past season's entries are never looked
+  // up again once that season's tables/brackets/awards have already read
+  // them (which every one of them did above, in step 1-9's still-current-
+  // season reads) — engine/comps/league.js's buildLeagueTable and engine/
+  // comps/intl.js's own state.results.has() checks only ever query *this*
+  // season's own fixture ids. Left unpruned, this Map grows without bound
+  // for the rest of the career; a fresh season starts with zero results
+  // anyway, so clearing it here is exactly equivalent to what a same-seed
+  // fresh save would already have.
+  state.results = new Map();
 
   /* ---- 11. New fixtures + cup brackets for the new season ---- */
   const clubsNextSeason = effectiveClubs(clubs, state.clubLeague);

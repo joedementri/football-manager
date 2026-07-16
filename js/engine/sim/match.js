@@ -17,6 +17,8 @@ import { computeMatchRating } from "./core.js";
 import { applyMatchResult } from "./results.js";
 import { resolvePenaltyShootout } from "../comps/knockoututil.js";
 import { nationSquadRoster, completeUserKnockoutTie, checkGroupPhaseCompletion } from "../comps/intl.js";
+import { tacticById } from "../../config/tactics.js";
+import { difficultyById } from "../../config/settings.js";
 
 const HALFTIME_MINUTE = 45;
 const FULLTIME_MINUTE = 90;
@@ -97,9 +99,25 @@ function clubLookup(state, matchState) {
  * mid-segment substitution. */
 function regenerateSegment(state, matchState) {
   const { homeClub, awayClub } = clubLookup(state, matchState);
+  // M11: the user's own club tactic (config/tactics.js) only ever applies to
+  // their own club fixtures, not internationals (state.squad.tacticId is a
+  // club-management concept — NT management has no tactic picker this
+  // milestone) — 0 for the CPU side either way. Difficulty (config/
+  // settings.js, plan1.md: "difficulty setting scales user team strength
+  // ±3%"), unlike tactic, is a whole-game-feel setting that applies to every
+  // user match including internationals.
+  const userModifier = (matchState.isIntl ? 0 : tacticById(state.squad.tacticId).modifier) + difficultyById(state.settings.difficulty).modifier;
+  const homeTacticModifier = matchState.isUserHome ? userModifier : 0;
+  const awayTacticModifier = matchState.isUserHome ? 0 : userModifier;
+  // M11 Player Roles: same "club-management only, not internationals" scope
+  // as the tactic modifier above.
+  const userPenaltyTakerId = matchState.isIntl ? null : state.squad.penaltyTakerId;
+  const homePenaltyTakerId = matchState.isUserHome ? userPenaltyTakerId : null;
+  const awayPenaltyTakerId = matchState.isUserHome ? null : userPenaltyTakerId;
   const { events } = simulateSegment({
     fromMinute: matchState.minute, toMinute: matchState.segmentEnd,
     homeClub, awayClub, homeXI: matchState.homeXI, awayXI: matchState.awayXI, rng: matchState.rng,
+    homeTacticModifier, awayTacticModifier, homePenaltyTakerId, awayPenaltyTakerId,
   });
   matchState.timeline = events;
 }

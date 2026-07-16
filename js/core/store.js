@@ -24,7 +24,7 @@ import { buildCupState } from "../engine/comps/cup.js";
 import { createInitialContinentalState } from "../engine/comps/continental.js";
 import { createInitialIntlState, intlFixtureOnDate } from "../engine/comps/intl.js";
 import * as ntJobsEngine from "../engine/ntjobs.js";
-import { pickBestXI } from "../gen/squad.js";
+import { pickBestXI, applyCaptainToLineup } from "../gen/squad.js";
 import { applyBoardReview, applyMidSeasonGrowth, rolloverSeason } from "../engine/season.js";
 import { acceptJob } from "../engine/jobs.js";
 import { computeWageCeiling } from "../engine/wage.js";
@@ -35,6 +35,11 @@ import * as transferai from "../engine/transferai.js";
 import { reallocateBudget, requestFundsFromBoard } from "../engine/finances.js";
 import * as gtnEngine from "../engine/gtn.js";
 import * as academyEngine from "../engine/academy.js";
+import { createManagerCareerFields } from "../engine/career.js";
+import { rankSquadByForm } from "../engine/form.js";
+import { DEFAULT_TACTIC_ID } from "../config/tactics.js";
+import { DEFAULT_SETTINGS } from "../config/settings.js";
+import { setDisplayCurrency } from "./format.js";
 
 export const SCREENS = ["central", "squad", "transfers", "office", "season"];
 
@@ -304,6 +309,57 @@ function createUiDefaults(today) {
       squadSelectedPlayerId: null,
       lastError: null,
     },
+
+    // M11 (ui/mycareerui.js): My Career overlay — one of 3 pages ("overview",
+    // "season", "history"), cycled by the footer's Prev/Next Page prompts,
+    // same "purely presentational" footing as gtn/youth above (the real data
+    // lives on state.manager — see engine/career.js).
+    myCareer: { page: "overview" },
+
+    // M11 (ui/squadreportui.js): Squad Report overlay — selected roster
+    // player + Pos-column sort direction (the reference screen's only
+    // sortable column).
+    squadReport: { selectedPlayerId: null, sortDir: "asc" },
+
+    // M11 (ui/squadreportui.js): Squad Ranking overlay — `arrows` (playerId ->
+    // 'up'|'down'|'same') is computed once per openSquadRanking() call by
+    // diffing the freshly-computed ranking against `lastRanks` (the ranking
+    // as of the *previous* time this overlay was opened, itself then
+    // overwritten) — see store.openSquadRanking()'s own header for why this
+    // lives in a mutator rather than being computed at render time.
+    squadRanking: { lastRanks: {}, arrows: {} },
+
+    // M11 (ui/kitnumbersui.js): Kit Numbers overlay — `changes` maps
+    // playerId -> the number they had when this overlay was last opened, so
+    // the "Kit Changes" side panel can show "12 -> 13" (original, not just
+    // the last single step) for anyone touched this session; cleared every
+    // openKitNumbers().
+    kitNumbers: { selectedPlayerId: null, editing: false, changes: {} },
+
+    // M11 (ui/tacticsui.js): Tactics / Player Roles overlay — one of 2 pages
+    // ("tactics", "roles"), same "purely presentational" footing as My
+    // Career's page state above (the real data lives on state.squad).
+    tactics: { page: "tactics" },
+
+    // M11 (ui/statsui.js): Season ▸ Team Stats — L1/R1 cycles `leagueIndex`
+    // (into state.staticData.leagues); "select" view lists that league's
+    // clubs, "team" view shows the chosen club's individual player stats
+    // (L2/R2 cycling `clubId` within the same league without returning to
+    // the list — see the reference screen's own "L2 R2 {club}" header).
+    teamStats: { leagueIndex: 0, view: "select", clubId: null, sortDir: "asc" },
+
+    // M11 (ui/statsui.js): Season ▸ Player Stats — L1/R1 cycles `leagueIndex`,
+    // L2/R2 cycles `category` (topScorers/assists/cleanSheets/yellowCards/
+    // redCards).
+    playerStats: { leagueIndex: 0, category: "topScorers" },
+
+    // M11 (ui/savesui.js, js/main.js's wireSaves): the header menu's "Manage
+    // Saves" overlay. Unlike every other `ui.*` slice, `slots` isn't derived
+    // from GameState at all — it's IndexedDB metadata (core/db.js's
+    // listSaveSlots), fetched by main.js (the project's one existing
+    // db.js-touching module) and stashed here purely so ui/savesui.js can
+    // render it the same "read state, don't fetch" way as everything else.
+    saves: { slots: [], message: null },
   };
 }
 
@@ -444,10 +500,17 @@ export function createCareerState({ managerName, club, league, world, seasonStar
       rep: 5,
       warned: false,
       sacked: false,
+      // M11 My Career: clubsManaged/record/biggestWin/biggestDefeat/
+      // transferFeePaid|ReceivedRecord/leagueTitles/domesticCupsWon/
+      // continentalCupsWon/history — see engine/career.js's own header.
+      ...createManagerCareerFields(club.id),
     },
 
     club,
     league,
+
+    // M11 (config/settings.js, ui/settingsui.js): Office ▸ Settings.
+    settings: { ...DEFAULT_SETTINGS },
 
     calendar: {
       today,
@@ -459,6 +522,16 @@ export function createCareerState({ managerName, club, league, world, seasonStar
       formationLabel: "4-4-2",
       formationStyle: "Flat",
       lineup: world.lineupsByClub.get(club.id),
+      // M11 (config/tactics.js, ui/tacticsui.js): the user's active in-match
+      // tactic preset — real effect wired into engine/sim/core.js's
+      // teamStrength() via events.js/quick.js's own call sites.
+      tacticId: DEFAULT_TACTIC_ID,
+      // M11 Player Roles: captaincy (re-marks state.squad.lineup's "C" badge
+      // via gen/squad.js's applyCaptainToLineup) + designated penalty taker
+      // (real effect wired into sim/quick.js's rollGoals + sim/events.js's
+      // rollChancesForSide). Both null until the user picks one.
+      captainId: null,
+      penaltyTakerId: null,
     },
 
     // Day-1 board objective emails (plan1.md M3: "board objective emails on
@@ -470,6 +543,11 @@ export function createCareerState({ managerName, club, league, world, seasonStar
     // mid-live-match isn't supported, matching the project's existing
     // "fixtures/inbox persist, in-flight UI doesn't" convention).
     matchday: null,
+
+    // M11 (engine/career.js, ui/squadreportui.js's Squad Ranking panel): the
+    // user's club's most recently finished match (any competition) — null
+    // until the first one resolves.
+    lastMatchReport: null,
 
     // M5: CPU-club managerial vacancies the user can apply to — always
     // starts empty; engine/jobs.js's refreshJobMarket populates it at every
@@ -510,6 +588,8 @@ export function createCareerState({ managerName, club, league, world, seasonStar
   // own header for which those are).
   createInitialIntlState(built);
 
+  setDisplayCurrency(built.settings.currency); // M11: core/format.js's money() default
+
   return built;
 }
 
@@ -532,18 +612,27 @@ export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
   const state = {
     seed: saved.seed,
     seasonStartYear: saved.seasonStartYear,
-    manager: saved.manager,
+    // M11: a pre-M11 save's `manager` predates clubsManaged/record/history —
+    // same "fresh default for an older save" footing as gtn/academy below;
+    // real saved fields win, only genuinely-missing ones fall back.
+    manager: { ...createManagerCareerFields(saved.clubId), ...saved.manager },
     club,
     league,
+    // M11: a pre-M11 save has no `settings` at all — same fallback footing.
+    settings: { ...DEFAULT_SETTINGS, ...(saved.settings || {}) },
     calendar: { today, strip: buildDayStrip(today, 5) },
     players: saved.players,
     squad: {
       formationLabel: "4-4-2",
       formationStyle: "Flat",
       lineup: saved.lineup,
+      tacticId: saved.squadTacticId || DEFAULT_TACTIC_ID,
+      captainId: saved.squadCaptainId ?? null,
+      penaltyTakerId: saved.squadPenaltyTakerId ?? null,
     },
     inbox: { emails: saved.inbox },
     matchday: null,
+    lastMatchReport: saved.lastMatchReport || null,
     jobMarket: saved.jobMarket || { vacancies: [] },
     nationalTeam: saved.nationalTeam || null,
     ntJobMarket: saved.ntJobMarket || { vacancies: [] },
@@ -573,6 +662,8 @@ export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
   // M10: ditto for state.continental / state.intl on a pre-M10 save.
   built.continental = saved.continental || createInitialContinentalState(built);
   built.intl = saved.intl || createInitialIntlState(built);
+
+  setDisplayCurrency(built.settings.currency); // M11: core/format.js's money() default
 
   return built;
 }
@@ -1096,6 +1187,262 @@ export class Store {
     c.lastResult = result.accepted ? "accepted" : "rejected";
     this.emit("contracts", null);
     this.emit("advance", null); // reuse Central/Season/Transfers' re-render hook — wage bill/finances changed
+  }
+
+  /* ----- M11 (engine/career.js): Office ▸ My Career ----- */
+
+  /** Opens the My Career overlay, always starting on the Overview page
+   * (matches Browse Jobs/GTN's own "reset to a sensible default view on
+   * open" precedent) — the page itself is cheap to flip back to whichever
+   * the user was last on if that's ever wanted, but a stale deep page from a
+   * previous session would be a confusing thing to land back on unannounced. */
+  openMyCareer() {
+    this.state.ui.myCareer.page = "overview";
+    this.openOverlay("mycareer");
+  }
+
+  /** Cycles the 3-page My Career overlay: overview -> season -> history -> overview. */
+  myCareerChangePage(dir) {
+    const pages = ["overview", "season", "history"];
+    const i = pages.indexOf(this.state.ui.myCareer.page);
+    this.state.ui.myCareer.page = pages[(i + dir + pages.length) % pages.length];
+    this.emit("mycareer", null);
+  }
+
+  /* ----- M11 (ui/squadreportui.js): Squad Report / Squad Ranking ----- */
+
+  /** Opens Squad Report, defaulting the selection to the squad's top-rated
+   * player if nothing's selected yet (same "sensible default" precedent as
+   * openContracts). */
+  openSquadReport() {
+    if (this.state.ui.squadReport.selectedPlayerId == null) {
+      const first = [...this.state.squad.roster].sort((a, b) => b.overall - a.overall)[0];
+      this.state.ui.squadReport.selectedPlayerId = first ? first.id : null;
+    }
+    this.openOverlay("squadreport");
+  }
+
+  selectSquadReportPlayer(playerId) {
+    this.state.ui.squadReport.selectedPlayerId = playerId;
+    this.emit("squadreport", null);
+  }
+
+  toggleSquadReportSort() {
+    const s = this.state.ui.squadReport;
+    s.sortDir = s.sortDir === "asc" ? "desc" : "asc";
+    this.emit("squadreport", null);
+  }
+
+  /**
+   * Opens Squad Ranking, computing this view's up/down arrows by diffing the
+   * freshly-ranked squad (engine/form.js's rankSquadByForm) against
+   * `lastRanks` — whatever the ranking was the *previous* time this overlay
+   * was opened (empty the very first time, so every arrow reads "same").
+   * Computed here (a mutator) rather than in the renderer because comparing
+   * against and then overwriting `lastRanks` is a real state mutation, not a
+   * pure read — the project's "no logic in UI files" rule.
+   */
+  openSquadRanking() {
+    const s = this.state.ui.squadRanking;
+    const ranked = rankSquadByForm(this.state.squad.roster);
+    const arrows = {};
+    const newRanks = {};
+    for (const { player, rank } of ranked) {
+      const prev = s.lastRanks[player.id];
+      arrows[player.id] = prev == null || prev === rank ? "same" : prev > rank ? "up" : "down";
+      newRanks[player.id] = rank;
+    }
+    s.arrows = arrows;
+    s.lastRanks = newRanks;
+    this.openOverlay("squadranking");
+  }
+
+  /* ----- M11 (ui/kitnumbersui.js): Squad ▸ Kit Numbers ----- */
+
+  openKitNumbers() {
+    const k = this.state.ui.kitNumbers;
+    k.changes = {};
+    k.editing = false;
+    const first = this.state.squad.roster[0];
+    k.selectedPlayerId = first ? first.id : null;
+    this.openOverlay("kitnumbers");
+  }
+
+  /** Click an unselected row to select it; click the already-selected row
+   * again to enter edit mode (reveals the ◄/► steppers) — same "click again
+   * to go one level deeper" convention as Squad List -> Player Bio. */
+  selectOrEditKitNumberPlayer(playerId) {
+    const k = this.state.ui.kitNumbers;
+    if (k.selectedPlayerId === playerId) k.editing = true;
+    else { k.selectedPlayerId = playerId; k.editing = false; }
+    this.emit("kitnumbers", null);
+  }
+
+  /** Steps the selected player's kit number by `delta` (±1), skipping any
+   * number already worn by another squad player (real squads never share a
+   * number) and wrapping 1..99. Records the player's pre-edit number the
+   * first time they're touched this session so the side panel's diff always
+   * reads "original -> current", not just the last single step. */
+  adjustKitNumber(delta) {
+    const k = this.state.ui.kitNumbers;
+    if (!k.editing || k.selectedPlayerId == null) return;
+    const player = this.state.playersById.get(k.selectedPlayerId);
+    if (!player) return;
+    const taken = new Set(this.state.squad.roster.filter((p) => p.id !== player.id).map((p) => p.kitNumber));
+
+    if (!(player.id in k.changes)) k.changes[player.id] = player.kitNumber;
+    let n = player.kitNumber;
+    do {
+      n = ((n - 1 + delta + 99) % 99) + 1;
+    } while (taken.has(n) && n !== player.kitNumber);
+    player.kitNumber = n;
+    this.emit("kitnumbers", null);
+  }
+
+  /* ----- M11 (config/tactics.js, ui/tacticsui.js): Squad ▸ Tactics / Player
+   * Roles ----- */
+
+  openTactics(page = "tactics") {
+    this.state.ui.tactics.page = page;
+    this.openOverlay("tactics");
+  }
+
+  tacticsChangePage(dir) {
+    const pages = ["tactics", "roles"];
+    const i = pages.indexOf(this.state.ui.tactics.page);
+    this.state.ui.tactics.page = pages[(i + dir + pages.length) % pages.length];
+    this.emit("tactics", null);
+  }
+
+  /** Picks the active tactic preset — real effect: engine/sim/core.js's
+   * teamStrength() picks up the new modifier the very next time the user's
+   * club plays (interactive league match or a quick-simmed cup/continental
+   * tie), no re-sim of anything already resolved. */
+  setTactic(tacticId) {
+    this.state.squad.tacticId = tacticId;
+    this.emit("tactics", null);
+  }
+
+  setCaptain(playerId) {
+    this.state.squad.captainId = playerId;
+    applyCaptainToLineup(this.state.squad.lineup, playerId);
+    this.emit("tactics", null);
+  }
+
+  setPenaltyTaker(playerId) {
+    this.state.squad.penaltyTakerId = playerId;
+    this.emit("tactics", null);
+  }
+
+  /* ----- M11 (ui/statsui.js): Season ▸ Team Stats / Player Stats ----- */
+
+  openTeamStats() {
+    const s = this.state.ui.teamStats;
+    const leagues = this.state.staticData.leagues;
+    s.leagueIndex = Math.max(0, leagues.findIndex((l) => l.id === this.state.league.id));
+    s.view = "select";
+    s.clubId = null;
+    this.openOverlay("teamstats");
+  }
+
+  teamStatsChangeLeague(dir) {
+    const s = this.state.ui.teamStats;
+    const leagues = this.state.staticData.leagues;
+    s.leagueIndex = (s.leagueIndex + dir + leagues.length) % leagues.length;
+    s.view = "select";
+    s.clubId = null;
+    this.emit("teamstats", null);
+  }
+
+  teamStatsSelectClub(clubId) {
+    const s = this.state.ui.teamStats;
+    s.clubId = clubId;
+    s.view = "team";
+    this.emit("teamstats", null);
+  }
+
+  /** L2/R2: cycles the selected club within the current league without
+   * returning to the select-a-team list (matches the reference screen's own
+   * "L2 R2 {club name}" header on the team-selected view). */
+  teamStatsChangeClub(dir) {
+    const s = this.state.ui.teamStats;
+    const league = this.state.staticData.leagues[s.leagueIndex];
+    const clubs = this.state.staticData.clubs
+      .filter((c) => (this.state.clubLeague.get(c.id) ?? c.leagueId) === league.id)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const idx = clubs.findIndex((c) => c.id === s.clubId);
+    s.clubId = clubs[(idx + dir + clubs.length) % clubs.length].id;
+    this.emit("teamstats", null);
+  }
+
+  teamStatsBackToSelect() {
+    this.state.ui.teamStats.view = "select";
+    this.emit("teamstats", null);
+  }
+
+  toggleTeamStatsSort() {
+    const s = this.state.ui.teamStats;
+    s.sortDir = s.sortDir === "asc" ? "desc" : "asc";
+    this.emit("teamstats", null);
+  }
+
+  openPlayerStats() {
+    const s = this.state.ui.playerStats;
+    const leagues = this.state.staticData.leagues;
+    s.leagueIndex = Math.max(0, leagues.findIndex((l) => l.id === this.state.league.id));
+    s.category = "topScorers";
+    this.openOverlay("playerstats");
+  }
+
+  playerStatsChangeLeague(dir) {
+    const s = this.state.ui.playerStats;
+    const leagues = this.state.staticData.leagues;
+    s.leagueIndex = (s.leagueIndex + dir + leagues.length) % leagues.length;
+    this.emit("playerstats", null);
+  }
+
+  playerStatsChangeCategory(dir) {
+    const categories = ["topScorers", "assists", "cleanSheets", "yellowCards", "redCards"];
+    const s = this.state.ui.playerStats;
+    const i = categories.indexOf(s.category);
+    s.category = categories[(i + dir + categories.length) % categories.length];
+    this.emit("playerstats", null);
+  }
+
+  /* ----- M11 (config/settings.js, ui/settingsui.js): Office ▸ Settings ----- */
+
+  openSettings() {
+    this.openOverlay("settings");
+  }
+
+  /** Real effect: engine/sim/match.js's regenerateSegment and engine/comps/
+   * cup.js's/continental.js's quick-sim call sites all add this to the
+   * user's own tactic modifier (plan1.md: "difficulty setting scales user
+   * team strength ±3%"). */
+  setDifficulty(id) {
+    this.state.settings.difficulty = id;
+    this.emit("settings", null);
+  }
+
+  /** Real effect: core/format.js's money() default (every existing call
+   * site across the UI, not just Settings itself). */
+  setCurrency(code) {
+    this.state.settings.currency = code;
+    setDisplayCurrency(code);
+    this.emit("settings", null);
+    this.emit("advance", null); // cheap way to refresh every screen's money() displays immediately
+  }
+
+  setAutosave(enabled) {
+    this.state.settings.autosave = enabled;
+    this.emit("settings", null);
+  }
+
+  /** Real effect: ui/matchday.js's live ticker feed hides "chance-miss"
+   * flavour events when set to "key-events". */
+  setSimDetail(id) {
+    this.state.settings.simDetail = id;
+    this.emit("settings", null);
   }
 
   /* ----- M7: Search Players (world-wide, real numbers — fuzzy GTN ranges

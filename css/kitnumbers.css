@@ -1,0 +1,46 @@
+/* ===========================================================================
+   kitnumbers.css — Squad ▸ Kit Numbers overlay (fable-plans/plan1.md M11).
+   Reuses .news-crumb for the breadcrumb and tables.css's .sl-table/.sl-row
+   row styling verbatim, per ground rule #1 (extend, don't rewrite).
+   =========================================================================== */
+
+#kitnumbers-overlay { display: none; }
+#kitnumbers-overlay.is-active { display: block; }
+
+.kn-body {
+  position: absolute;
+  top: 160px; left: 36px; right: 36px; bottom: 56px;
+  display: grid; grid-template-columns: 56% 1fr; gap: 0 18px;
+  z-index: 7;
+}
+#kn-list { overflow-y: auto; }
+#kn-list::-webkit-scrollbar { width: 8px; }
+#kn-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+
+.kn-table th.l, .kn-table td.kn-num-cell { text-align: right; }
+.kn-num-cell { width: 110px; }
+
+.kn-steppers { display: inline-flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.kn-stepper {
+  width: 24px; height: 24px; border-radius: 50%;
+  border: 1px solid rgba(120, 140, 160, 0.3); background: rgba(255, 255, 255, 0.08); color: var(--ink);
+  font-size: 10px; line-height: 1; cursor: pointer;
+}
+.kn-stepper:hover { background: rgba(255, 255, 255, 0.16); }
+.kn-num { font-family: var(--font-cond); font-weight: 700; font-size: 17px; min-width: 22px; text-align: center; display: inline-block; }
+
+#kn-changes {
+  background: linear-gradient(160deg, rgba(30, 36, 43, 0.92), rgba(18, 22, 27, 0.92));
+  border-radius: 8px; padding: 16px 18px; overflow-y: auto;
+}
+#kn-changes::-webkit-scrollbar { width: 8px; }
+#kn-changes::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+#kn-changes .empty { color: var(--ink-dim); font-family: var(--font-ui); font-size: 13px; padding: 8px 0; }
+
+.kn-change {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 9px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: var(--font-ui); font-size: 14px;
+}
+.kn-change__name { font-weight: 600; }
+.kn-change__nums { font-family: var(--font-cond); font-weight: 700; color: var(--gold); }

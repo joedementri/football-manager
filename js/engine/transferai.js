@@ -27,6 +27,7 @@ import { recomputeValue } from "./value.js";
 import { movePlayerToClub } from "./contracts.js";
 import { getClubBudget, spendClubBudget, creditClubBudget } from "./clubbudget.js";
 import { buildCpuTransferNewsArticle, pushTransferNews } from "./transfernews.js";
+import { recordTransferFeeReceived } from "./career.js";
 
 const MONDAY = 1;
 
@@ -244,6 +245,7 @@ export function acceptIncomingBid(state, bidId) {
 
   state.finances.transferBudget += offer;
   spendClubBudget(state, buyingClubId, offer);
+  recordTransferFeeReceived(state, { fee: offer, playerId }); // M11 My Career: "Record Transfer Fee"
   movePlayerToClub(state, player, buyingClubId);
   const ask = computeSigningAsk({ player, sourceClub: state.club, destClub: buyingClub, state });
   player.contract = {

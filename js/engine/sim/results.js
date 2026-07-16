@@ -13,6 +13,7 @@
 import { positionInfo } from "../../config/positions.js";
 import { recordMatchRating } from "../form.js";
 import { matchFatigueLoss } from "../fitness.js";
+import { recordClubMatchIfUser } from "../career.js";
 
 // Clean-sheet season-stat credit follows the same DEF/MID/GK-yes,ATT-no
 // split as [MATCH_RATINGS]' CLEANSHEET_* bonuses (config/sim.js's
@@ -27,6 +28,11 @@ const CLEANSHEET_CREDIT_AREAS = new Set(["GK", "DEF", "MID"]);
  */
 export function applyMatchResult(state, fixture, result) {
   state.results.set(fixture.id, { homeGoals: result.homeGoals, awayGoals: result.awayGoals });
+  // M11 My Career: whole-career club-match record + biggest win/defeat — a
+  // no-op for every fixture except the user's own club's (see
+  // engine/career.js's own header for why every call site's fixture object
+  // now carries homeClubId/awayClubId).
+  recordClubMatchIfUser(state, fixture, result);
 
   for (const [playerId, stat] of result.playerStats) {
     const player = state.playersById.get(playerId);

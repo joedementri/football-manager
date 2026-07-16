@@ -1,0 +1,113 @@
+/* ===========================================================================
+   squadreport.css — Squad ▸ Squad Report + Squad Ranking overlays
+   (fable-plans/plan1.md M11). Reuses .news-crumb for the breadcrumb, jobs.
+   css's full-width offset convention and tables.css's .sl-table/.sl-row row
+   styling verbatim, per ground rule #1 (extend, don't rewrite).
+   =========================================================================== */
+
+#squadreport-overlay, #squadranking-overlay { display: none; }
+#squadreport-overlay.is-active, #squadranking-overlay.is-active { display: block; }
+
+/* ----- Squad Report ----- */
+.sqr-body {
+  position: absolute;
+  top: 160px; left: 36px; right: 36px; bottom: 56px;
+  display: grid; grid-template-columns: 56% 1fr; gap: 0 18px;
+  z-index: 7;
+}
+.sqr-left { display: flex; flex-direction: column; min-height: 0; }
+#sqr-list { flex: 1; overflow-y: auto; margin-top: 14px; }
+#sqr-list::-webkit-scrollbar { width: 8px; }
+#sqr-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+.sqr-list-table th.sqr-sort { cursor: pointer; }
+
+.sqr-card {
+  background: linear-gradient(160deg, rgba(30, 36, 43, 0.92), rgba(18, 22, 27, 0.92));
+  border-radius: 8px; padding: 14px 16px; flex: 0 0 auto;
+}
+.sqr-card__banner { display: flex; align-items: center; gap: 10px; }
+.sqr-card__name { font-family: var(--font-cond); font-size: 20px; font-weight: 700; }
+.sqr-card__club { font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim); margin: 2px 0 10px; }
+.sqr-card__grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  margin-bottom: 8px;
+}
+.sqr-card__grid > div, .sqr-card__row {
+  background: rgba(255, 255, 255, 0.04); border-radius: 4px; padding: 6px 10px;
+  font-family: var(--font-ui);
+}
+.sqr-card__grid > div { display: flex; flex-direction: column; align-items: center; }
+.sqr-card__grid .k, .sqr-card__row .k { font-size: 11px; color: var(--ink-dim); text-transform: uppercase; }
+.sqr-card__grid .v { font-family: var(--font-cond); font-size: 20px; font-weight: 700; }
+.sqr-card__row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.sqr-card__row .v { font-weight: 600; }
+
+#sqr-detail {
+  background: linear-gradient(160deg, rgba(30, 36, 43, 0.92), rgba(18, 22, 27, 0.92));
+  border-radius: 8px; padding: 18px 20px; overflow-y: auto;
+}
+#sqr-detail::-webkit-scrollbar { width: 8px; }
+#sqr-detail::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+
+.sqr-fact {
+  display: flex; justify-content: space-between; font-family: var(--font-ui); font-size: 14px;
+  padding: 8px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.sqr-fact .k { color: var(--ink-dim); }
+.sqr-fact .v { font-weight: 600; }
+
+.sqr-stats { width: 100%; margin-top: 16px; font-size: 13px; }
+.sqr-stats th, .sqr-stats td { padding: 6px 8px; }
+
+/* ----- Squad Ranking ----- */
+.sqk-body {
+  position: absolute;
+  top: 160px; left: 36px; right: 36px; bottom: 56px;
+  display: grid; grid-template-columns: 62% 1fr; gap: 0 18px;
+  z-index: 7;
+}
+#sqk-list { overflow-y: auto; }
+#sqk-list::-webkit-scrollbar { width: 8px; }
+#sqk-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+
+.sqk-arrow { font-size: 9px; display: inline-block; width: 10px; }
+.sqk-arrow--up { color: #7bd88f; }
+.sqk-arrow--down { color: #ff9585; }
+.sqk-arrow--same { color: var(--ink-dim); }
+
+.sqk-frm {
+  display: inline-block; min-width: 34px; padding: 2px 6px; border-radius: 4px;
+  font-family: var(--font-cond); font-weight: 700; background: rgba(255, 255, 255, 0.08);
+}
+.sqk-frm--ok { background: rgba(212, 175, 55, 0.25); color: var(--gold); }
+.sqk-frm--good { background: rgba(89, 193, 77, 0.25); color: #7bd88f; }
+
+#sqk-side {
+  background: linear-gradient(160deg, rgba(30, 36, 43, 0.92), rgba(18, 22, 27, 0.92));
+  border-radius: 8px; padding: 16px 18px; overflow-y: auto;
+}
+#sqk-side::-webkit-scrollbar { width: 8px; }
+#sqk-side::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+.sqk-side__head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.sqk-side__name { font-family: var(--font-cond); font-size: 18px; font-weight: 700; }
+
+.sqk-match__date { font-family: var(--font-ui); font-size: 12px; color: var(--ink-dim); margin: 8px 0 6px; }
+.sqk-match__row {
+  display: flex; align-items: center; gap: 8px; justify-content: space-between;
+  font-family: var(--font-ui); font-size: 14px; padding: 4px 0;
+}
+.sqk-match__team { font-weight: 600; }
+.sqk-match__score { font-family: var(--font-cond); font-size: 18px; font-weight: 700; color: var(--gold); }
+
+.sqk-motm {
+  display: flex; align-items: center; gap: 10px; margin: 12px 0;
+  background: rgba(255, 255, 255, 0.04); border-radius: 6px; padding: 8px 10px;
+}
+.sqk-motm__rating {
+  display: block; font-family: var(--font-cond); font-size: 18px; font-weight: 700;
+  background: rgba(89, 193, 77, 0.25); color: #7bd88f; border-radius: 4px; padding: 2px 8px; text-align: center;
+}
+.sqk-motm__line { font-family: var(--font-ui); font-size: 11px; color: var(--ink-dim); }
+.sqk-motm__name { margin-left: auto; font-family: var(--font-cond); font-size: 15px; font-weight: 700; }
+
+.empty-inline { font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim); padding: 10px 0; }

@@ -73,8 +73,19 @@ const CURRENCY = {
   EUR: { symbol: "€", rate: 1.17 },
 };
 
-/** amountGBP -> "£401,500" (or $/€ per currency code) */
-export function money(amountGBP, currency = "GBP") {
+// M11 Settings: the user's chosen display currency (config/settings.js) —
+// a module-level default rather than threading `state.settings.currency`
+// through every one of this project's many money() call sites. core/store.js
+// calls setDisplayCurrency() once on boot/hydrate and again every time the
+// Settings screen changes it (ui/settingsui.js).
+let displayCurrency = "GBP";
+export function setDisplayCurrency(code) {
+  displayCurrency = code;
+}
+
+/** amountGBP -> "£401,500" (or $/€ per currency code, or the user's current
+ * Settings choice if `currency` isn't passed explicitly) */
+export function money(amountGBP, currency = displayCurrency) {
   const c = CURRENCY[currency] || CURRENCY.GBP;
   return `${c.symbol}${number(amountGBP * c.rate)}`;
 }

@@ -1,0 +1,45 @@
+/* ===========================================================================
+   tactics.css — Squad ▸ Tactics + Player Roles overlay (fable-plans/plan1.md
+   M11). Reuses .news-crumb, jobs.css's full-width offset convention and
+   tables.css's .sl-table/.sl-row row styling, per ground rule #1 (extend,
+   don't rewrite).
+   =========================================================================== */
+
+#tactics-overlay { display: none; }
+#tactics-overlay.is-active { display: block; }
+
+.tac-body {
+  position: absolute;
+  top: 160px; left: 36px; right: 36px; bottom: 56px;
+  overflow-y: auto;
+  z-index: 7;
+}
+.tac-body::-webkit-scrollbar { width: 8px; }
+.tac-body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+
+.tac-current {
+  background: linear-gradient(160deg, rgba(30, 36, 43, 0.92), rgba(18, 22, 27, 0.92));
+  border-radius: 8px; padding: 16px 20px; margin-bottom: 18px;
+}
+.tac-current__label { font-family: var(--font-cond); font-size: 22px; font-weight: 700; color: var(--gold); }
+.tac-current__desc { font-family: var(--font-ui); font-size: 14px; color: var(--ink-dim); margin-top: 4px; }
+
+.tac-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 14px; }
+.tac-card {
+  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(120, 140, 160, 0.2);
+  border-radius: 8px; padding: 14px 16px; cursor: pointer;
+}
+.tac-card:hover { background: rgba(255, 255, 255, 0.08); }
+.tac-card.is-active {
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold-deep));
+  border-color: transparent;
+}
+.tac-card__name { font-family: var(--font-cond); font-size: 18px; font-weight: 700; }
+.tac-card.is-active .tac-card__name { color: var(--gold-text-dark); }
+.tac-card__desc { font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim); margin: 4px 0 8px; }
+.tac-card.is-active .tac-card__desc { color: #4a3f18; }
+.tac-card__mod { font-family: var(--font-ui); font-size: 12px; font-weight: 600; color: #7bd88f; }
+.tac-card.is-active .tac-card__mod { color: #2a5c1e; }
+
+.tac-roles { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
+.tac-roles__hint { font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim); margin: 6px 0 12px; }

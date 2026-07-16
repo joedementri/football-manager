@@ -426,7 +426,9 @@
   display: grid; grid-template-columns: 47% 1fr; gap: 0 18px;
   z-index: 7;
 }
-.email-list { display: flex; flex-direction: column; }
+.email-list { display: flex; flex-direction: column; overflow-y: auto; padding-right: 4px; }
+.email-list::-webkit-scrollbar { width: 8px; }
+.email-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
 .email-row {
   display: grid; grid-template-columns: 30px 1fr auto; align-items: center;
   gap: 12px; padding: 12px 14px; cursor: pointer;

@@ -22,6 +22,7 @@ import { buildObjectiveEmails, domesticCupFor, leagueIndex, leagueObjectiveMet }
 import { buildLeagueTable } from "./comps/league.js";
 import { computeWageCeiling } from "./wage.js";
 import { RngStream, deriveSeed } from "../core/rng.js";
+import { recordClubJoined } from "./career.js";
 
 const MAX_VACANCIES = 20;
 const CPU_SACK_CHANCE = 0.35; // not INI-derived — a plan-authored "simple rep sim" (see header)
@@ -73,6 +74,7 @@ export function acceptJob(state, clubId) {
 
   state.club = club;
   state.league = league;
+  recordClubJoined(state, clubId); // M11 My Career: "Clubs" tally
   state.league.clubs = [...state.clubsById.values()].filter((c) => c.leagueId === league.id);
   state.league.table = buildLeagueTable(state.league, state.league.clubs, state.fixtures.byLeague.get(league.id), state.results);
   state.squad.lineup = pickBestXI(roster);

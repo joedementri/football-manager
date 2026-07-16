@@ -56,14 +56,18 @@ function rollMatchInjuries(rng, homeXI, awayXI) {
  * (weighted by [SHOOTING_ATTRIBS]), each with a [ASSIST_ATTRIBS]-weighted
  * chance ([CHANCE_OF_ASSIST]) of an assister from the same XI — or, per
  * [PENALTY_CHANCE_OF_GOAL], a penalty instead: taker picked by
- * [PENALTY_ATTRIBS] rather than [SHOOTING_ATTRIBS], no assist. */
-function rollGoals(rng, goalCount, scoringXI) {
+ * [PENALTY_ATTRIBS] rather than [SHOOTING_ATTRIBS], no assist — unless
+ * `penaltyTakerId` (M11 Player Roles, ui/tacticsui.js) names the user's own
+ * designated taker and they're actually on the pitch, in which case they
+ * always step up instead of a fresh weighted roll. */
+function rollGoals(rng, goalCount, scoringXI, penaltyTakerId = null) {
   const candidates = outfieldCandidates(scoringXI);
   const goals = [];
   for (let i = 0; i < goalCount; i++) {
     if (candidates.length === 0) break;
     const isPenalty = rng.chance(PENALTY_CHANCE_OF_GOAL / 100);
-    const scorer = pickWeighted(rng, candidates, isPenalty ? PENALTY_ATTRIBS : SHOOTING_ATTRIBS).player;
+    const designatedTaker = isPenalty && penaltyTakerId != null ? candidates.find((c) => c.player.id === penaltyTakerId) : null;
+    const scorer = designatedTaker ? designatedTaker.player : pickWeighted(rng, candidates, isPenalty ? PENALTY_ATTRIBS : SHOOTING_ATTRIBS).player;
     let assistId = null;
     if (!isPenalty && candidates.length > 1 && rng.chance(CHANCE_OF_ASSIST / 100)) {
       const assistPool = candidates.filter((c) => c.player.id !== scorer.id);
@@ -124,16 +128,29 @@ function buildPlayerStats({ homeXI, awayXI, homeGoals, awayGoals, homeGoalEvents
  * @param {boolean} [opts.neutral] - true for a cup final at a neutral venue
  *   (engine/comps/cup.js, M5, plan1.md: "final at neutral venue") — neither
  *   side gets [INFLUENCE].HOMEADV.
+ * @param {number} [opts.homeTacticModifier] - M11: 0 unless the user's own
+ *   club is home in this fixture (a quick-simmed cup/continental tie —
+ *   engine/comps/cup.js's/continental.js's own call sites compute this;
+ *   league fixtures never reach here for the user's club, see
+ *   engine/sim/worldsim.js's header).
+ * @param {number} [opts.awayTacticModifier]
+ * @param {number|null} [opts.homePenaltyTakerId] - M11 Player Roles: the
+ *   user's own designated penalty taker (state.squad.penaltyTakerId), if
+ *   the user's club is home in this fixture.
+ * @param {number|null} [opts.awayPenaltyTakerId]
  * @returns {{ homeGoals, awayGoals, playerStats: Map }}
  */
-export function simulateQuickMatch({ fixture, homeClub, awayClub, homeRoster, awayRoster, rng, neutral = false }) {
+export function simulateQuickMatch({
+  fixture, homeClub, awayClub, homeRoster, awayRoster, rng, neutral = false,
+  homeTacticModifier = 0, awayTacticModifier = 0, homePenaltyTakerId = null, awayPenaltyTakerId = null,
+}) {
   const homeXI = pickBestAvailableXI(homeRoster);
   const awayXI = pickBestAvailableXI(awayRoster);
 
   const xiAvgHome = xiStrength(homeXI);
   const xiAvgAway = xiStrength(awayXI);
-  const strengthHome = teamStrength({ xiAvg: xiAvgHome, opponentXiAvg: xiAvgAway, club: homeClub, isHome: !neutral });
-  const strengthAway = teamStrength({ xiAvg: xiAvgAway, opponentXiAvg: xiAvgHome, club: awayClub, isHome: false });
+  const strengthHome = teamStrength({ xiAvg: xiAvgHome, opponentXiAvg: xiAvgAway, club: homeClub, isHome: !neutral, tacticModifier: homeTacticModifier });
+  const strengthAway = teamStrength({ xiAvg: xiAvgAway, opponentXiAvg: xiAvgHome, club: awayClub, isHome: false, tacticModifier: awayTacticModifier });
   const gap = strengthHome - strengthAway;
 
   const { lambdaHome, lambdaAway } = expectedGoals(gap, rng);
@@ -147,8 +164,8 @@ export function simulateQuickMatch({ fixture, homeClub, awayClub, homeRoster, aw
   // determinism checks simple); the value itself is unused.
   chanceCounts(gap, rng);
 
-  const homeGoalEvents = rollGoals(rng, homeGoals, homeXI);
-  const awayGoalEvents = rollGoals(rng, awayGoals, awayXI);
+  const homeGoalEvents = rollGoals(rng, homeGoals, homeXI, homePenaltyTakerId);
+  const awayGoalEvents = rollGoals(rng, awayGoals, awayXI, awayPenaltyTakerId);
   const cards = rollCards(rng, homeXI, awayXI);
   const injuries = rollMatchInjuries(rng, homeXI, awayXI);
 

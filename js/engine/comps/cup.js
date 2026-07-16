@@ -26,6 +26,8 @@ import { simulateQuickMatch } from "../sim/quick.js";
 import { applyMatchResult } from "../sim/results.js";
 import { pickBestAvailableXI } from "../sim/lineup.js";
 import { roundLabel, resolvePenaltyShootout } from "./knockoututil.js";
+import { tacticById } from "../../config/tactics.js";
+import { difficultyById } from "../../config/settings.js";
 
 // England's two cups (leagueIds spans all 4 tiers) stagger entry: the two
 // lowest tiers (League One/Two) enter Round 1, the top two (Premier League/
@@ -105,10 +107,24 @@ function resolveRound(state, cup, date) {
     const fixtureId = `cup-${cup.id}-${cup.seasonStartYear}-r${cup.roundIndex}-${clubAId}-${clubBId}`;
     const matchRng = new RngStream(deriveSeed(state.seed, `match-${fixtureId}`));
 
+    // homeClubId/awayClubId (not just `id`) so engine/career.js's My Career
+    // club-match record can recognise the user's own club's cup ties too.
+    const fixtureObj = { id: fixtureId, homeClubId: clubAId, awayClubId: clubBId };
+    // M11: the user's own tactic + designated penalty taker (config/
+    // tactics.js, state.squad.penaltyTakerId) apply here too — cup ties are
+    // quick-simmed even for the user's club (this file's own header).
+    const isUserHome = clubAId === state.club.id, isUserAway = clubBId === state.club.id;
+    const userTacticModifier = isUserHome || isUserAway
+      ? tacticById(state.squad.tacticId).modifier + difficultyById(state.settings.difficulty).modifier
+      : 0;
     const result = simulateQuickMatch({
-      fixture: { id: fixtureId }, homeClub, awayClub, homeRoster, awayRoster, rng: matchRng, neutral: isFinal,
+      fixture: fixtureObj, homeClub, awayClub, homeRoster, awayRoster, rng: matchRng, neutral: isFinal,
+      homeTacticModifier: isUserHome ? userTacticModifier : 0,
+      awayTacticModifier: isUserAway ? userTacticModifier : 0,
+      homePenaltyTakerId: isUserHome ? state.squad.penaltyTakerId : null,
+      awayPenaltyTakerId: isUserAway ? state.squad.penaltyTakerId : null,
     });
-    applyMatchResult(state, { id: fixtureId }, result);
+    applyMatchResult(state, fixtureObj, result);
 
     let penalties = null;
     let winnerClubId;

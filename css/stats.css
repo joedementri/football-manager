@@ -1,0 +1,44 @@
+/* ===========================================================================
+   stats.css — Season ▸ Team Stats + Player Stats overlays (fable-plans/
+   plan1.md M11). Reuses .news-crumb, .cal-nav__btn (calendar.css), jobs.css's
+   .jb-header/.jb-row/.jb-list and tables.css's .sl-table/.sl-row, per ground
+   rule #1 (extend, don't rewrite).
+   =========================================================================== */
+
+#teamstats-overlay, #playerstats-overlay { display: none; }
+#teamstats-overlay.is-active, #playerstats-overlay.is-active { display: block; }
+
+.stats-leaguebar {
+  position: absolute; left: 36px; right: 36px;
+  display: flex; align-items: center; gap: 14px;
+  font-family: var(--font-cond); font-size: 20px; font-weight: 700;
+  z-index: 7;
+}
+.stats-leaguebar--1 { top: 132px; }
+.stats-leaguebar--2 { top: 172px; font-size: 16px; }
+
+#teamstats-overlay .ts-body-wrap, #playerstats-overlay .ps-body-wrap { display: contents; }
+
+#ts-body {
+  position: absolute;
+  top: 178px; left: 36px; right: 36px; bottom: 56px;
+  overflow-y: auto; z-index: 7;
+}
+#ps-body {
+  position: absolute;
+  top: 222px; left: 36px; right: 36px; bottom: 56px;
+  overflow-y: auto; z-index: 7;
+}
+#ts-body::-webkit-scrollbar, #ps-body::-webkit-scrollbar { width: 8px; }
+#ts-body::-webkit-scrollbar-thumb, #ps-body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+
+.ts-table th.ts-sort { cursor: pointer; }
+
+.ps-table { width: 100%; }
+.ps-table th, .ps-table td { padding: 8px 10px; }
+.ps-table .crest--xs { vertical-align: middle; margin-right: 4px; }
+
+#ps-body .empty, #ts-body .empty {
+  display: flex; align-items: center; justify-content: center; height: 60%;
+  color: var(--ink-dim); font-family: var(--font-ui);
+}

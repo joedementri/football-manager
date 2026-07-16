@@ -141,8 +141,18 @@ function renderPreMatch(state, m) {
   );
 }
 
+/** M11 Settings ("sim detail"): "chance-miss" ticker flavour (near-misses
+ * with no stat effect — see engine/sim/events.js's own EVENT_BADGE comment)
+ * is dropped when the user's picked Key Events Only, leaving goals/cards/
+ * injuries/subs. Defaults to showing everything (state.settings may not
+ * exist on a dev/tests.js fake state predating M11). */
+function visibleLog(state, m) {
+  if (state.settings?.simDetail !== "key-events") return m.log;
+  return m.log.filter((ev) => ev.type !== "chance-miss");
+}
+
 function renderTicker(state, m, minuteLabel) {
-  const feed = m.log.slice().reverse().map((ev) => eventLineHtml(state, m, ev)).join("")
+  const feed = visibleLog(state, m).slice().reverse().map((ev) => eventLineHtml(state, m, ev)).join("")
     || `<div class="md-ev md-ev--none">No incidents yet…</div>`;
   return (
     `<div class="md-ticker">` +
@@ -157,7 +167,7 @@ function renderHalftime(state, m) {
   return (
     `<div class="md-ticker">` +
       scoreboardHtml(state, m, "HALF TIME") +
-      `<div class="md-feed">${m.log.slice().reverse().map((ev) => eventLineHtml(state, m, ev)).join("") || ""}</div>` +
+      `<div class="md-feed">${visibleLog(state, m).slice().reverse().map((ev) => eventLineHtml(state, m, ev)).join("") || ""}</div>` +
     `</div>`
   );
 }

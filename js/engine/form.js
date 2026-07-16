@@ -38,3 +38,15 @@ export function computeForm(history, isUserClub) {
   const avgRating = weightedSum / weightTotal;
   return Math.min(10, Math.max(1, Math.round(avgRating / 10)));
 }
+
+/**
+ * M11 Squad Ranking (ui/squadreportui.js): ranks a roster by this season's
+ * average match rating (highest first) — ties (most commonly 0 apps each,
+ * preseason) broken by overall so the order is never arbitrary. Returns
+ * `{ player, rank }` objects, `rank` 1-based.
+ */
+export function rankSquadByForm(roster) {
+  return [...roster]
+    .sort((a, b) => b.seasonStats.avgRating - a.seasonStats.avgRating || b.overall - a.overall)
+    .map((player, i) => ({ player, rank: i + 1 }));
+}

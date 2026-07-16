@@ -26,6 +26,13 @@ import { renderContracts } from "../ui/contractsui.js";
 import { renderSearch, renderNegotiation, renderSellList, renderRequestFunds } from "../ui/transfersui.js";
 import { renderGtn } from "../ui/gtnui.js";
 import { renderYouth } from "../ui/youthui.js";
+import { renderMyCareer } from "../ui/mycareerui.js";
+import { renderSquadReport, renderSquadRanking } from "../ui/squadreportui.js";
+import { renderKitNumbers } from "../ui/kitnumbersui.js";
+import { renderTactics } from "../ui/tacticsui.js";
+import { renderTeamStats, renderPlayerStats } from "../ui/statsui.js";
+import { renderSettings } from "../ui/settingsui.js";
+import { renderSaves } from "../ui/savesui.js";
 import { injectClubCrestSymbols } from "../gen/crest.js";
 import { fromEpochDay } from "./clock.js";
 
@@ -80,6 +87,29 @@ export function initRouter(store) {
   const footerNatlsquad = document.getElementById("footer-natlsquad");
   const natlsquadOverlay = document.getElementById("natlsquad-overlay");
   const natlsquadBodyEl = document.getElementById("natlsquad-body");
+  const footerMycareer = document.getElementById("footer-mycareer");
+  const mycareerOverlay = document.getElementById("mycareer-overlay");
+  const footerSquadreport = document.getElementById("footer-squadreport");
+  const squadreportOverlay = document.getElementById("squadreport-overlay");
+  const sqrListEl = document.getElementById("sqr-list");
+  const footerSquadranking = document.getElementById("footer-squadranking");
+  const squadrankingOverlay = document.getElementById("squadranking-overlay");
+  const footerKitnumbers = document.getElementById("footer-kitnumbers");
+  const kitnumbersOverlay = document.getElementById("kitnumbers-overlay");
+  const knListEl = document.getElementById("kn-list");
+  const footerTactics = document.getElementById("footer-tactics");
+  const tacticsOverlay = document.getElementById("tactics-overlay");
+  const tacticsBodyEl = document.getElementById("tactics-body");
+  const footerTeamstats = document.getElementById("footer-teamstats");
+  const teamstatsOverlay = document.getElementById("teamstats-overlay");
+  const tsBodyEl = document.getElementById("ts-body");
+  const footerPlayerstats = document.getElementById("footer-playerstats");
+  const playerstatsOverlay = document.getElementById("playerstats-overlay");
+  const footerSettings = document.getElementById("footer-settings");
+  const settingsOverlay = document.getElementById("settings-overlay");
+  const settingsBodyEl = document.getElementById("settings-body");
+  const savesOverlay = document.getElementById("saves-overlay");
+  const footerSaves = document.getElementById("footer-saves");
   const newsTabsEl = document.getElementById("news-tabs");
   const newsListEl = document.getElementById("news-list");
   const squadlistBodyEl = document.getElementById("squadlist-body");
@@ -158,6 +188,51 @@ export function initRouter(store) {
       // Backing out: refresh the Squad screen's sq-natlsel tile so its
       // "N/23 selected" count reflects whatever was just toggled.
       else renderSquad(store.state);
+    } else if (name === "mycareer") {
+      mycareerOverlay.classList.toggle("is-active", open);
+      footerMycareer.hidden = !open;
+      if (open) renderMyCareer(store.state);
+    } else if (name === "squadreport") {
+      squadreportOverlay.classList.toggle("is-active", open);
+      footerSquadreport.hidden = !open;
+      if (open) renderSquadReport(store.state);
+    } else if (name === "squadranking") {
+      squadrankingOverlay.classList.toggle("is-active", open);
+      footerSquadranking.hidden = !open;
+      if (open) renderSquadRanking(store.state);
+    } else if (name === "kitnumbers") {
+      kitnumbersOverlay.classList.toggle("is-active", open);
+      footerKitnumbers.hidden = !open;
+      if (open) renderKitNumbers(store.state);
+    } else if (name === "tactics") {
+      tacticsOverlay.classList.toggle("is-active", open);
+      footerTactics.hidden = !open;
+      if (open) renderTactics(store.state);
+      // Backing out: a captaincy change while this overlay was open needs
+      // the Squad screen's pitch to reflect the new "C" badge (same
+      // "refresh the screen underneath on close" precedent as natlsquad).
+      else renderSquad(store.state);
+    } else if (name === "teamstats") {
+      teamstatsOverlay.classList.toggle("is-active", open);
+      footerTeamstats.hidden = !open;
+      if (open) renderTeamStats(store.state);
+    } else if (name === "playerstats") {
+      playerstatsOverlay.classList.toggle("is-active", open);
+      footerPlayerstats.hidden = !open;
+      if (open) renderPlayerStats(store.state);
+    } else if (name === "settings") {
+      settingsOverlay.classList.toggle("is-active", open);
+      footerSettings.hidden = !open;
+      if (open) renderSettings(store.state);
+    } else if (name === "saves") {
+      // M11: unlike every other overlay, opening/closing/every button here
+      // is wired in js/main.js's wireSaves() (the project's one db.js-
+      // touching module — see core/db.js's own header) rather than in this
+      // file — this branch only toggles visibility + renders whatever
+      // js/main.js already fetched into state.ui.saves.slots.
+      savesOverlay.classList.toggle("is-active", open);
+      footerSaves.hidden = !open;
+      if (open) renderSaves(store.state);
     }
     const anyOverlayOpen = !!store.state.ui.overlay;
     tabbar.style.display = anyOverlayOpen ? "none" : "";
@@ -217,6 +292,14 @@ export function initRouter(store) {
   store.on("requestfunds", () => renderRequestFunds(store.state));
   store.on("gtn", () => renderGtn(store.state));
   store.on("youth", () => renderYouth(store.state));
+  store.on("mycareer", () => renderMyCareer(store.state));
+  store.on("squadreport", () => renderSquadReport(store.state));
+  store.on("kitnumbers", () => renderKitNumbers(store.state));
+  store.on("tactics", () => renderTactics(store.state));
+  store.on("teamstats", () => renderTeamStats(store.state));
+  store.on("playerstats", () => renderPlayerStats(store.state));
+  store.on("settings", () => renderSettings(store.state));
+  store.on("saves", () => renderSaves(store.state));
   store.on("calendar:view", () => renderCalendar(store.state));
   store.on("matchday", () => renderMatchday(store.state));
   initMatchdayTicker(store);
@@ -292,6 +375,14 @@ export function initRouter(store) {
       else if (tile.dataset.open === "youth") store.openYouth();
       else if (tile.dataset.open === "ntjobs") store.openNtJobs();
       else if (tile.dataset.open === "natlsquad") store.openNatlSquad();
+      else if (tile.dataset.open === "mycareer") store.openMyCareer();
+      else if (tile.dataset.open === "squadreport") store.openSquadReport();
+      else if (tile.dataset.open === "squadranking") store.openSquadRanking();
+      else if (tile.dataset.open === "kitnumbers") store.openKitNumbers();
+      else if (tile.dataset.open === "tactics") store.openTactics(tile.dataset.tacticsPage || "tactics");
+      else if (tile.dataset.open === "teamstats") store.openTeamStats();
+      else if (tile.dataset.open === "playerstats") store.openPlayerStats();
+      else if (tile.dataset.open === "settings") store.openSettings();
       else store.openOverlay(tile.dataset.open);
     });
   });
@@ -348,6 +439,127 @@ export function initRouter(store) {
       if (id != null) store.toggleNatlSquadPlayer(id);
     } else if (el.dataset.action === "back") store.closeOverlay();
   });
+
+  // My Career (M11): 3-page overlay (Overview/Current Season/Past Seasons) —
+  // footer Prev/Next Page cycles state.ui.myCareer.page, same L1/R1-cycle
+  // pattern as the Calendar overlay's month nav above.
+  footerMycareer.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    if (el.dataset.action === "prev-page") store.myCareerChangePage(-1);
+    else if (el.dataset.action === "next-page") store.myCareerChangePage(1);
+    else if (el.dataset.action === "back") store.closeOverlay();
+  });
+
+  // Squad Report (M11): click a roster row to select it (updates the card +
+  // status/stats panel); click the Pos header (or the footer's Sort prompt)
+  // to flip sort direction; footer's Player Bio opens the selected player's
+  // bio nested on top (closeOverlay() backs out to Squad Report first, same
+  // "nested overlay" pattern as Squad List -> Player Bio).
+  sqrListEl.addEventListener("click", (e) => {
+    if (e.target.closest("[data-action='sort']")) { store.toggleSquadReportSort(); return; }
+    const row = e.target.closest(".sl-row");
+    if (row) store.selectSquadReportPlayer(Number(row.dataset.player));
+  });
+  footerSquadreport.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    if (el.dataset.action === "sort") store.toggleSquadReportSort();
+    else if (el.dataset.action === "bio") {
+      const id = store.state.ui.squadReport.selectedPlayerId;
+      if (id != null) store.openPlayerBio(id);
+    } else if (el.dataset.action === "back") store.closeOverlay();
+  });
+  footerSquadranking.querySelector(".prompt").addEventListener("click", () => store.closeOverlay());
+
+  // Kit Numbers (M11): click an unselected row to select it, click the
+  // already-selected row again to enter edit mode (reveals ◄/► steppers);
+  // stepper clicks are checked first since they're nested inside a row.
+  knListEl.addEventListener("click", (e) => {
+    const stepper = e.target.closest(".kn-stepper");
+    if (stepper) { store.adjustKitNumber(stepper.dataset.action === "inc" ? 1 : -1); return; }
+    const row = e.target.closest(".sl-row");
+    if (row) store.selectOrEditKitNumberPlayer(Number(row.dataset.player));
+  });
+  footerKitnumbers.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    if (el.dataset.action === "select") {
+      const id = store.state.ui.kitNumbers.selectedPlayerId;
+      if (id != null) store.selectOrEditKitNumberPlayer(id);
+    } else if (el.dataset.action === "back") store.closeOverlay();
+  });
+
+  // Tactics / Player Roles (M11): tactic cards + captain/penalty-taker rows
+  // are both fully delegated (one body element re-rendered per page, same
+  // pattern as GTN/Youth above).
+  tacticsBodyEl.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    if (el.dataset.action === "set-tactic") store.setTactic(el.dataset.value);
+    else if (el.dataset.action === "set-captain") store.setCaptain(Number(el.dataset.value));
+    else if (el.dataset.action === "set-penalty") store.setPenaltyTaker(Number(el.dataset.value));
+  });
+  footerTactics.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    if (el.dataset.action === "prev-page") store.tacticsChangePage(-1);
+    else if (el.dataset.action === "next-page") store.tacticsChangePage(1);
+    else if (el.dataset.action === "back") store.closeOverlay();
+  });
+
+  // Team Stats (M11): league nav buttons cycle the whole screen; a row in
+  // the "select a team" list opens that club's individual stats table; a
+  // row in the stats table itself opens Player Bio (nested, same "click a
+  // row to drill in" convention as Squad List); Back returns to the select
+  // list first, then closes the overlay (mirrors GTN/Youth's nested views).
+  document.getElementById("ts-league-prev").addEventListener("click", () => store.teamStatsChangeLeague(-1));
+  document.getElementById("ts-league-next").addEventListener("click", () => store.teamStatsChangeLeague(1));
+  tsBodyEl.addEventListener("click", (e) => {
+    const sortEl = e.target.closest("[data-action='sort']");
+    if (sortEl) { store.toggleTeamStatsSort(); return; }
+    const clubEl = e.target.closest("[data-action='select-club']");
+    if (clubEl) { store.teamStatsSelectClub(clubEl.dataset.value); return; }
+    const playerEl = e.target.closest("[data-action='view-player']");
+    if (playerEl) store.openPlayerBio(Number(playerEl.dataset.value));
+  });
+  footerTeamstats.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    if (el.dataset.action === "sort") store.toggleTeamStatsSort();
+    else if (el.dataset.action === "back") {
+      if (store.state.ui.teamStats.view === "team") store.teamStatsBackToSelect();
+      else store.closeOverlay();
+    }
+  });
+
+  // Player Stats (M11): league + category nav buttons cycle the ranking table.
+  document.getElementById("ps-league-prev").addEventListener("click", () => store.playerStatsChangeLeague(-1));
+  document.getElementById("ps-league-next").addEventListener("click", () => store.playerStatsChangeLeague(1));
+  document.getElementById("ps-category-prev").addEventListener("click", () => store.playerStatsChangeCategory(-1));
+  document.getElementById("ps-category-next").addEventListener("click", () => store.playerStatsChangeCategory(1));
+  footerPlayerstats.querySelector(".prompt").addEventListener("click", () => store.closeOverlay());
+
+  // Settings (M11): each row's ‹/› steppers cycle that option; Autosave is a
+  // plain on/off toggle.
+  function handleSettingsAction(action, dir) {
+    const cycle = (options, current, setter) => {
+      const i = options.indexOf(current);
+      setter(options[(i + dir + options.length) % options.length]);
+    };
+    switch (action) {
+      case "cycle-difficulty": cycle(["easy", "normal", "hard"], store.state.settings.difficulty, (v) => store.setDifficulty(v)); break;
+      case "cycle-currency": cycle(["GBP", "USD", "EUR"], store.state.settings.currency, (v) => store.setCurrency(v)); break;
+      case "cycle-simdetail": cycle(["full", "key-events"], store.state.settings.simDetail, (v) => store.setSimDetail(v)); break;
+      case "toggle-autosave": store.setAutosave(!store.state.settings.autosave); break;
+    }
+  }
+  settingsBodyEl.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    handleSettingsAction(el.dataset.action, Number(el.dataset.dir || 1));
+  });
+  footerSettings.querySelector(".prompt").addEventListener("click", () => store.closeOverlay());
 
   // Contracts overlay (M6): click a squad row to select it; the detail
   // panel's stepper buttons and the footer's Send Offer/Suggested Terms

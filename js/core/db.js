@@ -497,6 +497,14 @@ export function serializeSave(state) {
     calendarToday: toEpochDay(state.calendar.today),
     players: state.players.map(serializePlayer),
     lineup: state.squad.lineup,
+    // M11 (config/settings.js): difficulty/currency/autosave/sim-detail —
+    // plain JSON, no Date fields.
+    settings: state.settings,
+    // M11 (config/tactics.js): the user's active tactic preset.
+    squadTacticId: state.squad.tacticId,
+    // M11 Player Roles: captaincy + designated penalty taker.
+    squadCaptainId: state.squad.captainId ?? null,
+    squadPenaltyTakerId: state.squad.penaltyTakerId ?? null,
     inbox: state.inbox.emails.map(serializeEmail),
     // Match results (M4): fixtures themselves regenerate deterministically
     // from the seed (engine/calendar.js), but *results* can't — a live user
@@ -542,6 +550,9 @@ export function serializeSave(state) {
     intl: state.intl ? serializeIntlState(state.intl) : null,
     nationalTeam: state.nationalTeam ? serializeNationalTeam(state.nationalTeam) : null,
     ntJobMarket: state.ntJobMarket || { vacancies: [] },
+    // M11: engine/career.js's Squad Ranking "Previous Match Result" support —
+    // plain JSON (its one date field is already an epoch-day int, not a Date).
+    lastMatchReport: state.lastMatchReport || null,
   };
 }
 
@@ -557,6 +568,10 @@ export function deserializeSave(saved) {
     calendarToday: fromEpochDay(saved.calendarToday),
     players: saved.players.map(deserializePlayer),
     lineup: saved.lineup,
+    settings: saved.settings || null,
+    squadTacticId: saved.squadTacticId || null,
+    squadCaptainId: saved.squadCaptainId ?? null,
+    squadPenaltyTakerId: saved.squadPenaltyTakerId ?? null,
     inbox: (saved.inbox || []).map(deserializeEmail),
     results: new Map(saved.results || []),
     clubLeague: new Map(saved.clubLeague || []),
@@ -573,6 +588,7 @@ export function deserializeSave(saved) {
     intl: saved.intl ? deserializeIntlState(saved.intl) : null,
     nationalTeam: saved.nationalTeam ? deserializeNationalTeam(saved.nationalTeam) : null,
     ntJobMarket: saved.ntJobMarket || { vacancies: [] },
+    lastMatchReport: saved.lastMatchReport || null,
   };
 }
 
@@ -601,4 +617,47 @@ export async function listSaveSlots() {
       : { slotId, exists: false });
   }
   return out;
+}
+
+/* ===========================================================================
+ * M11: save-slot management (Office ▸ header menu's "Manage Saves") +
+ * export/import. `saveGame`'s own blob shape is already fully JSON-safe
+ * (every Date-bearing field above converts to an epoch-day int; there are no
+ * Maps/Sets left by the time serializeSave returns — see that function's own
+ * per-field comments), so export/import is a plain JSON.stringify/parse
+ * round-trip, no extra reviver needed.
+ * =========================================================================== */
+
+/** Raw byte copy from one slot to another (no deserialize/reserialize round
+ * trip — both ends use the exact same blob shape saveGame() writes). Used by
+ * ui/savesui.js's "Load": copies the chosen slot into the autosave slot,
+ * then the caller reloads the page so main.js's normal boot path picks it up
+ * fresh — simpler and safer than hot-swapping a live GameState mid-session. */
+export async function copySlot(fromSlotId, toSlotId) {
+  const raw = await get(SAVE_KEY_PREFIX + fromSlotId);
+  if (!raw) return false;
+  await put(SAVE_KEY_PREFIX + toSlotId, raw);
+  return true;
+}
+
+/** GameState -> a downloadable JSON string. Compact (no pretty-print
+ * indent) — a ~15k-player world's indentation whitespace alone would
+ * roughly double the file for zero benefit (nobody hand-edits this file);
+ * see this project's "multi-season save stays < 10MB" budget. */
+export function saveToJSON(state) {
+  return JSON.stringify(serializeSave(state));
+}
+
+/** The inverse: a JSON string (from an exported file) -> the same raw blob
+ * shape loadGame()/copySlot() deal in. Throws if `jsonText` isn't valid JSON
+ * — the caller (ui/savesui.js's Import) is expected to catch this and show
+ * an error rather than silently losing the user's current save. */
+export function parseSaveFromJSON(jsonText) {
+  return JSON.parse(jsonText);
+}
+
+/** Writes an already-parsed raw blob (parseSaveFromJSON's output) directly
+ * into a slot, verbatim — the imported JSON *is* a serializeSave() blob. */
+export async function importRawBlob(slotId, rawBlob) {
+  await put(SAVE_KEY_PREFIX + slotId, rawBlob);
 }

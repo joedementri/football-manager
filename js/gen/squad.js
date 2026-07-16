@@ -136,6 +136,19 @@ export function pickBestXI(players) {
   });
 }
 
+/** M11 Player Roles (ui/tacticsui.js): re-marks which lineup entry carries
+ * the captain's armband — called by core/store.js's setCaptain whenever the
+ * user changes captaincy. A captain who isn't currently in the starting XI
+ * keeps the armband nominally (state.squad.captainId is the source of
+ * truth) but nothing on the pitch shows a "C" until they're back in it — so
+ * this is a no-op rather than clearing the existing (XI_TEMPLATE default)
+ * marker in that case. */
+export function applyCaptainToLineup(lineup, captainId) {
+  if (captainId == null) return;
+  if (!lineup.some((l) => l.playerId === captainId)) return;
+  for (const l of lineup) l.captain = l.playerId === captainId;
+}
+
 /**
  * @param {object} opts
  * @param {import("../core/rng.js").RngStream} opts.rng

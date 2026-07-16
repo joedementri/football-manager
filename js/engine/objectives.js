@@ -40,6 +40,16 @@ const CUP_OBJECTIVE_TEXT = {
 
 const DEFAULT_TIER = "mid-table-safety";
 
+/** Exported so engine/career.js's M11 season-history snapshot (My Career's
+ * Past Seasons table) can quote the exact same objective text the board's
+ * day-1 emails used, without duplicating these two lookup tables. */
+export function leagueObjectiveText(tier) {
+  return LEAGUE_OBJECTIVE_TEXT[tier] || LEAGUE_OBJECTIVE_TEXT[DEFAULT_TIER];
+}
+export function cupObjectiveText(tier, cup) {
+  return (CUP_OBJECTIVE_TEXT[tier] || CUP_OBJECTIVE_TEXT[DEFAULT_TIER])(cup);
+}
+
 /** "Bob Jackson" -> "Jackson, Bob" (matches the prototype's email "To" style).
  * Exported for reuse by engine/awards.js (M5's season-awards email uses the
  * same "Dear Mr. X" salutation style). */
@@ -73,8 +83,8 @@ export function domesticCupFor(league, cups) {
  */
 export function buildObjectiveEmails({ club, league, cup, managerName, today }) {
   const tier = club.boardExpectationTier;
-  const leagueGoal = LEAGUE_OBJECTIVE_TEXT[tier] || LEAGUE_OBJECTIVE_TEXT[DEFAULT_TIER];
-  const cupGoal = (CUP_OBJECTIVE_TEXT[tier] || CUP_OBJECTIVE_TEXT[DEFAULT_TIER])(cup);
+  const leagueGoal = leagueObjectiveText(tier);
+  const cupGoal = cupObjectiveText(tier, cup);
   const from = `${club.name.toUpperCase()} BOARD`;
   const crest = `crest-${club.id}`;
   const to = toField(managerName);

@@ -21,6 +21,14 @@
   <link rel="stylesheet" href="css/transfers.css" />
   <link rel="stylesheet" href="css/gtn.css" />
   <link rel="stylesheet" href="css/youth.css" />
+  <link rel="stylesheet" href="css/mycareer.css" />
+  <link rel="stylesheet" href="css/squadreport.css" />
+  <link rel="stylesheet" href="css/kitnumbers.css" />
+  <link rel="stylesheet" href="css/tactics.css" />
+  <link rel="stylesheet" href="css/stats.css" />
+  <link rel="stylesheet" href="css/settings.css" />
+  <link rel="stylesheet" href="css/saves.css" />
+  <link rel="stylesheet" href="css/motion.css" />
 </head>
 <body>
 
@@ -165,6 +173,7 @@
               <span class="menu-btn__bar"></span>
             </button>
             <div class="menu-dropdown" id="menu-dropdown" hidden>
+              <button class="menu-dropdown__item" id="menu-manage-saves" type="button">Manage Saves</button>
               <button class="menu-dropdown__item menu-dropdown__item--danger" id="menu-delete-save" type="button">Delete Save</button>
             </div>
           </div>
@@ -329,11 +338,11 @@
           <!-- Squad Report / Ranking (carousel) -->
           <div class="tile has-photo" data-carousel>
             <div class="cpages">
-              <div class="cpage is-active">
+              <div class="cpage is-active is-link" data-open="squadreport">
                 <div class="tile__title">Squad<br>Report</div>
                 <div class="tile__desc">Info on your current squad</div>
               </div>
-              <div class="cpage">
+              <div class="cpage is-link" data-open="squadranking">
                 <div class="tile__title">Squad<br>Ranking</div>
                 <div class="tile__desc">See where your squad ranks among the rest</div>
               </div>
@@ -353,11 +362,11 @@
                 <div class="tile__title">Formations</div>
                 <div class="tile__desc">Change your team's formation and player positions</div>
               </div>
-              <div class="cpage">
+              <div class="cpage is-link" data-open="tactics">
                 <div class="tile__title">Tactics</div>
                 <div class="tile__desc">Set your team's tactical approach for matches</div>
               </div>
-              <div class="cpage">
+              <div class="cpage is-link" data-open="tactics" data-tactics-page="roles">
                 <div class="tile__title">Player<br>Roles</div>
                 <div class="tile__desc">Assign specific roles to your players</div>
               </div>
@@ -367,7 +376,7 @@
           <!-- Kit Numbers / Injury List / Edit Player (carousel) -->
           <div class="tile has-photo" data-carousel>
             <div class="cpages">
-              <div class="cpage is-active">
+              <div class="cpage is-active is-link" data-open="kitnumbers">
                 <div class="tile__title">Kit<br>Numbers</div>
                 <div class="tile__desc">Assign your players' kit numbers</div>
               </div>
@@ -443,7 +452,7 @@
           <div class="tile__title">Youth<br>Staff</div>
           <div class="tile__desc">Find new talent for your youth squad</div>
         </div>
-        <div class="tile has-photo of-career">
+        <div class="tile has-photo of-career is-link" data-open="mycareer">
           <div class="tile__title">My Career</div>
           <div class="tile__desc">Your current career summary</div>
           <div class="dots"><i class="on"></i><i></i></div>
@@ -470,7 +479,7 @@
             </div>
           </div>
         </div>
-        <div class="tile has-photo of-settings">
+        <div class="tile has-photo of-settings is-link" data-open="settings">
           <div class="tile__title">Settings</div>
           <div class="tile__desc">Half length, difficulty &amp; more</div>
         </div>
@@ -492,11 +501,11 @@
           <div class="tile__title">Other Leagues</div>
           <div class="tile__desc">Current league tables from around the world</div>
         </div>
-        <div class="tile has-photo se-team">
+        <div class="tile has-photo se-team is-link" data-open="teamstats">
           <div class="tile__title">Team<br>Stats</div>
           <div class="tile__desc">In-depth statistics for all the teams</div>
         </div>
-        <div class="tile has-photo se-play">
+        <div class="tile has-photo se-play is-link" data-open="playerstats">
           <div class="tile__title">Player Stats</div>
           <div class="tile__desc">In-depth statistics for all the players</div>
         </div>
@@ -770,6 +779,124 @@
         <div class="sl-body" id="natlsquad-body"><!-- built by ui/natlsquad.js --></div>
       </div>
 
+      <!-- =====================  MANAGE SAVES OVERLAY (M11)  =============== -->
+      <div id="saves-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">MENU</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">MANAGE SAVES</span>
+        </div>
+        <div class="sv-body" id="saves-body"><!-- built by ui/savesui.js --></div>
+      </div>
+      <input type="file" id="saves-import-input" accept="application/json,.json" hidden />
+
+      <!-- =====================  SETTINGS OVERLAY (M11)  =================== -->
+      <div id="settings-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">OFFICE</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">SETTINGS</span>
+        </div>
+        <div class="set-body" id="settings-body"><!-- built by ui/settingsui.js --></div>
+      </div>
+
+      <!-- =====================  TEAM STATS OVERLAY (M11)  ================ -->
+      <div id="teamstats-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">SEASON</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">TEAM STATS</span>
+        </div>
+        <div class="stats-leaguebar stats-leaguebar--1">
+          <button class="cal-nav__btn" id="ts-league-prev" type="button" aria-label="Previous league">&lsaquo;</button>
+          <span id="ts-league-name">&mdash;</span>
+          <button class="cal-nav__btn" id="ts-league-next" type="button" aria-label="Next league">&rsaquo;</button>
+        </div>
+        <div id="ts-body"><!-- built by ui/statsui.js --></div>
+      </div>
+
+      <!-- =====================  PLAYER STATS OVERLAY (M11)  ============== -->
+      <div id="playerstats-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">SEASON</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">PLAYER STATS</span>
+        </div>
+        <div class="stats-leaguebar stats-leaguebar--1">
+          <button class="cal-nav__btn" id="ps-league-prev" type="button" aria-label="Previous league">&lsaquo;</button>
+          <span id="ps-league-name">&mdash;</span>
+          <button class="cal-nav__btn" id="ps-league-next" type="button" aria-label="Next league">&rsaquo;</button>
+        </div>
+        <div class="stats-leaguebar stats-leaguebar--2">
+          <button class="cal-nav__btn" id="ps-category-prev" type="button" aria-label="Previous category">&lsaquo;</button>
+          <span id="ps-category">Top Scorers</span>
+          <button class="cal-nav__btn" id="ps-category-next" type="button" aria-label="Next category">&rsaquo;</button>
+        </div>
+        <div id="ps-body"><!-- built by ui/statsui.js --></div>
+      </div>
+
+      <!-- =====================  TACTICS / PLAYER ROLES OVERLAY (M11)  ==== -->
+      <div id="tactics-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">SQUAD</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">TACTICS</span>
+        </div>
+        <div class="tac-body" id="tactics-body"><!-- built by ui/tacticsui.js --></div>
+      </div>
+
+      <!-- =====================  KIT NUMBERS OVERLAY (M11)  =============== -->
+      <div id="kitnumbers-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">SQUAD</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">KIT NUMBERS</span>
+        </div>
+        <div class="kn-body">
+          <div id="kn-list"><!-- built by ui/kitnumbersui.js --></div>
+          <div id="kn-changes"><!-- built by ui/kitnumbersui.js --></div>
+        </div>
+      </div>
+
+      <!-- =====================  SQUAD REPORT OVERLAY (M11)  ============= -->
+      <div id="squadreport-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">SQUAD</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">SQUAD REPORT</span>
+        </div>
+        <div class="sqr-body">
+          <div class="sqr-left">
+            <div id="sqr-card"><!-- built by ui/squadreportui.js --></div>
+            <div id="sqr-list"><!-- built by ui/squadreportui.js --></div>
+          </div>
+          <div id="sqr-detail"><!-- built by ui/squadreportui.js --></div>
+        </div>
+      </div>
+
+      <!-- =====================  SQUAD RANKING OVERLAY (M11)  ============ -->
+      <div id="squadranking-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">SQUAD</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">SQUAD RANKING</span>
+        </div>
+        <div class="sqk-body">
+          <div id="sqk-list"><!-- built by ui/squadreportui.js --></div>
+          <div id="sqk-side"><!-- built by ui/squadreportui.js --></div>
+        </div>
+      </div>
+
+      <!-- =====================  MY CAREER OVERLAY (M11)  =============== -->
+      <div id="mycareer-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">OFFICE</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">MY CAREER</span>
+        </div>
+        <div class="mc-body" id="mycareer-body"><!-- built by ui/mycareerui.js --></div>
+      </div>
+
       <!-- =====================  FOOTER PROMPTS  ==================== -->
       <footer class="footer" id="footer-main">
         <span class="prompt" data-prompt="select"><span class="btn-glyph a">A</span> Select</span>
@@ -822,6 +949,41 @@
         <span class="prompt" data-action="toggle"><span class="btn-glyph a">A</span> Toggle Squad</span>
         <span class="prompt" data-action="back"><span class="btn-glyph b">B</span> Back</span>
       </footer>
+      <footer class="footer" id="footer-saves" hidden>
+        <span class="prompt"><span class="btn-glyph b">B</span> Back</span>
+      </footer>
+      <footer class="footer" id="footer-settings" hidden>
+        <span class="prompt"><span class="btn-glyph b">B</span> Back</span>
+      </footer>
+      <footer class="footer" id="footer-teamstats" hidden>
+        <span class="prompt" data-action="sort"><span class="btn-glyph x">X</span> Sort</span>
+        <span class="prompt" data-action="back"><span class="btn-glyph b">B</span> Back</span>
+      </footer>
+      <footer class="footer" id="footer-playerstats" hidden>
+        <span class="prompt"><span class="btn-glyph b">B</span> Back</span>
+      </footer>
+      <footer class="footer" id="footer-tactics" hidden>
+        <span class="prompt" data-action="prev-page"><span class="btn-glyph l1">&lsaquo;</span> Prev Page</span>
+        <span class="prompt" data-action="next-page"><span class="btn-glyph r1">&rsaquo;</span> Next Page</span>
+        <span class="prompt" data-action="back"><span class="btn-glyph b">B</span> Back</span>
+      </footer>
+      <footer class="footer" id="footer-kitnumbers" hidden>
+        <span class="prompt" data-action="select"><span class="btn-glyph a">A</span> Select / Edit Number</span>
+        <span class="prompt" data-action="back"><span class="btn-glyph b">B</span> Back</span>
+      </footer>
+      <footer class="footer" id="footer-squadreport" hidden>
+        <span class="prompt" data-action="sort"><span class="btn-glyph x">X</span> Sort</span>
+        <span class="prompt" data-action="bio"><span class="btn-glyph a">A</span> Player Bio</span>
+        <span class="prompt" data-action="back"><span class="btn-glyph b">B</span> Back</span>
+      </footer>
+      <footer class="footer" id="footer-squadranking" hidden>
+        <span class="prompt"><span class="btn-glyph b">B</span> Back</span>
+      </footer>
+      <footer class="footer" id="footer-mycareer" hidden>
+        <span class="prompt" data-action="prev-page"><span class="btn-glyph l1">&lsaquo;</span> Prev Page</span>
+        <span class="prompt" data-action="next-page"><span class="btn-glyph r1">&rsaquo;</span> Next Page</span>
+        <span class="prompt" data-action="back"><span class="btn-glyph b">B</span> Back</span>
+      </footer>
 
       <!-- =====================  DELETE SAVE CONFIRM  ================ -->
       <div class="confirm-modal" id="confirm-delete-modal" hidden>
@@ -834,6 +996,18 @@
           <div class="confirm-modal__actions">
             <button class="confirm-modal__btn" id="confirm-delete-cancel" type="button">Cancel</button>
             <button class="confirm-modal__btn confirm-modal__btn--danger" id="confirm-delete-confirm" type="button">Delete Save</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- =====================  SAVES CONFIRM (M11, reused for Load/Delete-slot) === -->
+      <div class="confirm-modal" id="saves-confirm-modal" hidden>
+        <div class="confirm-modal__box">
+          <div class="confirm-modal__title" id="saves-confirm-title">Are you sure?</div>
+          <p class="confirm-modal__body" id="saves-confirm-body"></p>
+          <div class="confirm-modal__actions">
+            <button class="confirm-modal__btn" id="saves-confirm-cancel" type="button">Cancel</button>
+            <button class="confirm-modal__btn confirm-modal__btn--danger" id="saves-confirm-confirm" type="button">Confirm</button>
           </div>
         </div>
       </div>

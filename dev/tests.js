@@ -1694,19 +1694,35 @@ async function runFullSeasonRolloverTest() {
     // before that reassignment — captured every iteration, so after the
     // loop it holds whatever was current right before the rollover-firing
     // call (the only call where state.cups actually changes identity).
+    // M11 "performance pass (weekend sim < 300ms)": timed inline on this same
+    // full-season walk rather than a separate benchmark — every league/cup/
+    // continental/intl fixture across the whole ~600-club world resolves
+    // through here exactly like a real Advance click would, so a Saturday
+    // (the busiest fixture day — most leagues play) is the realistic
+    // worst case, matchday ticker cost included when it's the user's own.
+    const saturdayAdvanceMs = [];
     let cupsBeforeRollover = store.state.cups;
     while (toEpochDay(store.state.calendar.today) < toEpochDay(targetDate) && guard < 400) {
       cupsBeforeRollover = store.state.cups;
+      const t0 = performance.now();
       store.advanceToDate(addDays(store.state.calendar.today, 1));
       if (store.state.matchday && !store.state.matchday.finished) {
         store.matchdaySimToEnd();
         store.closeMatchday();
       }
+      if (store.state.calendar.today.getDay() === 6) saturdayAdvanceMs.push(performance.now() - t0);
       if (store.state.manager.sacked && store.state.ui.jobsSelectedIndex >= 0) {
         store.applyForSelectedJob(); // auto-accept the first offer so the season keeps advancing
       }
       guard++;
     }
+
+    const worstSaturdayMs = saturdayAdvanceMs.length ? Math.max(...saturdayAdvanceMs) : 0;
+    const avgSaturdayMs = saturdayAdvanceMs.length ? saturdayAdvanceMs.reduce((a, b) => a + b, 0) / saturdayAdvanceMs.length : 0;
+    assert(
+      `weekend Advance stays under the 300ms budget (${saturdayAdvanceMs.length} Saturdays: worst ${worstSaturdayMs.toFixed(1)}ms, avg ${avgSaturdayMs.toFixed(1)}ms)`,
+      worstSaturdayMs < 300,
+    );
 
     assert(`season rollover advanced to July 1 ${seasonStartYear + 1} within a bounded number of days (${guard} days processed)`,
       toEpochDay(store.state.calendar.today) >= toEpochDay(targetDate));
