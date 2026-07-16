@@ -11,6 +11,8 @@ import { upcomingFixtures, fixtureOnDate } from "../engine/calendar.js";
 import { toEpochDay } from "../core/clock.js";
 import { domesticCupFor } from "../engine/objectives.js";
 import { cupStatusForClub } from "../engine/comps/cup.js";
+import { findClubContinentalCompetition } from "../engine/comps/continental.js";
+import { intlFixtureOnDate, findNationCompetitionStatus } from "../engine/comps/intl.js";
 import { squadWageBill } from "../engine/wage.js";
 import {
   primaryMission, missionNewCount, missionUpdateCount, missionTitle, missionTagsLabel,
@@ -37,17 +39,30 @@ export function renderHeader(state) {
  * straight to it on click. Match days for the user's club (fable-plans/
  * plan1.md M3: day-strip "with events: match days...") swap the arrow icon
  * for the opponent's crest (+ H/A) so there's something to visibly advance
- * towards — every fixture is club-vs-club until M10 adds international
- * fixtures, at which point this same branch swaps in the nation's flag
- * (flagSpan, already used by Player Bio) instead of a crest. */
+ * towards. M10: if the user manages a national team too, its fixtures swap
+ * in the opponent nation's flag (flagSpan) instead of a crest, and take
+ * priority on a day that (per the plan's own collision-avoidance design,
+ * engine/comps/intl.js's header) never actually coincides with a club fixture. */
 function renderDayStrip(state) {
   const strip = document.querySelector(".daystrip");
   const todayTime = state.calendar.today.getTime();
   strip.innerHTML = state.calendar.strip.map((d) => {
     const isNow = d.getTime() === todayTime ? " is-now" : "";
     const fixture = fixtureOnDate(state.fixtures, state.club.id, d);
+    const intlFx = state.nationalTeam ? intlFixtureOnDate(state, state.nationalTeam.nationId, d) : null;
     let matchIcon = `<svg class="adv-ico"><use href="#ic-advance"></use></svg>`;
-    if (fixture) {
+    let hasMatch = false;
+    if (intlFx) {
+      hasMatch = true;
+      const isHome = intlFx.homeClubId === state.nationalTeam.nationId;
+      const oppNationId = isHome ? intlFx.awayClubId : intlFx.homeClubId;
+      matchIcon =
+        `<div class="day__match">` +
+          `${flagSpan(oppNationId)}` +
+          `<span class="day__ha">${isHome ? "H" : "A"}</span>` +
+        `</div>`;
+    } else if (fixture) {
+      hasMatch = true;
       const isHome = fixture.homeClubId === state.club.id;
       const oppClubId = isHome ? fixture.awayClubId : fixture.homeClubId;
       matchIcon =
@@ -57,7 +72,7 @@ function renderDayStrip(state) {
         `</div>`;
     }
     return (
-      `<div class="day${isNow}${fixture ? " has-match" : ""}" data-date="${toEpochDay(d)}">` +
+      `<div class="day${isNow}${hasMatch ? " has-match" : ""}" data-date="${toEpochDay(d)}">` +
         `<span class="dow">${dayOfWeekShort(d)}</span>` +
         `<span class="dom">${dayOfMonth(d)}</span>` +
         matchIcon +
@@ -164,6 +179,42 @@ export function renderSquad(state) {
 
   document.querySelector(".sq-club__crest use").setAttribute("href", `#crest-${state.club.id}`);
   document.querySelector(".sq-club__name").textContent = state.club.name;
+
+  renderNatlTiles(state);
+}
+
+/** M10: the Squad screen's sq-natl/sq-natlsel tiles — disabled placeholders
+ * from the original visual prototype (index.html) until state.nationalTeam
+ * is set, then live (mirrors the already-working sq-club tile above: nation
+ * flag + name in place of club crest + name). Both tiles open the same Natl
+ * Squad Selection overlay (ui/natlsquad.js already doubles as "view the
+ * squad" and "adjust the squad" in one screen — no separate read-only view
+ * screen is needed on top of it). */
+function renderNatlTiles(state) {
+  const natlTile = document.querySelector(".sq-natl");
+  const selTile = document.querySelector(".sq-natlsel");
+  const nt = state.nationalTeam;
+
+  if (!nt) {
+    natlTile.classList.add("is-disabled");
+    natlTile.innerHTML = `<div class="tile__title">Natl<br>Squad</div><div class="tile__desc">You are not managing a NATL Team right now</div>`;
+    selTile.classList.add("is-disabled");
+    selTile.innerHTML = `<div class="tile__title">Natl Squad<br>Selection</div><div class="tile__desc">Only available for NATL Teams</div>`;
+    return;
+  }
+
+  const nation = state.staticData.nations.find((n) => n.id === nt.nationId);
+  const status = findNationCompetitionStatus(state, nt.nationId);
+  natlTile.classList.remove("is-disabled");
+  natlTile.innerHTML =
+    `<div class="tile__title">Natl<br>Squad</div>` +
+    `${flagSpan(nation.id)}` +
+    `<div class="sq-club__name">${nation.name}</div>` +
+    `<span class="check sq-club__check">&#10003;</span>` +
+    (status ? `<div class="tile__desc">${status.name}</div>` : "");
+
+  selTile.classList.remove("is-disabled");
+  selTile.innerHTML = `<div class="tile__title">Natl Squad<br>Selection</div><div class="tile__desc">${nt.squadPlayerIds.length}/23 selected for ${nation.name}</div>`;
 }
 
 /* ----------------------------- Transfers ----------------------------------- */
@@ -260,14 +311,40 @@ function cupTileData(state) {
   return { name: cup.name, round: status.roundLabel, teams: [selfRow, secondRow] };
 }
 
-export function renderSeason(state) {
-  const cup = cupTileData(state);
-  document.querySelector(".se-tables .cup").textContent = cup.name;
-  document.querySelector(".se-tables .round").textContent = cup.round;
-  const trows = document.querySelectorAll(".se-tables .trow");
-  cup.teams.forEach((t, i) => {
+/** M10: the same 2-team-row shape as cupTileData above, but for whichever
+ * continental club competition (if any) the user's club is part of this
+ * season — engine/comps/continental.js's own header explains why a club is
+ * never in more than one at once. */
+function continentalTileData(state) {
+  const selfRow = { crest: `crest-${state.club.id}`, name: state.club.shortName };
+  const found = findClubContinentalCompetition(state, state.club.id);
+  if (!found) return { name: "Continental", round: "Not Qualified", teams: [selfRow, { crest: selfRow.crest, name: "—" }] };
+
+  const { compState, status } = found;
+  const opponent = status.opponentClubId ? state.clubsById.get(status.opponentClubId) : null;
+  const secondRow = opponent
+    ? { crest: `crest-${opponent.id}`, name: opponent.shortName }
+    : { crest: selfRow.crest, name: status.roundLabel === "Champions" ? "Champions!" : "TBD" };
+
+  return { name: compState.name, round: status.roundLabel, teams: [selfRow, secondRow] };
+}
+
+/** Fills one .se-tables carousel page (either the domestic-cup page or the
+ * continental page — both share the exact same .panel-title/.cup/.round/
+ * .trow markup shape) with one of the two tile-data shapes above. */
+function fillCupTilePage(pageEl, data) {
+  pageEl.querySelector(".cup").textContent = data.name;
+  pageEl.querySelector(".round").textContent = data.round;
+  const trows = pageEl.querySelectorAll(".trow");
+  data.teams.forEach((t, i) => {
     trows[i].innerHTML = `<svg class="crest crest--sm"><use href="#${t.crest}"></use></svg> ${t.name}`;
   });
+}
+
+export function renderSeason(state) {
+  const [domesticPage, continentalPage] = document.querySelectorAll(".se-tables .cpage");
+  fillCupTilePage(domesticPage, cupTileData(state));
+  fillCupTilePage(continentalPage, continentalTileData(state));
 
   // Real upcoming fixtures (fable-plans/plan1.md M3): no results exist until
   // sim/quick.js (M4), so the date stands in for a scoreline.

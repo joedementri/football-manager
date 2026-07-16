@@ -13,6 +13,8 @@ import { simulateQuickMatch } from "./quick.js";
 import { applyMatchResult } from "./results.js";
 import { applyDailyRecoveryToAll } from "../fitness.js";
 import { advanceCupsForDate } from "../comps/cup.js";
+import { advanceContinentalForDate } from "../comps/continental.js";
+import { advanceIntlForDate } from "../comps/intl.js";
 import { RngStream, deriveSeed } from "../../core/rng.js";
 
 /**
@@ -41,4 +43,17 @@ export function simulateWorldDay(state, date) {
   // scope decision — no interactive Match Day ticker for cup matches this
   // milestone).
   if (state.cups) advanceCupsForDate(state, date);
+
+  // M10: continental club competitions — same "every tie resolves
+  // statistically, including the user's own club" scope decision (see
+  // engine/comps/continental.js's header).
+  advanceContinentalForDate(state, date);
+
+  // M10: internationals — every nation's fixture resolves statistically
+  // here too; checkpoint C passes the user's own nation id in a skip-set so
+  // core/store.js can open the live Match Day ticker for it instead (same
+  // "the user's own club fixture is left for Match Day" pattern this
+  // function already applies above).
+  const skipNationIds = state.nationalTeam ? new Set([state.nationalTeam.nationId]) : null;
+  advanceIntlForDate(state, date, skipNationIds);
 }

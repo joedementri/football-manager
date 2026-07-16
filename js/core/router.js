@@ -11,7 +11,7 @@
 
 import { SCREENS } from "./store.js";
 import {
-  renderAll, renderCentral, renderSeason, renderOffice, renderTransfers,
+  renderAll, renderCentral, renderSeason, renderOffice, renderTransfers, renderSquad,
   renderEmailList, renderEmailDetail,
   renderNewsCategoryTabs, renderNewsList,
 } from "../ui/render.js";
@@ -20,6 +20,8 @@ import { renderPlayerBio } from "../ui/playerbio.js";
 import { renderCalendar, initCalendarHeaders } from "../ui/calendarui.js";
 import { renderMatchday, initMatchdayTicker } from "../ui/matchday.js";
 import { renderJobsOverlay } from "../ui/jobsui.js";
+import { renderNtJobsOverlay } from "../ui/ntjobsui.js";
+import { renderNatlSquad } from "../ui/natlsquad.js";
 import { renderContracts } from "../ui/contractsui.js";
 import { renderSearch, renderNegotiation, renderSellList, renderRequestFunds } from "../ui/transfersui.js";
 import { renderGtn } from "../ui/gtnui.js";
@@ -72,6 +74,12 @@ export function initRouter(store) {
   const footerYouth = document.getElementById("footer-youth");
   const youthOverlay = document.getElementById("youth-overlay");
   const youthBodyEl = document.getElementById("youth-body");
+  const footerNtjobs = document.getElementById("footer-ntjobs");
+  const ntjobsOverlay = document.getElementById("ntjobs-overlay");
+  const ntjobsBodyEl = document.getElementById("ntjobs-body");
+  const footerNatlsquad = document.getElementById("footer-natlsquad");
+  const natlsquadOverlay = document.getElementById("natlsquad-overlay");
+  const natlsquadBodyEl = document.getElementById("natlsquad-body");
   const newsTabsEl = document.getElementById("news-tabs");
   const newsListEl = document.getElementById("news-list");
   const squadlistBodyEl = document.getElementById("squadlist-body");
@@ -139,6 +147,17 @@ export function initRouter(store) {
       youthOverlay.classList.toggle("is-active", open);
       footerYouth.hidden = !open;
       if (open) renderYouth(store.state);
+    } else if (name === "ntjobs") {
+      ntjobsOverlay.classList.toggle("is-active", open);
+      footerNtjobs.hidden = !open;
+      if (open) renderNtJobsOverlay(store.state);
+    } else if (name === "natlsquad") {
+      natlsquadOverlay.classList.toggle("is-active", open);
+      footerNatlsquad.hidden = !open;
+      if (open) renderNatlSquad(store.state);
+      // Backing out: refresh the Squad screen's sq-natlsel tile so its
+      // "N/23 selected" count reflects whatever was just toggled.
+      else renderSquad(store.state);
     }
     const anyOverlayOpen = !!store.state.ui.overlay;
     tabbar.style.display = anyOverlayOpen ? "none" : "";
@@ -164,6 +183,9 @@ export function initRouter(store) {
     renderSeason(store.state);
     renderOffice(store.state); // M5: board-review/season-end/awards/sacking emails can land mid-advance
     renderTransfers(store.state); // M6: Finances tile changes on rollover ("budgets reset") and contract renewals
+    // M10: the sq-natl tile's competition-status blurb can change as the
+    // user's nation's qualifying/tournament phase progresses day to day.
+    renderSquad(store.state);
     if (store.state.ui.overlay === "calendar") renderCalendar(store.state);
     // M7: a calendar advance can resolve a pending fee/contract/loan/approach
     // response or a CPU bid, any of which can change what these overlays
@@ -182,6 +204,11 @@ export function initRouter(store) {
     // report, a prospect's development/reveal tick, or a retirement
     // departure can all land mid-advance.
     if (store.state.ui.overlay === "youth") renderYouth(store.state);
+    // M10: a rollover can refresh the NT job market (reputation threshold),
+    // and advancing can resolve qualifying/tournament matchdays that change
+    // the user's own nation's standing.
+    if (store.state.ui.overlay === "ntjobs") renderNtJobsOverlay(store.state);
+    if (store.state.ui.overlay === "natlsquad") renderNatlSquad(store.state);
   });
   store.on("contracts", () => renderContracts(store.state));
   store.on("search", () => renderSearch(store.state));
@@ -203,6 +230,11 @@ export function initRouter(store) {
     injectClubCrestSymbols(store.state.league.table.map((r) => r.club));
     renderAll(store.state);
   });
+  // M10: accepting an NT job needs the Squad screen's sq-natl/sq-natlsel
+  // tiles refreshed (they don't otherwise get touched by anything in the
+  // "advance" handler's own render list, since it never had a Squad reason
+  // to before now).
+  store.on("ntjobs:accepted", () => renderSquad(store.state));
 
   /* ----- DOM -> store wiring ---------------------------------------------- */
   tabs.forEach((t) => t.addEventListener("click", () => store.setScreen(t.dataset.screen)));
@@ -258,6 +290,8 @@ export function initRouter(store) {
       else if (tile.dataset.open === "gtn") store.openGtn();
       else if (tile.dataset.open === "gtnreport") store.openGtnHubTile();
       else if (tile.dataset.open === "youth") store.openYouth();
+      else if (tile.dataset.open === "ntjobs") store.openNtJobs();
+      else if (tile.dataset.open === "natlsquad") store.openNatlSquad();
       else store.openOverlay(tile.dataset.open);
     });
   });
@@ -278,6 +312,41 @@ export function initRouter(store) {
     if (!el) return;
     if (el.dataset.action === "apply") store.applyForSelectedJob();
     else if (el.dataset.action === "back") store.closeOverlay();
+  });
+
+  // Browse NT Jobs overlay (M10): identical click-to-select/click-again-to-
+  // apply flow as Browse Jobs above.
+  ntjobsBodyEl.addEventListener("click", (e) => {
+    const row = e.target.closest(".jb-row");
+    if (!row) return;
+    const idx = Number(row.dataset.idx);
+    if (idx === store.state.ui.ntJobsSelectedIndex) store.applyForSelectedNtJob();
+    else store.selectNtJobRow(idx);
+  });
+  footerNtjobs.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    if (el.dataset.action === "apply") store.applyForSelectedNtJob();
+    else if (el.dataset.action === "back") store.closeOverlay();
+  });
+
+  // Natl Squad Selection overlay (M10): click a row to select it, click
+  // again (or the footer's Toggle Squad prompt) to add/remove that player
+  // from the 23-man squad.
+  natlsquadBodyEl.addEventListener("click", (e) => {
+    const row = e.target.closest(".sl-row");
+    if (!row) return;
+    const playerId = Number(row.dataset.player);
+    if (playerId === store.state.ui.natlSquad.selectedPlayerId) store.toggleNatlSquadPlayer(playerId);
+    else store.selectNatlSquadPlayer(playerId);
+  });
+  footerNatlsquad.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    if (el.dataset.action === "toggle") {
+      const id = store.state.ui.natlSquad.selectedPlayerId;
+      if (id != null) store.toggleNatlSquadPlayer(id);
+    } else if (el.dataset.action === "back") store.closeOverlay();
   });
 
   // Contracts overlay (M6): click a squad row to select it; the detail
@@ -618,6 +687,22 @@ export function initRouter(store) {
       if (e.key === "ArrowDown") { store.selectJobRow(Math.min(n - 1, idx + 1)); return; }
       if (e.key === "ArrowUp") { store.selectJobRow(Math.max(0, idx - 1)); return; }
       if (e.key === "Enter") { store.applyForSelectedJob(); return; }
+    }
+    if (store.state.ui.overlay === "ntjobs") {
+      const n = store.state.ntJobMarket.vacancies.length;
+      const idx = store.state.ui.ntJobsSelectedIndex;
+      if (e.key === "ArrowDown") { store.selectNtJobRow(Math.min(n - 1, idx + 1)); return; }
+      if (e.key === "ArrowUp") { store.selectNtJobRow(Math.max(0, idx - 1)); return; }
+      if (e.key === "Enter") { store.applyForSelectedNtJob(); return; }
+    }
+    if (store.state.ui.overlay === "natlsquad" && store.state.nationalTeam) {
+      const roster = store.state.players
+        .filter((p) => p.nationId === store.state.nationalTeam.nationId)
+        .sort((a, b) => b.overall - a.overall);
+      const idx = roster.findIndex((p) => p.id === store.state.ui.natlSquad.selectedPlayerId);
+      if (e.key === "ArrowDown" && roster.length) { store.selectNatlSquadPlayer(roster[Math.min(roster.length - 1, idx + 1)].id); return; }
+      if (e.key === "ArrowUp" && roster.length) { store.selectNatlSquadPlayer(roster[Math.max(0, idx - 1)].id); return; }
+      if (e.key === "Enter" && idx !== -1) { store.toggleNatlSquadPlayer(roster[idx].id); return; }
     }
     if (store.state.ui.overlay === "contracts") {
       const roster = [...store.state.squad.roster].sort((a, b) => a.contract.endYear - b.contract.endYear);

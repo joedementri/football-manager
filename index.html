@@ -315,8 +315,13 @@
             <span class="check sq-club__check">&#10003;</span>
           </div>
 
-          <!-- Natl Squad (disabled) -->
-          <div class="tile is-disabled sq-natl">
+          <!-- Natl Squad: disabled until state.nationalTeam is set (M10) —
+               data-open is present from the start (store.openNatlSquad()
+               itself no-ops without a nationalTeam), so router.js's generic
+               [data-open] wiring (done once at init) picks it up without
+               needing to rewire anything once a job is accepted. Content
+               swapped live by ui/render.js's renderSquad. -->
+          <div class="tile is-disabled sq-natl" data-open="natlsquad">
             <div class="tile__title">Natl<br>Squad</div>
             <div class="tile__desc">You are not managing a NATL Team right now</div>
           </div>
@@ -335,8 +340,8 @@
             </div>
           </div>
 
-          <!-- Natl Squad Selection (disabled) -->
-          <div class="tile is-disabled sq-natlsel">
+          <!-- Natl Squad Selection: same live-wiring note as sq-natl above. -->
+          <div class="tile is-disabled sq-natlsel" data-open="natlsquad">
             <div class="tile__title">Natl Squad<br>Selection</div>
             <div class="tile__desc">Only available for NATL Teams</div>
           </div>
@@ -447,10 +452,23 @@
           <div class="tile__title">Request Funds</div>
           <div class="tile__desc">Request additional funds from the Board</div>
         </div>
-        <div class="tile has-photo of-jobs is-link" data-open="jobs">
-          <div class="tile__title">Browse Jobs</div>
-          <div class="tile__desc">View job openings</div>
-          <div class="dots"><i class="on"></i><i></i><i></i></div>
+        <!-- M10: 2-page carousel (Browse Jobs / Browse NT Jobs) — same
+             has-photo + data-carousel combination the Squad screen's
+             Formations/Tactics/Player Roles tile already uses. Each page
+             carries its own data-open so router.js's generic [data-open]
+             wiring (queried once at init, before carousel.js appends its
+             nav) opens the right overlay regardless of which page is showing. -->
+        <div class="tile has-photo of-jobs" data-carousel>
+          <div class="cpages">
+            <div class="cpage is-active is-link" data-open="jobs">
+              <div class="tile__title">Browse Jobs</div>
+              <div class="tile__desc">View job openings</div>
+            </div>
+            <div class="cpage is-link" data-open="ntjobs">
+              <div class="tile__title">Browse NT<br>Jobs</div>
+              <div class="tile__desc">National team vacancies (reputation permitting)</div>
+            </div>
+          </div>
         </div>
         <div class="tile has-photo of-settings">
           <div class="tile__title">Settings</div>
@@ -482,12 +500,24 @@
           <div class="tile__title">Player Stats</div>
           <div class="tile__desc">In-depth statistics for all the players</div>
         </div>
-        <div class="tile se-tables">
-          <div class="panel-title">TABLES</div>
-          <div class="cup">F.A. Cup</div>
-          <div class="round">Round 2</div>
-          <div class="trow"><svg class="crest crest--sm"><use href="#crest-pompey"></use></svg> Portsmouth</div>
-          <div class="trow"><svg class="crest crest--sm"><use href="#crest-a"></use></svg> Yeovil Town</div>
+        <div class="tile se-tables" data-carousel>
+          <div class="cpages">
+            <div class="cpage is-active">
+              <div class="panel-title">TABLES</div>
+              <div class="cup">F.A. Cup</div>
+              <div class="round">Round 2</div>
+              <div class="trow"><svg class="crest crest--sm"><use href="#crest-pompey"></use></svg> Portsmouth</div>
+              <div class="trow"><svg class="crest crest--sm"><use href="#crest-a"></use></svg> Yeovil Town</div>
+            </div>
+            <!-- M10: continental club competition (built by ui/render.js's renderSeason) -->
+            <div class="cpage">
+              <div class="panel-title">CONTINENTAL</div>
+              <div class="cup">—</div>
+              <div class="round">—</div>
+              <div class="trow"><svg class="crest crest--sm"><use href="#crest-pompey"></use></svg> —</div>
+              <div class="trow"><svg class="crest crest--sm"><use href="#crest-pompey"></use></svg> —</div>
+            </div>
+          </div>
         </div>
         <div class="tile se-fixtures">
           <div class="panel-title">FIXTURES</div>
@@ -720,6 +750,26 @@
         <div class="youth-body" id="youth-body"><!-- built by ui/youthui.js --></div>
       </div>
 
+      <!-- =====================  BROWSE NT JOBS OVERLAY (M10)  ========== -->
+      <div id="ntjobs-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">OFFICE</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">BROWSE NT JOBS</span>
+        </div>
+        <div class="jb-body" id="ntjobs-body"><!-- built by ui/ntjobsui.js --></div>
+      </div>
+
+      <!-- =====================  NATL SQUAD SELECTION OVERLAY (M10)  ==== -->
+      <div id="natlsquad-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">SQUAD</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">NATL SQUAD SELECTION</span>
+        </div>
+        <div class="sl-body" id="natlsquad-body"><!-- built by ui/natlsquad.js --></div>
+      </div>
+
       <!-- =====================  FOOTER PROMPTS  ==================== -->
       <footer class="footer" id="footer-main">
         <span class="prompt" data-prompt="select"><span class="btn-glyph a">A</span> Select</span>
@@ -764,6 +814,14 @@
       <footer class="footer" id="footer-requestfunds" hidden><!-- built by ui/transfersui.js --></footer>
       <footer class="footer" id="footer-gtn" hidden><!-- built by ui/gtnui.js (prompts change per view) --></footer>
       <footer class="footer" id="footer-youth" hidden><!-- built by ui/youthui.js (prompts change per view) --></footer>
+      <footer class="footer" id="footer-ntjobs" hidden>
+        <span class="prompt" data-action="apply"><span class="btn-glyph a">A</span> Apply</span>
+        <span class="prompt" data-action="back"><span class="btn-glyph b">B</span> Back</span>
+      </footer>
+      <footer class="footer" id="footer-natlsquad" hidden>
+        <span class="prompt" data-action="toggle"><span class="btn-glyph a">A</span> Toggle Squad</span>
+        <span class="prompt" data-action="back"><span class="btn-glyph b">B</span> Back</span>
+      </footer>
 
       <!-- =====================  DELETE SAVE CONFIRM  ================ -->
       <div class="confirm-modal" id="confirm-delete-modal" hidden>

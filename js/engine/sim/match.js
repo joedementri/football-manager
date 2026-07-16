@@ -15,6 +15,8 @@ import { resolveUserXI, pickBestAvailableXI } from "./lineup.js";
 import { simulateSegment } from "./events.js";
 import { computeMatchRating } from "./core.js";
 import { applyMatchResult } from "./results.js";
+import { resolvePenaltyShootout } from "../comps/knockoututil.js";
+import { nationSquadRoster, completeUserKnockoutTie, checkGroupPhaseCompletion } from "../comps/intl.js";
 
 const HALFTIME_MINUTE = 45;
 const FULLTIME_MINUTE = 90;
@@ -27,14 +29,25 @@ export const MAX_SUBS = 3; // not INI-specified — the standard football substi
  * always fields its current best-available XI (no CPU tactical subs modelled
  * this milestone, matching sim/quick.js's simplification for every other
  * CPU-vs-CPU match).
+ *
+ * M10: also drives the user's own national-team matches (plan1.md:
+ * "NT matches simmed via the same ticker") — `fixture.isIntl` swaps the
+ * roster source (engine/comps/intl.js's nationSquadRoster instead of
+ * state.playersByClub) and the "is this my side" check (state.nationalTeam's
+ * nationId instead of state.club.id); everything else — timeline
+ * generation, subs, ratings — is identical since it only ever deals in
+ * plain player-array XIs.
  */
 export function createMatchState(state, fixture) {
-  const isUserHome = fixture.homeClubId === state.club.id;
-  const homeRoster = state.playersByClub.get(fixture.homeClubId) || [];
-  const awayRoster = state.playersByClub.get(fixture.awayClubId) || [];
+  const isIntl = !!fixture.isIntl;
+  const userTeamId = isIntl ? (state.nationalTeam ? state.nationalTeam.nationId : null) : state.club.id;
+  const isUserHome = fixture.homeClubId === userTeamId;
+  const homeRoster = isIntl ? nationSquadRoster(state, fixture.homeClubId) : (state.playersByClub.get(fixture.homeClubId) || []);
+  const awayRoster = isIntl ? nationSquadRoster(state, fixture.awayClubId) : (state.playersByClub.get(fixture.awayClubId) || []);
+  const userLineup = isIntl ? state.nationalTeam.lineup : state.squad.lineup;
 
-  const homeXI = isUserHome ? resolveUserXI(homeRoster, state.squad.lineup) : pickBestAvailableXI(homeRoster);
-  const awayXI = isUserHome ? pickBestAvailableXI(awayRoster) : resolveUserXI(awayRoster, state.squad.lineup);
+  const homeXI = isUserHome ? resolveUserXI(homeRoster, userLineup) : pickBestAvailableXI(homeRoster);
+  const awayXI = isUserHome ? pickBestAvailableXI(awayRoster) : resolveUserXI(awayRoster, userLineup);
 
   const playersById = new Map([...homeRoster, ...awayRoster].map((p) => [p.id, p]));
   const sideOf = new Map();
@@ -44,6 +57,7 @@ export function createMatchState(state, fixture) {
 
   const matchState = {
     fixture,
+    isIntl,
     homeClubId: fixture.homeClubId,
     awayClubId: fixture.awayClubId,
     isUserHome,
@@ -64,15 +78,17 @@ export function createMatchState(state, fixture) {
     speed: 1,
     atHalftime: false,
     finished: false,
+    penalties: null, // set at full time only for a drawn intl knockout tie (see finishMatch)
   };
   regenerateSegment(state, matchState);
   return matchState;
 }
 
 function clubLookup(state, matchState) {
+  const map = matchState.isIntl ? state.nationsById : state.clubsById;
   return {
-    homeClub: state.clubsById.get(matchState.homeClubId),
-    awayClub: state.clubsById.get(matchState.awayClubId),
+    homeClub: map.get(matchState.homeClubId),
+    awayClub: map.get(matchState.awayClubId),
   };
 }
 
@@ -237,4 +253,35 @@ function finishMatch(state, matchState) {
   applyMatchResult(state, matchState.fixture, {
     homeGoals: matchState.score.home, awayGoals: matchState.score.away, playerStats,
   });
+
+  // M10: the user's own NT knockout tie needs a winner — a draw goes to
+  // penalties (plan1.md: "single leg + penalties", same rule every other
+  // knockout competition already uses via engine/comps/knockoututil.js's
+  // resolvePenaltyShootout), then engine/comps/intl.js's bracket is told the
+  // result so it can advance/crown a champion exactly like a quick-simmed
+  // tie would.
+  if (matchState.isIntl && matchState.fixture.isIntlKnockout) {
+    let winnerNationId;
+    let penalties = null;
+    if (matchState.score.home !== matchState.score.away) {
+      winnerNationId = matchState.score.home > matchState.score.away ? matchState.homeClubId : matchState.awayClubId;
+    } else {
+      const shootout = resolvePenaltyShootout(matchState.rng, matchState.homeXI, matchState.awayXI);
+      penalties = { home: shootout.home, away: shootout.away };
+      winnerNationId = shootout.winner === "home" ? matchState.homeClubId : matchState.awayClubId;
+    }
+    matchState.penalties = penalties; // ui/matchday.js's full-time report shows "Penalties: X-Y" when present
+    completeUserKnockoutTie(state, {
+      competitionId: matchState.fixture.competitionId,
+      homeNationId: matchState.homeClubId, awayNationId: matchState.awayClubId,
+      winnerNationId, homeGoals: matchState.score.home, awayGoals: matchState.score.away,
+      penalties, date: state.calendar.today,
+    });
+  } else if (matchState.isIntl) {
+    // M10: a qualifying/tournament-group fixture — the deciding result for
+    // that phase's final matchday may have just landed here instead of via
+    // quick-sim (see engine/comps/intl.js's maybeTransitionGroupPhase); a
+    // no-op unless this was in fact the last piece needed.
+    checkGroupPhaseCompletion(state, matchState.fixture);
+  }
 }

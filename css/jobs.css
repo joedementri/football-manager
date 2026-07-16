@@ -8,6 +8,11 @@
 #jobs-overlay { display: none; }
 #jobs-overlay.is-active { display: block; }
 
+/* M10: Browse NT Jobs overlay — identical shape to Browse Jobs above (same
+   .jb-* row/list classes reused verbatim), just a different overlay id. */
+#ntjobs-overlay { display: none; }
+#ntjobs-overlay.is-active { display: block; }
+
 .jb-body {
   position: absolute;
   top: 160px; left: 36px; right: 36px; bottom: 56px;

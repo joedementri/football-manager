@@ -9,6 +9,18 @@
 #squadlist-overlay { display: none; }
 #squadlist-overlay.is-active { display: block; }
 
+/* M10: Natl Squad Selection overlay — reuses this file's .sl-* row/table
+   tokens verbatim (same shape as Squad List), plus a handful of small
+   additions for the "in squad" toggle column. */
+#natlsquad-overlay { display: none; }
+#natlsquad-overlay.is-active { display: block; }
+.natl-check { width: 24px; text-align: center; color: var(--gold); font-weight: 700; }
+.natl-row--in td { background: rgba(212, 175, 55, 0.08); }
+.natl-error {
+  font-family: var(--font-ui); font-size: 13px; color: var(--red-dot);
+  margin-bottom: 10px;
+}
+
 .sl-body {
   position: absolute;
   top: 160px; left: 36px; right: 36px; bottom: 56px;

@@ -70,6 +70,15 @@ import {
   pickWorkrateGroupForType, retirementChancePct, RETIREMENT_WARNING_DAYS,
   YOUTH_PLAYER_MIN_AGE, YOUTH_PLAYER_MAX_AGE,
 } from "../js/config/youth.js";
+import {
+  COMPETITIONS as CONTINENTAL_COMPETITIONS, qualifyContinentalFields, createInitialContinentalState,
+} from "../js/engine/comps/continental.js";
+import {
+  INTL_COMPETITIONS, qualifyingSeasonRange, competitionStartSeason, nextCycleYearOnOrAfter,
+} from "../js/config/intl.js";
+import { nationSquadRoster, createInitialIntlState } from "../js/engine/comps/intl.js";
+import { roundLabel, resolvePenaltyShootout } from "../js/engine/comps/knockoututil.js";
+import { NT_JOB_REP_THRESHOLD, refreshNtJobMarket, acceptNtJob } from "../js/engine/ntjobs.js";
 
 const groups = []; // [{ title, results: [{name, pass, detail}] }]
 let current = null;
@@ -1452,6 +1461,179 @@ async function run() {
     assert("nextId/lastSalaryPeriod round-trip", roundTripped.academy.nextId === state.academy.nextId && roundTripped.academy.lastSalaryPeriod === state.academy.lastSalaryPeriod);
   }
 
+  /* ================= M10 — Continental + Internationals + NT Jobs ================= */
+
+  group("config/intl.js — qualifying-window arithmetic (plan1.md M10)");
+  {
+    assert("World Cup 2018 qualifying spans seasons 2015-2016 (2 preceding, ends before the 2017/18 tournament season)",
+      deepEqual(qualifyingSeasonRange(INTL_COMPETITIONS["world-cup"], 2017), { firstSeason: 2015, lastSeason: 2016 }));
+    assert("World Cup 2018's rollover-build season is 2015 (the qualifying window's own first season)",
+      competitionStartSeason(INTL_COMPETITIONS["world-cup"], 2018, { firstYear: 2018 }) === 2015);
+
+    // Euro 2016's own (non-bootstrap) formula would need qualifying to start
+    // season 2013 — before the career's July-2014 day one — so
+    // bootstrapFirstCycle instead builds it directly in the tournament
+    // season (2015), skipping qualifying for this one cycle only.
+    assert("Euro 2016 (bootstrap) builds in season 2015, not the unreachable 2013 quals window",
+      competitionStartSeason(INTL_COMPETITIONS.euro, 2016, { firstYear: 2016 }) === 2015);
+    assert("Euro 2020 (real qualifying, 2nd cycle) builds in season 2017 (2 preceding seasons before 2019/20)",
+      competitionStartSeason(INTL_COMPETITIONS.euro, 2020, { firstYear: 2016 }) === 2017);
+
+    assert("AFCON 2015 (bootstrap, same-season quals) builds in season 2014 — reachable at career start",
+      competitionStartSeason(INTL_COMPETITIONS.afcon, 2015, { firstYear: 2015 }) === 2014);
+    assert("Asian Cup 2019 (no bootstrap needed, same-season quals) builds in season 2018",
+      competitionStartSeason(INTL_COMPETITIONS["asian-cup"], 2019, { firstYear: 2019 }) === 2018);
+    assert("Copa América always builds in its own tournament season (no qualifying phase per data/cups.json)",
+      competitionStartSeason(INTL_COMPETITIONS["copa-america"], 2015, { firstYear: 2015 }) === 2014);
+
+    assert("nextCycleYearOnOrAfter finds the next World Cup year on/after 2019 -> 2022", nextCycleYearOnOrAfter(2018, 4, 2019) === 2022);
+    assert("nextCycleYearOnOrAfter returns firstYear itself when minYear is already <= firstYear", nextCycleYearOnOrAfter(2015, 2, 2010) === 2015);
+  }
+
+  group("engine/comps/continental.js — qualification ranking + field sizes");
+  {
+    const fields = qualifyContinentalFields({ clubs: world.clubs, leagues: world.leagues, nations: world.nations, tableByLeague: null });
+    assert("Champions Cup field is exactly 32 clubs", fields["euro-champions-cup"].length === 32);
+    assert("European Trophy field is exactly 48 clubs", fields["euro-trophy"].length === 48);
+    assert("South American Champions Cup field is exactly 32 clubs", fields["south-american-champions-cup"].length === 32);
+    assert("Champions Cup and Trophy fields never overlap (disjoint slices of the same ranked UEFA list)",
+      fields["euro-champions-cup"].every((id) => !fields["euro-trophy"].includes(id)));
+
+    const nationsByName = new Map(world.nations.map((n) => [n.name, n]));
+    const leaguesById = new Map(world.leagues.map((l) => [l.id, l]));
+    const clubsById = new Map(world.clubs.map((c) => [c.id, c]));
+    const confedOfClub = (id) => nationsByName.get(leaguesById.get(clubsById.get(id).leagueId).country)?.confed;
+    assert("every Champions Cup qualifier plays in a UEFA league", fields["euro-champions-cup"].every((id) => confedOfClub(id) === "UEFA"));
+    assert("every European Trophy qualifier plays in a UEFA league", fields["euro-trophy"].every((id) => confedOfClub(id) === "UEFA"));
+    assert("every South American Cup qualifier plays in a CONMEBOL league", fields["south-american-champions-cup"].every((id) => confedOfClub(id) === "CONMEBOL"));
+  }
+
+  group("engine/comps/continental.js — createInitialContinentalState (season-1 bootstrap)");
+  {
+    const fakeState = {
+      seed, seasonStartYear: 2014,
+      staticData: { leagues: world.leagues, clubs: world.clubs, nations: world.nations, cups: world.cups },
+    };
+    const continental = createInitialContinentalState(fakeState);
+    assert("bootstrap builds all 3 continental competitions", Object.keys(continental.competitions).length === 3);
+    for (const comp of CONTINENTAL_COMPETITIONS) {
+      const runtime = continental.competitions[comp.id];
+      const totalClubs = runtime.groups.reduce((s, g) => s + g.clubIds.length, 0);
+      assert(`${comp.name}: ${runtime.groups.length} groups of ${comp.groupSize} sum to ${comp.fieldSize} clubs`,
+        runtime.groups.length === comp.fieldSize / comp.groupSize && totalClubs === comp.fieldSize);
+      assert(`${comp.name}: no club appears in more than one group`, new Set(runtime.groups.flatMap((g) => g.clubIds)).size === totalClubs);
+      assert(`${comp.name}: every group's fixtures form a double round-robin (group size 4 -> 12 fixtures, each pair twice)`,
+        runtime.groups.every((g) => g.fixtures.length === 12));
+    }
+  }
+
+  group("engine/comps/intl.js — qualifying groups (World Cup 2018 + Euro 2016 bootstrap, built at the season-2015 rollover)");
+  {
+    // Mirrors exactly what engine/season.js's rollover produces at the July
+    // 2015 rollover — verified live in the running app (M10 checkpoint B)
+    // to build both instances at once; this locks that behaviour down.
+    const fakeState = {
+      seed, seasonStartYear: 2015,
+      staticData: { leagues: world.leagues, clubs: world.clubs, nations: world.nations, cups: world.cups },
+      players: world.players, playersById: new Map(world.players.map((p) => [p.id, p])),
+      nationsById: new Map(world.nations.map((n) => [n.id, n])),
+      calendar: { today: new Date(2015, 6, 1) }, club: { id: sampleClubId }, manager: { name: "Bob Jackson" },
+      inbox: { emails: [] }, nationalTeam: null,
+    };
+    createInitialIntlState(fakeState);
+
+    const wc = fakeState.intl.competitions["world-cup"];
+    assert("World Cup 2018 qualifying exists once seasonStartYear reaches 2015", !!wc && wc.phase === "qualifying");
+    const totalNations = wc.qualifyingGroups.reduce((s, g) => s + g.nationIds.length, 0);
+    assert(`World Cup qualifying groups cover all 50 nations exactly once (got ${totalNations})`, totalNations === 50);
+    assert("no nation appears in more than one World Cup qualifying group", new Set(wc.qualifyingGroups.flatMap((g) => g.nationIds)).size === 50);
+    assert("UEFA's 28 nations split into exactly 7 groups (ceil(28/4))", wc.qualifyingGroups.filter((g) => g.confed === "UEFA").length === 7);
+    assert("CONCACAF's 3 nations form exactly 1 group", wc.qualifyingGroups.filter((g) => g.confed === "CONCACAF").length === 1);
+    assert("World Cup qualifying groups use double round-robin (size-4 group -> 12 fixtures, each pair twice)",
+      wc.qualifyingGroups.filter((g) => g.nationIds.length === 4).every((g) => g.fixtures.length === 12));
+
+    const euro = fakeState.intl.competitions.euro;
+    assert("Euro 2016 (bootstrap) is already in its tournament group phase by season 2015", !!euro && euro.phase === "tournament-group");
+    assert("Euro's bootstrap field is exactly 8 UEFA nations", euro.tournamentGroups.reduce((s, g) => s + g.nationIds.length, 0) === 8);
+
+    assert("AFCON's 2nd cycle (2017) hasn't started yet in season 2015 (its own rollover is season 2016)", !fakeState.intl.competitions.afcon);
+    assert("Copa América's next cycle (2019) hasn't started yet in season 2015", !fakeState.intl.competitions["copa-america"]);
+  }
+
+  group("engine/comps/intl.js — nationSquadRoster + engine/comps/knockoututil.js");
+  {
+    const fakeState = { players: world.players, playersById: new Map(world.players.map((p) => [p.id, p])), nationalTeam: null };
+    const roster = nationSquadRoster(fakeState, "brazil");
+    assert("nationSquadRoster returns a non-empty squad of at most 23 players", roster.length > 0 && roster.length <= 23);
+    assert("nationSquadRoster is sorted by overall descending", roster.every((p, i) => i === 0 || p.overall <= roster[i - 1].overall));
+    assert("every returned player actually carries that nationId", roster.every((p) => p.nationId === "brazil"));
+
+    assert("roundLabel(2) -> Final", roundLabel(2) === "Final");
+    assert("roundLabel(4) -> Semi-Final", roundLabel(4) === "Semi-Final");
+    assert("roundLabel(16) -> Round of 16", roundLabel(16) === "Round of 16");
+    assert("roundLabel(32, roundIndex 0) -> Round 1", roundLabel(32, 0) === "Round 1");
+
+    const rng = new RngStream(deriveSeed(seed, "m10-pk-shootout-check"));
+    const xi = roster.slice(0, 11);
+    let alwaysOneWinner = true, neverTies = true;
+    for (let i = 0; i < 20; i++) {
+      const shootout = resolvePenaltyShootout(rng, xi, xi);
+      if (shootout.winner !== "home" && shootout.winner !== "away") alwaysOneWinner = false;
+      if (shootout.home === shootout.away) neverTies = false;
+    }
+    assert("resolvePenaltyShootout always declares exactly one winner (20 trials)", alwaysOneWinner);
+    assert("resolvePenaltyShootout never ends level (20 trials)", neverTies);
+  }
+
+  group("engine/ntjobs.js — rep-gated NT vacancy market + accept flow");
+  {
+    const state = buildM7FakeState();
+    state.nationalTeam = null;
+    state.ntJobMarket = { vacancies: [] };
+    state.manager.rep = NT_JOB_REP_THRESHOLD - 1;
+    refreshNtJobMarket(state, { seed, seasonStartYear: state.seasonStartYear });
+    assert(`no NT vacancies below the rep threshold (${NT_JOB_REP_THRESHOLD})`, state.ntJobMarket.vacancies.length === 0);
+
+    state.manager.rep = NT_JOB_REP_THRESHOLD;
+    refreshNtJobMarket(state, { seed, seasonStartYear: state.seasonStartYear });
+    assert(`NT vacancies populate once rep reaches ${NT_JOB_REP_THRESHOLD}`, state.ntJobMarket.vacancies.length > 0);
+    assert("every vacancy is a real nation id", state.ntJobMarket.vacancies.every((id) => world.nations.some((n) => n.id === id)));
+
+    const nationId = state.ntJobMarket.vacancies[0];
+    acceptNtJob(state, nationId);
+    assert("acceptNtJob sets state.nationalTeam to the accepted nation", state.nationalTeam.nationId === nationId);
+    assert("acceptNtJob seeds a squad of at most 23 players", state.nationalTeam.squadPlayerIds.length > 0 && state.nationalTeam.squadPlayerIds.length <= 23);
+    assert("acceptNtJob seeds an 11-man starting lineup", state.nationalTeam.lineup.length === 11);
+    assert("accepting an NT job never touches the user's own club", state.club.id === sampleClubId);
+    assert("the accepted nation is removed from the vacancy list", !state.ntJobMarket.vacancies.includes(nationId));
+  }
+
+  group("core/db.js — state.continental/state.intl/state.nationalTeam round-trip (M10)");
+  {
+    const state = {
+      seed, seasonStartYear: 2014,
+      club: sampleClub, manager: { name: "Bob Jackson", gamertag: "BJ", level: 1, xp: 0, xpMax: 1000, coins: 0, rep: NT_JOB_REP_THRESHOLD, warned: false, sacked: false },
+      calendar: { today: new Date(2014, 6, 1) },
+      players: world.players, playersById: new Map(world.players.map((p) => [p.id, p])),
+      nationsById: new Map(world.nations.map((n) => [n.id, n])),
+      squad: { lineup: [] },
+      inbox: { emails: [] },
+      results: new Map(), clubLeague: new Map(), cups: new Map(), jobMarket: { vacancies: [] },
+      ntJobMarket: { vacancies: [] }, nationalTeam: null,
+      staticData: { leagues: world.leagues, clubs: world.clubs, nations: world.nations, cups: world.cups },
+    };
+    createInitialContinentalState(state);
+    createInitialIntlState(state);
+    refreshNtJobMarket(state, { seed, seasonStartYear: state.seasonStartYear });
+    if (state.ntJobMarket.vacancies.length) acceptNtJob(state, state.ntJobMarket.vacancies[0]);
+
+    const roundTripped = deserializeSave(serializeSave(state));
+    assert("state.continental round-trips (competitions, groups, fixtures, matchdayDates)", deepEqual(roundTripped.continental, state.continental));
+    assert("state.intl round-trips (qualifying/tournament groups, knockout brackets)", deepEqual(roundTripped.intl, state.intl));
+    assert("state.nationalTeam round-trips (nationId, squadPlayerIds, lineup)", deepEqual(roundTripped.nationalTeam, state.nationalTeam));
+    assert("state.ntJobMarket round-trips", deepEqual(roundTripped.ntJobMarket, state.ntJobMarket));
+  }
+
   render();
   window.__testWorld = world; // console inspection convenience
 
@@ -1572,6 +1754,18 @@ async function runFullSeasonRolloverTest() {
     assert("engine/jobs.js's acceptJob reassigns the manager's club", store.state.club.id === otherClub.id);
     assert("acceptJob builds an 11-man lineup from the new club's roster", store.state.squad.lineup.length === 11);
     assert("acceptJob clears the sacked/warned flags", store.state.manager.sacked === false && store.state.manager.warned === false);
+
+    // M10: continental clubs/internationals survive a real rollover, driven
+    // through the exact same Store the rest of this integration test uses.
+    let continentalGroupTotalsOk = true;
+    for (const runtime of Object.values(store.state.continental.competitions)) {
+      const comp = CONTINENTAL_COMPETITIONS.find((c) => c.id === runtime.id);
+      if (runtime.phase === "group" && runtime.groups.reduce((s, g) => s + g.clubIds.length, 0) !== comp.fieldSize) continentalGroupTotalsOk = false;
+    }
+    assert("state.continental was rebuilt fresh for the new season (3 competitions, correct field sizes)",
+      Object.keys(store.state.continental.competitions).length === 3 && continentalGroupTotalsOk);
+    assert("state.intl still has AFCON 2015 and Copa América 2015 (built at career start, span the whole first year)",
+      !!store.state.intl.competitions.afcon && !!store.state.intl.competitions["copa-america"]);
   } catch (err) {
     assert(`full-season rollover test threw: ${err.message}`, false, err.stack || "");
     console.error(err);

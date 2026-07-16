@@ -16,6 +16,7 @@ import { firstWeekdayOnOrAfter, nthWeekdayOfMonth, addDays, isDateInRange } from
 const SATURDAY = 6;
 const MONDAY = 1;
 const TUESDAY = 2;
+const WEDNESDAY = 3;
 
 /** Career/season start: always July 1st (plan1.md ground rule #5 / M3 note). */
 export function seasonStart(seasonStartYear) {
@@ -100,6 +101,43 @@ export function firstCupRoundDate(seasonStartYear) {
 }
 
 export function nextCupRoundDate(fromDate, seasonStartYear) {
+  const blackoutRanges = intlBreakWeeks(seasonStartYear);
+  let d = addDays(fromDate, 21);
+  while (blackoutRanges.some((r) => isDateInRange(d, r.start, r.end))) d = addDays(d, 7);
+  return d;
+}
+
+/** M10 continental club competitions (Champions Cup / European Trophy /
+ * South American Champions Cup) — plan1.md's "Continental" section says
+ * "midweek dates" without pinning an exact day; Wednesday is chosen so it
+ * never collides with domestic cup's own Tuesday. Not in any INI (like this
+ * file's other scheduling decisions — see header). Group-stage matchdays:
+ * 6 double-round-robin rounds (group size 4), ~2 weeks apart from early
+ * September, skipping international-break weeks (players may be away on
+ * qualifier duty) the same way league fixtures already do. */
+export function continentalGroupMatchdayDates(seasonStartYear) {
+  const blackoutRanges = intlBreakWeeks(seasonStartYear);
+  const dates = [];
+  let d = firstWeekdayOnOrAfter(seasonStartYear, 8, WEDNESDAY); // September
+  while (dates.length < 6) {
+    if (!blackoutRanges.some((r) => isDateInRange(d, r.start, r.end))) dates.push(d);
+    d = addDays(d, 14);
+  }
+  return dates;
+}
+
+/** First continental knockout round (Round of 16) — comfortably after the
+ * group stage (6 matchdays from September lands around December), first
+ * Wednesday of February, mirroring domestic cup's own Feb/Mar/Apr/May
+ * knockout cadence one tier up. */
+export function firstContinentalKnockoutDate(seasonStartYear) {
+  return firstWeekdayOnOrAfter(seasonStartYear + 1, 1, WEDNESDAY); // February
+}
+
+/** Subsequent continental knockout rounds step forward like
+ * nextCupRoundDate (same 21-day step + intl-break skip), keeping the final
+ * clear of the July 1 rollover and June's international tournaments. */
+export function nextContinentalKnockoutDate(fromDate, seasonStartYear) {
   const blackoutRanges = intlBreakWeeks(seasonStartYear);
   let d = addDays(fromDate, 21);
   while (blackoutRanges.some((r) => isDateInRange(d, r.start, r.end))) d = addDays(d, 7);

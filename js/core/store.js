@@ -21,6 +21,10 @@ import { buildObjectiveEmails, domesticCupFor } from "../engine/objectives.js";
 import { simulateWorldDay } from "../engine/sim/worldsim.js";
 import * as matchEngine from "../engine/sim/match.js";
 import { buildCupState } from "../engine/comps/cup.js";
+import { createInitialContinentalState } from "../engine/comps/continental.js";
+import { createInitialIntlState, intlFixtureOnDate } from "../engine/comps/intl.js";
+import * as ntJobsEngine from "../engine/ntjobs.js";
+import { pickBestXI } from "../gen/squad.js";
 import { applyBoardReview, applyMidSeasonGrowth, rolloverSeason } from "../engine/season.js";
 import { acceptJob } from "../engine/jobs.js";
 import { computeWageCeiling } from "../engine/wage.js";
@@ -245,6 +249,13 @@ function createUiDefaults(today) {
     matchdaySubInId: null,
     // Browse Jobs overlay (M5, ui/jobsui.js): selected vacancy row.
     jobsSelectedIndex: -1,
+    // M10 (ui/ntjobsui.js): Browse NT Jobs overlay's selected vacancy row —
+    // same shape as jobsSelectedIndex above, entirely separate list.
+    ntJobsSelectedIndex: -1,
+    // M10 (ui/natlsquad.js): Natl Squad Selection overlay's selected row +
+    // the last capacity-guard message (23-man cap), same "lastError" banner
+    // convention as GTN/Youth's own mission/assignment forms.
+    natlSquad: { selectedPlayerId: null, lastError: null },
     // Contracts overlay (M6, ui/contractsui.js): selected squad player + the
     // in-progress offer (wage/years) the user is building before submitting
     // it to engine/contracts.js's renewUserContract. lastResult is
@@ -329,6 +340,11 @@ function deriveIndices(state, {
 }) {
   state.staticData = { leagues: allLeagues, clubs: allClubs, nations: allNations, cups: allCups };
   state.clubLeague = clubLeague || new Map(allClubs.map((c) => [c.id, c.leagueId]));
+  // M10: nations, looked up the same way clubsById already is — engine/
+  // comps/intl.js's quick-sim path (and, from checkpoint C on, the live
+  // Match Day ticker for the user's own NT) needs a nation's `.prestige`/
+  // `.name` the exact same way a club match needs a club record.
+  state.nationsById = new Map(allNations.map((n) => [n.id, n]));
 
   state.playersById = new Map(state.players.map((p) => [p.id, p]));
   state.playersByClub = new Map();
@@ -460,6 +476,13 @@ export function createCareerState({ managerName, club, league, world, seasonStar
     // rollover (and immediately if the user is sacked).
     jobMarket: { vacancies: [] },
 
+    // M10 (engine/ntjobs.js, checkpoint C): the national-team job market,
+    // same shape/lifecycle as jobMarket above but entirely separate — a
+    // nation never replaces the user's club job, both run simultaneously.
+    // state.nationalTeam is null until a vacancy is accepted.
+    nationalTeam: null,
+    ntJobMarket: { vacancies: [] },
+
     ...createStubExtras(today),
     ui: createUiDefaults(today),
   };
@@ -476,6 +499,16 @@ export function createCareerState({ managerName, club, league, world, seasonStar
   }
   gtnEngine.createInitialGtnState(built);
   academyEngine.createInitialAcademyState(built);
+  // M10: continental clubs (Champions Cup/Trophy/South American Cup) —
+  // Season 1 has no prior-season table to seed qualification from, so this
+  // bootstraps straight from each club's static prestige (see
+  // engine/comps/continental.js's own header).
+  createInitialContinentalState(built);
+  // M10: internationals (World Cup/Euro/Copa América/AFCON/Asian Cup) —
+  // builds whichever competitions' qualifying (or bootstrap) window has
+  // already opened by the career's first season (see engine/comps/intl.js's
+  // own header for which those are).
+  createInitialIntlState(built);
 
   return built;
 }
@@ -512,6 +545,8 @@ export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
     inbox: { emails: saved.inbox },
     matchday: null,
     jobMarket: saved.jobMarket || { vacancies: [] },
+    nationalTeam: saved.nationalTeam || null,
+    ntJobMarket: saved.ntJobMarket || { vacancies: [] },
     ...createStubExtras(today),
     ui: createUiDefaults(today),
   };
@@ -535,6 +570,9 @@ export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
   built.gtn = saved.gtn || gtnEngine.createInitialGtnState(built);
   // M9: ditto for state.academy on a pre-M9 save.
   built.academy = saved.academy || academyEngine.createInitialAcademyState(built);
+  // M10: ditto for state.continental / state.intl on a pre-M10 save.
+  built.continental = saved.continental || createInitialContinentalState(built);
+  built.intl = saved.intl || createInitialIntlState(built);
 
   return built;
 }
@@ -660,6 +698,10 @@ export class Store {
     const { date } = advanceTowards(
       this.state.fixtures, this.state.club.id, this.state.calendar.today, targetDate,
       (day) => this._processCalendarDay(day),
+      // M10: also halt on the user's own national-team fixture, if they
+      // manage one — same "Advance stops for a match you play" guarantee
+      // the club fixture check already gives, extended to intl duty.
+      (day) => !!(this.state.nationalTeam && intlFixtureOnDate(this.state, this.state.nationalTeam.nationId, day)),
     );
     this.state.calendar.today = date;
     this.state.calendar.strip = buildDayStrip(date, 5);
@@ -675,7 +717,13 @@ export class Store {
     }
 
     const fixture = fixtureOnDate(this.state.fixtures, this.state.club.id, date);
-    if (fixture) this.openMatchday(fixture);
+    if (fixture) { this.openMatchday(fixture); return; }
+
+    // M10: no club fixture today — check the user's own NT fixture, if any.
+    if (this.state.nationalTeam) {
+      const intlFixture = intlFixtureOnDate(this.state, this.state.nationalTeam.nationId, date);
+      if (intlFixture) this.openMatchday(intlFixture);
+    }
   }
 
   /** Runs for every calendar day the Advance loop steps into (fable-plans/
@@ -906,6 +954,79 @@ export class Store {
     this.closeOverlay();
     this.emit("advance", null); // reuse Central/Season's re-render hook — club/league/squad all changed
     this.emit("jobs:accepted", clubId);
+  }
+
+  /* ============================================================================
+   * M10: National-team jobs (engine/ntjobs.js) + Natl Squad Selection
+   * (engine/comps/intl.js's nationSquadRoster reads state.nationalTeam
+   * directly, so these methods just maintain that + the squad-selection
+   * overlay's own tiny bit of UI state) — engine/jobs.js's own "apply ==
+   * instant accept" scope precedent, applied to nations; accepting never
+   * touches state.club/state.league, since a manager runs both
+   * simultaneously (plan1.md: "manage club + country simultaneously").
+   * ========================================================================== */
+
+  openNtJobs() {
+    this.state.ui.ntJobsSelectedIndex = this.state.ntJobMarket.vacancies.length ? 0 : -1;
+    this.openOverlay("ntjobs");
+  }
+
+  selectNtJobRow(idx) {
+    this.state.ui.ntJobsSelectedIndex = idx;
+    this.emit("ntjobs:select", idx);
+  }
+
+  applyForSelectedNtJob() {
+    const idx = this.state.ui.ntJobsSelectedIndex;
+    const nationId = this.state.ntJobMarket.vacancies[idx];
+    if (!nationId) return;
+    ntJobsEngine.acceptNtJob(this.state, nationId);
+    this.state.ui.ntJobsSelectedIndex = -1;
+    this.closeOverlay();
+    this.emit("advance", null); // Squad screen's NATL tiles go live
+    this.emit("ntjobs:accepted", nationId);
+  }
+
+  /** Opens the Natl Squad Selection overlay (Squad screen's sq-natlsel
+   * tile) — a no-op if the user doesn't currently manage a nation. */
+  openNatlSquad() {
+    if (!this.state.nationalTeam) return;
+    const roster = this.state.players.filter((p) => p.nationId === this.state.nationalTeam.nationId);
+    const first = [...roster].sort((a, b) => b.overall - a.overall)[0];
+    this.state.ui.natlSquad.selectedPlayerId = first ? first.id : null;
+    this.state.ui.natlSquad.lastError = null;
+    this.openOverlay("natlsquad");
+  }
+
+  selectNatlSquadPlayer(playerId) {
+    this.state.ui.natlSquad.selectedPlayerId = playerId;
+    this.emit("natlsquad", null);
+  }
+
+  /** Toggles a player in/out of the 23-man squad (capped — a no-op past the
+   * cap, surfaced via lastError same as GTN/Youth's own capacity guards),
+   * then re-derives the starting lineup from whoever's left in the squad
+   * (gen/squad.js's pickBestXI — the same auto-pick the initial accept
+   * used; there's no drag-and-drop lineup editor for the *club* team sheet
+   * yet either, so this isn't a scope regression). */
+  toggleNatlSquadPlayer(playerId) {
+    const nt = this.state.nationalTeam;
+    if (!nt) return;
+    const idx = nt.squadPlayerIds.indexOf(playerId);
+    if (idx !== -1) {
+      nt.squadPlayerIds.splice(idx, 1);
+    } else {
+      if (nt.squadPlayerIds.length >= 23) {
+        this.state.ui.natlSquad.lastError = "Squad is full (23/23) — remove a player first";
+        this.emit("natlsquad", null);
+        return;
+      }
+      nt.squadPlayerIds.push(playerId);
+    }
+    this.state.ui.natlSquad.lastError = null;
+    const squad = nt.squadPlayerIds.map((id) => this.state.playersById.get(id)).filter(Boolean);
+    nt.lineup = pickBestXI(squad);
+    this.emit("natlsquad", null);
   }
 
   /* ----- Contracts (M6, engine/contracts.js): Office ▸ Contracts renewal UI ----- */

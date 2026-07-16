@@ -249,6 +249,11 @@
   font-family: var(--font-ui); font-size: 14px; color: var(--ink-dim);
 }
 .sq-club__check { position: absolute; left: 20px; bottom: 16px; }
+
+/* M10: Natl Squad tile reuses sq-club__name/__check's exact slots above but
+   swaps the crest for a flag (different natural aspect ratio, so it gets
+   its own position rule rather than sq-club__crest's fixed 50x50 box). */
+.sq-natl .flag { position: absolute; top: 18px; right: 16px; }
 .check {
   width: 22px; height: 22px; border-radius: 50%; background: var(--green-ok);
   display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: 13px;
@@ -372,6 +377,12 @@
 .se-team { grid-area: teamstats; }
 .se-play { grid-area: playstats; }
 .se-tables { grid-area: tables; padding: 14px 16px; }
+/* M10: se-tables became a 2-page carousel (domestic cup / continental cup) —
+   .tile[data-carousel] zeroes the outer tile's own padding (screens.css's
+   "generic carousel pieces" above) so this restores the original 14px/16px
+   inset on the .cpage itself instead of the generic carousel's 18px/20px,
+   keeping both pages visually identical to the pre-M10 single-page tile. */
+.screen--season .se-tables .cpage { padding: 14px 16px; }
 .se-tables .cup { font-family: var(--font-ui); font-size: 15px; color: var(--ink); margin-top: 8px; }
 .se-tables .round { font-family: var(--font-ui); font-size: 13px; color: var(--ink-faint); margin: 8px 0 12px; }
 .se-tables .trow { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 16px; }

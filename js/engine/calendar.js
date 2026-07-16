@@ -132,15 +132,21 @@ export function eventsOnDate(date, seasonStartYear) {
  * hook for core/store.js to batch-simulate that date's non-user fixtures
  * (engine/sim/worldsim.js) as the calendar sweeps past them, so every
  * league's table fills in even on days the user's own club doesn't play.
+ *
+ * `extraStop(date)`, if given, is checked alongside the club fixture check —
+ * M10's hook for core/store.js to also halt on the user's own national-team
+ * fixture (engine/comps/intl.js's intlFixtureOnDate), so accepting an NT job
+ * doesn't lose the "Advance stops for a match you play" guarantee just
+ * because it isn't a club fixture.
  * @returns {{ date: Date, stoppedEarly: boolean }}
  */
-export function advanceTowards(fixtures, clubId, fromDate, toDate, onEnterDay) {
+export function advanceTowards(fixtures, clubId, fromDate, toDate, onEnterDay, extraStop) {
   const targetDay = toEpochDay(toDate);
   let current = fromDate;
   while (toEpochDay(current) < targetDay) {
     current = addDays(current, 1);
     if (onEnterDay) onEnterDay(current);
-    if (fixtureOnDate(fixtures, clubId, current)) return { date: current, stoppedEarly: true };
+    if (fixtureOnDate(fixtures, clubId, current) || (extraStop && extraStop(current))) return { date: current, stoppedEarly: true };
   }
   return { date: current, stoppedEarly: false };
 }

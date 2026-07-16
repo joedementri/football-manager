@@ -378,6 +378,110 @@ function deserializeAcademyState(a) {
   };
 }
 
+/** M10: state.continental (engine/comps/continental.js — each continental
+ * club competition's group-stage fixtures + knockout bracket). Persisted
+ * directly, same rationale as cupsState above (a knockout round's pairing
+ * depends on who actually won, not just the seed) — only the Date fields
+ * (group fixture dates, the shared matchdayDates list, knockout tie dates
+ * and nextRoundDate) need the usual epoch-day round-trip.
+ */
+function serializeContinentalCompetition(comp) {
+  return {
+    ...comp,
+    groups: comp.groups.map((g) => ({ ...g, fixtures: g.fixtures.map((f) => ({ ...f, date: toEpochDay(f.date) })) })),
+    matchdayDates: comp.matchdayDates.map(toEpochDay),
+    knockout: comp.knockout ? {
+      ...comp.knockout,
+      nextRoundDate: toEpochDay(comp.knockout.nextRoundDate),
+      ties: comp.knockout.ties.map((t) => ({ ...t, date: toEpochDay(t.date) })),
+    } : null,
+  };
+}
+function deserializeContinentalCompetition(comp) {
+  return {
+    ...comp,
+    groups: comp.groups.map((g) => ({ ...g, fixtures: g.fixtures.map((f) => ({ ...f, date: fromEpochDay(f.date) })) })),
+    matchdayDates: comp.matchdayDates.map(fromEpochDay),
+    knockout: comp.knockout ? {
+      ...comp.knockout,
+      nextRoundDate: fromEpochDay(comp.knockout.nextRoundDate),
+      ties: comp.knockout.ties.map((t) => ({ ...t, date: fromEpochDay(t.date) })),
+    } : null,
+  };
+}
+function serializeContinentalState(continental) {
+  const competitions = {};
+  for (const [id, comp] of Object.entries(continental.competitions)) competitions[id] = serializeContinentalCompetition(comp);
+  return { competitions };
+}
+function deserializeContinentalState(continental) {
+  const competitions = {};
+  for (const [id, comp] of Object.entries(continental.competitions)) competitions[id] = deserializeContinentalCompetition(comp);
+  return { competitions };
+}
+
+/** M10: state.intl (engine/comps/intl.js — each international competition's
+ * qualifying groups + tournament group stage + knockout bracket). Same
+ * rationale/shape as serializeContinentalCompetition above, just with two
+ * more Date-bearing arrays (qualifyingMatchdayDates/tournamentMatchdayDates)
+ * a continental competition doesn't have. */
+function serializeIntlCompetition(comp) {
+  return {
+    ...comp,
+    qualifyingGroups: comp.qualifyingGroups
+      ? comp.qualifyingGroups.map((g) => ({ ...g, fixtures: g.fixtures.map((f) => ({ ...f, date: toEpochDay(f.date) })) }))
+      : null,
+    qualifyingMatchdayDates: comp.qualifyingMatchdayDates ? comp.qualifyingMatchdayDates.map(toEpochDay) : null,
+    tournamentGroups: comp.tournamentGroups
+      ? comp.tournamentGroups.map((g) => ({ ...g, fixtures: g.fixtures.map((f) => ({ ...f, date: toEpochDay(f.date) })) }))
+      : null,
+    tournamentMatchdayDates: comp.tournamentMatchdayDates ? comp.tournamentMatchdayDates.map(toEpochDay) : null,
+    knockout: comp.knockout ? {
+      ...comp.knockout,
+      nextRoundDate: toEpochDay(comp.knockout.nextRoundDate),
+      ties: comp.knockout.ties.map((t) => ({ ...t, date: toEpochDay(t.date) })),
+    } : null,
+  };
+}
+function deserializeIntlCompetition(comp) {
+  return {
+    ...comp,
+    qualifyingGroups: comp.qualifyingGroups
+      ? comp.qualifyingGroups.map((g) => ({ ...g, fixtures: g.fixtures.map((f) => ({ ...f, date: fromEpochDay(f.date) })) }))
+      : null,
+    qualifyingMatchdayDates: comp.qualifyingMatchdayDates ? comp.qualifyingMatchdayDates.map(fromEpochDay) : null,
+    tournamentGroups: comp.tournamentGroups
+      ? comp.tournamentGroups.map((g) => ({ ...g, fixtures: g.fixtures.map((f) => ({ ...f, date: fromEpochDay(f.date) })) }))
+      : null,
+    tournamentMatchdayDates: comp.tournamentMatchdayDates ? comp.tournamentMatchdayDates.map(fromEpochDay) : null,
+    knockout: comp.knockout ? {
+      ...comp.knockout,
+      nextRoundDate: fromEpochDay(comp.knockout.nextRoundDate),
+      ties: comp.knockout.ties.map((t) => ({ ...t, date: fromEpochDay(t.date) })),
+    } : null,
+  };
+}
+function serializeIntlState(intl) {
+  const competitions = {};
+  for (const [id, comp] of Object.entries(intl.competitions)) competitions[id] = serializeIntlCompetition(comp);
+  return { competitions };
+}
+function deserializeIntlState(intl) {
+  const competitions = {};
+  for (const [id, comp] of Object.entries(intl.competitions)) competitions[id] = deserializeIntlCompetition(comp);
+  return { competitions };
+}
+
+/** M10: state.nationalTeam (checkpoint C — null until an NT job is
+ * accepted) and state.ntJobMarket (same vacancy-list shape as jobMarket,
+ * no Date fields in either). */
+function serializeNationalTeam(nt) {
+  return nt;
+}
+function deserializeNationalTeam(nt) {
+  return nt;
+}
+
 /** GameState -> a small, IndexedDB-ready blob: static reference data
  * (leagues/clubs/nations/cups) is deliberately excluded — gen/world.js
  * re-fetches it from data/*.json on load — only what generation/play
@@ -432,6 +536,12 @@ export function serializeSave(state) {
     gtn: state.gtn ? serializeGtnState(state.gtn) : null,
     // M9: ditto for state.academy.
     academy: state.academy ? serializeAcademyState(state.academy) : null,
+    // M10: ditto for state.continental.
+    continental: state.continental ? serializeContinentalState(state.continental) : null,
+    // M10: internationals + NT job (checkpoint C uses nationalTeam/ntJobMarket).
+    intl: state.intl ? serializeIntlState(state.intl) : null,
+    nationalTeam: state.nationalTeam ? serializeNationalTeam(state.nationalTeam) : null,
+    ntJobMarket: state.ntJobMarket || { vacancies: [] },
   };
 }
 
@@ -459,6 +569,10 @@ export function deserializeSave(saved) {
     newsTransfer: saved.newsTransfer,
     gtn: saved.gtn ? deserializeGtnState(saved.gtn) : null,
     academy: saved.academy ? deserializeAcademyState(saved.academy) : null,
+    continental: saved.continental ? deserializeContinentalState(saved.continental) : null,
+    intl: saved.intl ? deserializeIntlState(saved.intl) : null,
+    nationalTeam: saved.nationalTeam ? deserializeNationalTeam(saved.nationalTeam) : null,
+    ntJobMarket: saved.ntJobMarket || { vacancies: [] },
   };
 }
 

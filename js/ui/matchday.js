@@ -20,8 +20,31 @@ function playerName(state, id) {
   return p ? p.commonName : "Unknown";
 }
 
-function crestUse(clubId, size = "sm", extraClass = "") {
-  return `<svg class="crest crest--${size}${extraClass ? ` ${extraClass}` : ""}"><use href="#crest-${clubId}"></use></svg>`;
+/** M10: every crest lookup below goes through this instead of assuming a
+ * club — `isIntl` (matchState.isIntl) swaps in a nation's flag (there's no
+ * crest-* SVG symbol for a nation) sized to roughly match the crest variant
+ * it replaces. `size "lg"` means "no size class" for a crest (the pre-match
+ * panel's larger default .crest) and flags.css's own flag--lg for a flag. */
+function teamBadgeHtml(state, teamId, isIntl, size = "sm", extraClass = "") {
+  const cls = extraClass ? ` ${extraClass}` : "";
+  if (isIntl) {
+    const sizeCls = size === "lg" ? " flag--lg" : "";
+    return `<span class="flag${sizeCls}${cls}" data-flag="${teamId}"></span>`;
+  }
+  const sizeCls = size && size !== "lg" ? ` crest--${size}` : "";
+  return `<svg class="crest${sizeCls}${cls}"><use href="#crest-${teamId}"></use></svg>`;
+}
+
+function teamRecord(state, teamId, isIntl) {
+  return isIntl ? state.nationsById.get(teamId) : state.clubsById.get(teamId);
+}
+function teamName(state, teamId, isIntl) {
+  const rec = teamRecord(state, teamId, isIntl);
+  return rec ? rec.name : "Unknown";
+}
+function teamShortName(state, teamId, isIntl) {
+  const rec = teamRecord(state, teamId, isIntl);
+  return rec ? (rec.shortName || rec.name) : "Unknown"; // nations have no shortName field
 }
 
 function xiListHtml(state, xi) {
@@ -33,13 +56,13 @@ function xiListHtml(state, xi) {
 }
 
 function scoreboardHtml(state, m, label) {
-  const homeClub = state.clubsById.get(m.homeClubId);
-  const awayClub = state.clubsById.get(m.awayClubId);
+  const homeName = teamShortName(state, m.homeClubId, m.isIntl);
+  const awayName = teamShortName(state, m.awayClubId, m.isIntl);
   return (
     `<div class="md-scoreboard">` +
-      `<div class="md-sb__team">${crestUse(homeClub.id)}<span class="md-sb__name">${homeClub.shortName}</span></div>` +
+      `<div class="md-sb__team">${teamBadgeHtml(state, m.homeClubId, m.isIntl)}<span class="md-sb__name">${homeName}</span></div>` +
       `<div class="md-sb__mid"><span class="md-sb__score">${m.score.home} - ${m.score.away}</span><span class="md-sb__minute">${label}</span></div>` +
-      `<div class="md-sb__team md-sb__team--away"><span class="md-sb__name">${awayClub.shortName}</span>${crestUse(awayClub.id)}</div>` +
+      `<div class="md-sb__team md-sb__team--away"><span class="md-sb__name">${awayName}</span>${teamBadgeHtml(state, m.awayClubId, m.isIntl)}</div>` +
     `</div>`
   );
 }
@@ -50,8 +73,8 @@ const EVENT_BADGE = { goal: "GOAL", card: null, injury: "INJURY", sub: "SUB", "c
  * report, always with the team's crest so "which side did this happen to"
  * reads at a glance in a mixed home/away list. */
 function eventLineHtml(state, m, ev) {
-  const club = state.clubsById.get(ev.side === "home" ? m.homeClubId : m.awayClubId);
-  const crest = crestUse(club.id, "xs", "md-ev__crest");
+  const teamId = ev.side === "home" ? m.homeClubId : m.awayClubId;
+  const crest = teamBadgeHtml(state, teamId, m.isIntl, "xs", "md-ev__crest");
   let badge = EVENT_BADGE[ev.type];
   let text = playerName(state, ev.playerId);
   let accent = ev.side === "home" ? "home" : "away";
@@ -82,32 +105,36 @@ function eventLineHtml(state, m, ev) {
 }
 
 function otherScoresHtml(state, m) {
+  // M10: no equivalent "shared matchday" strip for intl fixtures — every
+  // other nation's game resolves independently (engine/comps/intl.js), not
+  // as one collective league Saturday the way club fixtures are.
+  if (m.isIntl) return "";
   const fixtures = fixturesOnDate(state.fixtures, state.calendar.today).filter((f) => f.id !== m.fixture.id);
   if (fixtures.length === 0) return "";
   const rows = fixtures.slice(0, 6).map((f) => {
     const r = state.results.get(f.id);
     const score = r ? `${r.homeGoals}-${r.awayGoals}` : "—";
     return (
-      `<div class="md-other">${crestUse(f.homeClubId)}<span class="md-other__score">${score}</span>${crestUse(f.awayClubId)}</div>`
+      `<div class="md-other">${teamBadgeHtml(state, f.homeClubId, false)}<span class="md-other__score">${score}</span>${teamBadgeHtml(state, f.awayClubId, false)}</div>`
     );
   }).join("");
   return `<div class="md-otherscores"><div class="md-otherscores__title">Other Results</div>${rows}</div>`;
 }
 
 function renderPreMatch(state, m) {
-  const homeClub = state.clubsById.get(m.homeClubId);
-  const awayClub = state.clubsById.get(m.awayClubId);
+  const homeName = teamName(state, m.homeClubId, m.isIntl);
+  const awayName = teamName(state, m.awayClubId, m.isIntl);
   return (
     `<div class="md-prematch">` +
       `<div class="md-team">` +
-        `<svg class="crest"><use href="#crest-${homeClub.id}"></use></svg>` +
-        `<div class="md-team__name">${homeClub.name}</div>` +
+        teamBadgeHtml(state, m.homeClubId, m.isIntl, "lg") +
+        `<div class="md-team__name">${homeName}</div>` +
         `<ul class="md-xi">${xiListHtml(state, m.homeXI)}</ul>` +
       `</div>` +
       `<div class="md-vs">VS</div>` +
       `<div class="md-team">` +
-        `<svg class="crest"><use href="#crest-${awayClub.id}"></use></svg>` +
-        `<div class="md-team__name">${awayClub.name}</div>` +
+        teamBadgeHtml(state, m.awayClubId, m.isIntl, "lg") +
+        `<div class="md-team__name">${awayName}</div>` +
         `<ul class="md-xi">${xiListHtml(state, m.awayXI)}</ul>` +
       `</div>` +
     `</div>`
@@ -153,6 +180,10 @@ function renderFullTime(state, m) {
   return (
     `<div class="md-fulltime">` +
       scoreboardHtml(state, m, "FULL TIME") +
+      // M10: a drawn NT knockout tie goes to penalties (engine/sim/match.js's
+      // finishMatch) — shown here the same way the scoreboard already reads,
+      // since 90 minutes alone left it level.
+      (m.penalties ? `<div class="md-mom"><span class="md-mom__label">Penalties</span><span class="md-mom__name">${m.penalties.home} - ${m.penalties.away}</span></div>` : "") +
       (mom ? (
         `<div class="md-mom">` +
           `<span class="md-mom__label">Man of the Match</span>` +

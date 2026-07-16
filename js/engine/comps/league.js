@@ -34,8 +34,12 @@ function roundRobinLeg(clubIds) {
 }
 
 /** Every club plays every other club home and away (plan1.md "League:
- * double round-robin scheduler (circle method)"). */
-function doubleRoundRobinRounds(clubIds) {
+ * double round-robin scheduler (circle method)"). Exported for reuse by
+ * engine/comps/continental.js and engine/comps/intl.js (M10) — continental
+ * groups and international qualifying groups are architecturally just small
+ * leagues (round-robin group play), so they schedule fixtures the exact same
+ * way rather than reimplementing the circle method a second/third time. */
+export function doubleRoundRobinRounds(clubIds) {
   const leg1 = roundRobinLeg(clubIds);
   const leg2 = leg1.map((round) => round.map((m) => ({ home: m.away, away: m.home })));
   return [...leg1, ...leg2];

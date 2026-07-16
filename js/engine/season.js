@@ -18,6 +18,8 @@
 import { buildFixtures } from "./calendar.js";
 import { buildLeagueTable } from "./comps/league.js";
 import { buildCupState, cupStatusForClub } from "./comps/cup.js";
+import { rebuildContinentalForRollover } from "./comps/continental.js";
+import { refreshIntlCompetitionsForRollover } from "./comps/intl.js";
 import {
   buildObjectiveEmails, domesticCupFor, leagueIndex, leagueObjectiveMet,
   evaluateSeasonEnd, buildSeasonEndEmail, buildMidSeasonReviewEmail,
@@ -26,6 +28,7 @@ import { applyGrowthToWorld } from "./growth.js";
 import { announceRetirements, applyRetirementsAndRegens } from "./retirement.js";
 import { buildSeasonAwardsEmail } from "./awards.js";
 import { refreshJobMarket } from "./jobs.js";
+import { refreshNtJobMarket } from "./ntjobs.js";
 import { computeForm } from "./form.js";
 import { recomputeAllValues } from "./value.js";
 import { computeWageCeiling } from "./wage.js";
@@ -125,6 +128,9 @@ export function rolloverSeason(state) {
 
   /* ---- 4. Job market refresh (CPU sackings + the user's own vacancy) ---- */
   refreshJobMarket(state, { positionByClub, seed: state.seed, seasonStartYear: state.seasonStartYear, sackedClubId });
+  // M10: the NT job market — a no-op below the reputation threshold (see
+  // engine/ntjobs.js's own header).
+  refreshNtJobMarket(state, { seed: state.seed, seasonStartYear: state.seasonStartYear });
 
   /* ---- 5. Growth application (before age++, per plan1.md's bullet order) ---- */
   applyGrowthToWorld(state, state.seed, `growth-${state.seasonStartYear}-07-01`);
@@ -181,6 +187,19 @@ export function rolloverSeason(state) {
   state.cups = new Map(cups.domestic.map((cup) => [
     cup.id, buildCupState({ cup, clubs: clubsNextSeason, leagues, seed: state.seed, seasonStartYear: state.seasonStartYear }),
   ]));
+  // M10: continental clubs (Champions Cup/Trophy/South American Cup) —
+  // qualification is seeded from *this* season's clubs/table (clubsThisSeason,
+  // tableByLeague, both still in scope from step 1 above), same "earned by
+  // the table you actually played in" rationale as engine/comps/
+  // continental.js's own header, then the fresh competition instances
+  // themselves are dated for the *upcoming* season.
+  rebuildContinentalForRollover(state, {
+    clubsThisSeason, leagues, nations, tableByLeague, newSeasonStartYear,
+  });
+  // M10: internationals — a no-op most seasons (see engine/comps/intl.js's
+  // own header); builds whichever competitions' qualifying/tournament
+  // window opens this exact season.
+  refreshIntlCompetitionsForRollover(state, { newSeasonStartYear });
 
   state.clubsById = new Map(clubsNextSeason.map((c) => [c.id, c]));
   state.league.clubs = clubsNextSeason.filter((c) => c.leagueId === state.league.id);
