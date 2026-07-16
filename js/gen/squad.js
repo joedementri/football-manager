@@ -158,8 +158,7 @@ export function generateSquad({ rng, club, league, nationsById, nationsByName, s
     const targetOverall = Math.round(rng.gaussian(mean + bonus, spread * 0.7));
     const nation = pickNation(rng, club, league, nationsById, nationsByName);
     return generatePlayer({
-      rng, positionCode: code, nation, club, targetOverall,
-      seasonStartYear, wageModifier: league.wageModifier,
+      rng, positionCode: code, nation, club, league, targetOverall, seasonStartYear,
     });
   });
 

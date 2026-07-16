@@ -17,6 +17,8 @@
   <link rel="stylesheet" href="css/flags.css" />
   <link rel="stylesheet" href="css/matchday.css" />
   <link rel="stylesheet" href="css/jobs.css" />
+  <link rel="stylesheet" href="css/contracts.css" />
+  <link rel="stylesheet" href="css/transfers.css" />
 </head>
 <body>
 
@@ -399,12 +401,12 @@
           <div class="dots"><i class="on"></i><i></i><i></i></div>
         </div>
 
-        <div class="tile has-photo tr-search">
+        <div class="tile has-photo tr-search is-link" data-open="search">
           <div class="tile__title">Search<br>Players</div>
           <div class="tile__desc">Search for a specific player you want to buy, loan or scout</div>
           <div class="dots"><i class="on"></i><i></i><i></i></div>
         </div>
-        <div class="tile has-photo tr-sell">
+        <div class="tile has-photo tr-sell is-link" data-open="selllist">
           <div class="tile__title">Sell<br>Players</div>
           <div class="tile__desc">Make players available for transfer or loan</div>
           <div class="dots"><i class="on"></i><i></i><i></i></div>
@@ -426,7 +428,7 @@
           <div class="tile__title">Inbox</div>
           <div id="of-inbox-body"><!-- built by ui/render.js's renderOffice --></div>
         </div>
-        <div class="tile has-photo of-contracts">
+        <div class="tile has-photo of-contracts is-link" data-open="contracts">
           <div class="tile__title">Contracts</div>
           <div class="tile__desc">Manage the contracts of the players in your squad</div>
         </div>
@@ -439,7 +441,7 @@
           <div class="tile__desc">Your current career summary</div>
           <div class="dots"><i class="on"></i><i></i></div>
         </div>
-        <div class="tile has-photo of-funds">
+        <div class="tile has-photo of-funds is-link" data-open="requestfunds">
           <div class="tile__title">Request Funds</div>
           <div class="tile__desc">Request additional funds from the Board</div>
         </div>
@@ -540,6 +542,7 @@
               <p>If this objective can also be met via a cup competition, then succeeding through that medium but failing your league objective may not be enough to satisfy our criteria.</p>
               <p>Best of luck for the season ahead.</p>
             </div>
+            <div class="email-actions" id="email-actions" hidden><!-- built by ui/render.js for YES/NO decision emails (M7: incoming transfer bids) --></div>
           </div>
         </div>
       </div>
@@ -636,6 +639,65 @@
         <div class="jb-body" id="jobs-body"><!-- built by ui/jobsui.js --></div>
       </div>
 
+      <!-- =====================  CONTRACTS OVERLAY  ==================== -->
+      <div id="contracts-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">OFFICE</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">CONTRACTS</span>
+        </div>
+        <div class="ct-body">
+          <div id="ct-list"><!-- built by ui/contractsui.js --></div>
+          <div id="ct-detail"><!-- built by ui/contractsui.js --></div>
+        </div>
+      </div>
+
+      <!-- =====================  SEARCH PLAYERS OVERLAY  ============== -->
+      <div id="search-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">TRANSFERS</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">SEARCH PLAYERS</span>
+        </div>
+        <div class="sr-body">
+          <div id="sr-filters"><!-- built by ui/transfersui.js --></div>
+          <div id="sr-results"><!-- built by ui/transfersui.js --></div>
+        </div>
+      </div>
+
+      <!-- =====================  NEGOTIATION OVERLAY  ================== -->
+      <div id="negotiation-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">TRANSFERS</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">NEGOTIATION</span>
+        </div>
+        <div class="ng-body" id="ng-body"><!-- built by ui/transfersui.js --></div>
+      </div>
+
+      <!-- =====================  SELL / LOAN LIST OVERLAY  ============= -->
+      <div id="selllist-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">TRANSFERS</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">SELL / LOAN LIST</span>
+        </div>
+        <div class="sl2-body">
+          <div id="sl2-list"><!-- built by ui/transfersui.js --></div>
+          <div id="sl2-detail"><!-- built by ui/transfersui.js --></div>
+        </div>
+      </div>
+
+      <!-- =====================  REQUEST FUNDS OVERLAY  ================ -->
+      <div id="requestfunds-overlay">
+        <div class="news-crumb">
+          <span class="crumb-prev">OFFICE</span>
+          <span class="crumb-sep">&rsaquo;</span>
+          <span class="crumb-cur">REQUEST FUNDS</span>
+        </div>
+        <div class="rf-body" id="rf-body"><!-- built by ui/transfersui.js --></div>
+      </div>
+
       <!-- =====================  FOOTER PROMPTS  ==================== -->
       <footer class="footer" id="footer-main">
         <span class="prompt" data-prompt="select"><span class="btn-glyph a">A</span> Select</span>
@@ -669,6 +731,15 @@
         <span class="prompt" data-action="apply"><span class="btn-glyph a">A</span> Apply</span>
         <span class="prompt" data-action="back"><span class="btn-glyph b">B</span> Back</span>
       </footer>
+      <footer class="footer" id="footer-contracts" hidden>
+        <span class="prompt" data-action="offer"><span class="btn-glyph a">A</span> Send Offer</span>
+        <span class="prompt" data-action="suggest"><span class="btn-glyph x">X</span> Suggested Terms</span>
+        <span class="prompt" data-action="back"><span class="btn-glyph b">B</span> Back</span>
+      </footer>
+      <footer class="footer" id="footer-search" hidden><!-- built by ui/transfersui.js (prompts change with selection) --></footer>
+      <footer class="footer" id="footer-negotiation" hidden><!-- built by ui/transfersui.js (prompts change per phase) --></footer>
+      <footer class="footer" id="footer-selllist" hidden><!-- built by ui/transfersui.js (prompts change with selection) --></footer>
+      <footer class="footer" id="footer-requestfunds" hidden><!-- built by ui/transfersui.js --></footer>
 
       <!-- =====================  DELETE SAVE CONFIRM  ================ -->
       <div class="confirm-modal" id="confirm-delete-modal" hidden>

@@ -58,6 +58,17 @@ export function boardReviewDate(seasonStartYear) {
   return new Date(seasonStartYear + 1, 0, 1);
 }
 
+/** CPU contract auto-renewal date (plan1.md "Contracts": "CPU auto-renews
+ * per the STARTING11/SUB/RESERVE probability tables each May") — not in any
+ * INI (playercontract.ini tunes the renewal-probability *tables* engine/
+ * contracts.js reads, not the calendar date itself, same footing as this
+ * file's other plan-authored dates — see header). May 1, ahead of the July 1
+ * rollover, so a released player's replacement club has the summer window's
+ * worth of season to bed in before kickoff. */
+export function cpuContractRenewalDate(seasonStartYear) {
+  return new Date(seasonStartYear + 1, 4, 1);
+}
+
 /** International breaks (plan1.md "Internationals": "qualifiers in intl
  * breaks (Sep/Oct/Nov/Mar)"; "league pauses on break weeks"). Each break is
  * a Monday-to-Sunday week; the 2nd Monday of the month is an arbitrary but

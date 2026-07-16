@@ -32,6 +32,25 @@ import { applyRetirementsAndRegens } from "../js/engine/retirement.js";
 import { buildCupState } from "../js/engine/comps/cup.js";
 import { acceptJob } from "../js/engine/jobs.js";
 import { Store, createCareerState } from "../js/core/store.js";
+import { computeValue } from "../js/engine/value.js";
+import { computeWage, computeWageCeiling, squadWageBill } from "../js/engine/wage.js";
+import {
+  computeAsk, acceptanceChance, renewUserContract, applyCpuContractRenewals,
+  resolveExpiredContracts, checkContractExpiryWarnings,
+} from "../js/engine/contracts.js";
+import { decisionCurveY } from "../js/config/negotiation.js";
+import { computeWantedFee, feeDecisionChances, rollThreeWay, computeCounterFee } from "../js/engine/teamdecision.js";
+import { computeSigningAsk, decisionChance } from "../js/engine/playerdecision.js";
+import { getClubBudget, spendClubBudget, creditClubBudget } from "../js/engine/clubbudget.js";
+import { pushTransferNews } from "../js/engine/transfernews.js";
+import {
+  startFeeNegotiation, adjustFeeOffer, submitFeeOffer, submitNegotiationContractOffer,
+  startLoanNegotiation, cancelNegotiation, resolveLoanReturns,
+} from "../js/engine/negotiation.js";
+import { eligibleFreeAgentTargets, startApproach, submitApproach } from "../js/engine/freeagents.js";
+import {
+  runWeeklyTransferActivity, checkIncomingBidsOnListedPlayers, acceptIncomingBid, rejectIncomingBid,
+} from "../js/engine/transferai.js";
 
 const groups = []; // [{ title, results: [{name, pass, detail}] }]
 let current = null;
@@ -408,6 +427,28 @@ async function run() {
   }
 
   {
+    // M7: a player mid-loan and a player with a pre-agreed free-transfer
+    // destination both round-trip through the compact array format with
+    // real (non-null) values, not just the null defaults every other
+    // sampled player above already covers.
+    const onLoan = {
+      ...world.players[0],
+      loan: { parentClubId: "napoli", returnDate: new Date(2015, 5, 1), fullWage: 40000 },
+      contract: { ...world.players[0].contract, wage: 20000 },
+    };
+    const roundTrippedLoan = deserializePlayer(serializePlayer(onLoan));
+    assert("an active loan spell round-trips through the compact array format (M7)", deepEqual(onLoan.loan, roundTrippedLoan.loan));
+
+    const preAgreed = {
+      ...world.players[1],
+      contract: { ...world.players[1].contract, preAgreedClubId: "napoli", preAgreedTerms: { wage: 55000, years: 3, squadRole: "important" } },
+    };
+    const roundTrippedPreAgreed = deserializePlayer(serializePlayer(preAgreed));
+    assert("a pre-agreed free-transfer destination round-trips through the compact array format (M7)",
+      roundTrippedPreAgreed.contract.preAgreedClubId === "napoli" && deepEqual(roundTrippedPreAgreed.contract.preAgreedTerms, preAgreed.contract.preAgreedTerms));
+  }
+
+  {
     const playerWithGrowth = {
       ...world.players[0],
       growthPeriod: { minutes: 187, ratingSum: 640, ratingCount: 9 },
@@ -515,6 +556,491 @@ async function run() {
     const relegationClub = { boardExpectationTier: "fight-relegation" };
     const survives = evaluateSeasonEnd({ club: relegationClub, leagueIdx: 5, cupRoundLabel: null });
     assert("fight-relegation-tier club is never sacked regardless of a low index", survives.sacked === false);
+  }
+
+  /* ================= M6 — Money: value, wages, contracts ================= */
+
+  group("engine/wage.js — playerwages.ini worked examples (plan1.md verbatim)");
+  {
+    const epl = world.leagues.find((l) => l.id === "eng-1");
+    const leagueOne = world.leagues.find((l) => l.id === "eng-3");
+    // age 24 (0% WAGE_AGE) + CM (0% WAGE_POSITION) isolates base×league exactly.
+    const w90 = computeWage({ overall: 90, age: 24, position: "CM" }, epl);
+    assert("90-rated EPL player (age 24/CM, 0% secondary modifiers): wage = 1300×70 = £91,000/wk", w90 === 91000, `computed £${w90}`);
+    const w60 = computeWage({ overall: 60, age: 24, position: "CM" }, leagueOne);
+    assert("60-rated League One player (age 24/CM, 0% secondary modifiers): wage = 60×8 = £480/wk", w60 === 480, `computed £${w60}`);
+
+    const gkWage = computeWage({ overall: 90, age: 24, position: "GK" }, epl);
+    assert("GK wage modifier reduces wage vs an outfielder of the same overall/age", gkWage < w90, `GK £${gkWage} vs CM £${w90}`);
+
+    let wageMonotonic = true, prevWage = 0;
+    for (let ovr = 40; ovr <= 99; ovr++) {
+      const w = computeWage({ overall: ovr, age: 24, position: "CM" }, epl);
+      if (w < prevWage) wageMonotonic = false;
+      prevWage = w;
+    }
+    assert("wage never decreases as overall rises (fixed age/position/league)", wageMonotonic);
+  }
+
+  group("engine/value.js — playervalues.ini value formula");
+  {
+    const bigClub = world.clubs.find((c) => c.id === "manchester-united") || world.clubs.reduce((a, b) => (b.prestige > a.prestige ? b : a));
+    const smallClub = world.clubs.reduce((a, b) => (b.prestige < a.prestige ? b : a));
+    const vsyYear = 2014;
+    const base = (overrides) => ({
+      overall: 85, potential: 85, age: 26, position: "CM", form: 6,
+      contract: { endYear: vsyYear + 3 }, ...overrides,
+    });
+
+    const v90 = computeValue(base({ overall: 90, potential: 90 }), bigClub, vsyYear);
+    // Upper bound generous on purpose: age/potential/contract/prestige/
+    // position modifiers compound multiplicatively, so a 90-rated player at
+    // 0% remaining potential on a big-prestige club can legitimately clear
+    // £100m — this checks "a plausible order of magnitude", not an exact figure.
+    assert(`a 90-rated player's value is in the tens-to-low-hundreds of millions (got £${v90.toLocaleString()})`, v90 > 20000000 && v90 < 200000000);
+    const v60 = computeValue(base({ overall: 60, potential: 62 }), bigClub, vsyYear);
+    assert(`a 60-rated player's value is under £1m (got £${v60.toLocaleString()})`, v60 < 1000000);
+
+    const higherOvr = computeValue(base({ overall: 86 }), bigClub, vsyYear);
+    const lowerOvr = computeValue(base({ overall: 84 }), bigClub, vsyYear);
+    assert("higher overall (all else equal) never decreases value", higherOvr >= lowerOvr);
+
+    const morePotential = computeValue(base({ potential: 95 }), bigClub, vsyYear);
+    const samePotential = computeValue(base({ potential: 85 }), bigClub, vsyYear);
+    assert("more remaining potential never decreases value", morePotential >= samePotential);
+
+    const expiring = computeValue(base({ contract: { endYear: vsyYear } }), bigClub, vsyYear);
+    const secure = computeValue(base({ contract: { endYear: vsyYear + 4 } }), bigClub, vsyYear);
+    assert("an expiring contract (0 years left) is worth less than a secure one (all else equal)", expiring < secure);
+
+    const prestigeBig = computeValue(base(), bigClub, vsyYear);
+    const prestigeSmall = computeValue(base(), smallClub, vsyYear);
+    assert(`higher club prestige never decreases value (${bigClub.name} P${bigClub.prestige} vs ${smallClub.name} P${smallClub.prestige})`,
+      prestigeBig >= prestigeSmall);
+
+    // Spot-check table (plan1.md Verification: "value/wage spot-checks ...
+    // spot-check table in dev page") across a representative league/overall
+    // spread, eyeballed via this row's own detail column.
+    const spotLeagues = [
+      world.leagues.find((l) => l.id === "eng-1"), world.leagues.find((l) => l.id === "eng-2"), world.leagues.find((l) => l.id === "eng-3"),
+    ];
+    const spotOveralls = [60, 70, 80, 90];
+    const rows = spotLeagues.map((league) => {
+      const cells = spotOveralls.map((ovr) => {
+        const p = base({ overall: ovr, potential: ovr });
+        const wage = computeWage({ overall: ovr, age: 26, position: "CM" }, league);
+        const val = computeValue(p, bigClub, vsyYear);
+        return `OVR${ovr}: £${wage.toLocaleString()}/wk / £${val.toLocaleString()}`;
+      }).join(" &nbsp;|&nbsp; ");
+      return `<div>${league.name}: ${cells}</div>`;
+    }).join("");
+    assert("value/wage spot-check table (wage/wk / value, by league × overall)", true, rows);
+  }
+
+  group("engine/contracts.js — user renewal negotiation");
+  {
+    const club = world.clubs.find((c) => c.id === sampleClubId);
+    const roster = world.squadsByClub.get(sampleClubId).map((p) => ({ ...p, contract: { ...p.contract } }));
+    const fakeState = {
+      seed, seasonStartYear: 2014,
+      club, clubsById: new Map(world.clubs.map((c) => [c.id, c])),
+      playersById: new Map(roster.map((p) => [p.id, p])),
+      finances: { transferBudget: 5000000, wageCeiling: 999999999 },
+    };
+
+    const firstPlayer = roster[0];
+    const ask = computeAsk(firstPlayer);
+    assert("computeAsk never suggests less than the player's current wage", ask.wage >= firstPlayer.contract.wage);
+
+    const lowballChance = acceptanceChance({ wage: Math.round(ask.wage * 0.4), years: 1 }, ask, "STARTING11");
+    assert(`a lowball offer (40% of ask) has near-zero acceptance chance (${(lowballChance * 100).toFixed(0)}%)`, lowballChance < 0.1);
+    const generousChance = acceptanceChance({ wage: Math.round(ask.wage * 1.3), years: 4 }, ask, "STARTING11");
+    assert(`a generous offer (130% of ask, 4yr) has a good acceptance chance (${(generousChance * 100).toFixed(0)}%)`, generousChance > 0.5);
+
+    // Acceptance is a genuine probabilistic roll (deterministic per player/
+    // offer, per ground rule #3 — but never literally 100%, see
+    // acceptanceChance's own header) — a maximally generous offer (2x ask,
+    // 5yr) is tried against several squad players so this integration test
+    // isn't at the mercy of a single player's one seeded roll.
+    let accepted = null;
+    for (const player of roster.slice(0, 8)) {
+      const budgetBefore = fakeState.finances.transferBudget;
+      const wageBefore = player.contract.wage;
+      const playerAsk = computeAsk(player);
+      const offer = { wage: Math.round(playerAsk.wage * 2), years: 5 };
+      const result = renewUserContract(fakeState, player.id, offer);
+      if (result.accepted) { accepted = { player, offer, budgetBefore, wageBefore }; break; }
+    }
+    assert("a maximally generous offer (2x ask, 5yr) is accepted for at least one of 8 sampled squad players", !!accepted);
+    if (accepted) {
+      const { player, offer, budgetBefore, wageBefore } = accepted;
+      assert("accepting updates the player's wage to the offered amount", player.contract.wage === offer.wage && player.contract.wage > wageBefore);
+      assert("accepting updates the player's contract end year", player.contract.endYear === fakeState.seasonStartYear + offer.years);
+      assert("accepting deducts a resigning fee from the transfer budget", fakeState.finances.transferBudget < budgetBefore);
+    }
+
+    const rejectPlayer = roster[roster.length - 1];
+    const rejected = renewUserContract(fakeState, rejectPlayer.id, { wage: 1, years: 1 });
+    assert("a wage offer of £1 is always rejected", rejected.accepted === false);
+  }
+
+  group("engine/contracts.js — expiry warnings (60-day, plan1.md verbatim)");
+  {
+    const seasonStartYear = 2014;
+    const club = world.clubs.find((c) => c.id === sampleClubId);
+    const nearExpiryTemplate = world.squadsByClub.get(sampleClubId)[1];
+    const nearExpiry = { ...nearExpiryTemplate, contract: { ...nearExpiryTemplate.contract, endYear: seasonStartYear + 1, warnedExpiry: false } };
+    const fakeState = { seasonStartYear, club, manager: { name: "Bob Jackson" }, squad: { roster: [nearExpiry] }, inbox: { emails: [] } };
+
+    checkContractExpiryWarnings(fakeState, new Date(seasonStartYear + 1, 4, 15)); // ~47 days before the Jul-1 endYear cutoff
+    assert("a player within the 60-day window gets exactly one warning email", fakeState.inbox.emails.length === 1);
+    assert("checkContractExpiryWarnings sets warnedExpiry so it doesn't repeat", nearExpiry.contract.warnedExpiry === true);
+    checkContractExpiryWarnings(fakeState, new Date(seasonStartYear + 1, 4, 16));
+    assert("no duplicate warning email is sent the next day", fakeState.inbox.emails.length === 1);
+  }
+
+  group("engine/contracts.js — CPU auto-renewal (May) + Bosman safety net (July)");
+  {
+    const seasonStartYear = 2014;
+    const userClub = world.clubs.find((c) => c.id === sampleClubId);
+    const cpuPlayers = [];
+    for (const c of world.clubs) {
+      if (c.id === userClub.id) continue;
+      const squad = world.squadsByClub.get(c.id) || [];
+      for (const p of squad.slice(0, 2)) {
+        cpuPlayers.push({ ...p, contract: { ...p.contract, endYear: seasonStartYear + 1, warnedExpiry: false } });
+      }
+      if (cpuPlayers.length >= 80) break;
+    }
+    const playersByClub = new Map();
+    for (const p of cpuPlayers) {
+      if (!playersByClub.has(p.clubId)) playersByClub.set(p.clubId, []);
+      playersByClub.get(p.clubId).push(p);
+    }
+    const fakeState = {
+      seed, seasonStartYear, club: userClub,
+      players: cpuPlayers,
+      playersById: new Map(cpuPlayers.map((p) => [p.id, p])),
+      playersByClub,
+      clubsById: new Map(world.clubs.map((c) => [c.id, c])),
+      clubLeague: new Map(world.clubs.map((c) => [c.id, c.leagueId])),
+      staticData: { leagues: world.leagues, clubs: world.clubs, nations: world.nations, cups: world.cups },
+    };
+    applyCpuContractRenewals(fakeState);
+    const stillExpiring = cpuPlayers.filter((p) => p.contract.endYear <= seasonStartYear + 1).length;
+    assert(`CPU renewal pass (${cpuPlayers.length} sampled expiring players) leaves none still at the old expiring endYear`, stillExpiring === 0, `${stillExpiring} left`);
+    const clubIdsAfter = new Set(cpuPlayers.map((p) => p.clubId));
+    assert("CPU renewal pass never moves a released player onto the user's own club", !clubIdsAfter.has(userClub.id) || [...playersByClub.get(userClub.id) || []].length === 0);
+
+    // Bosman: the user's own unrenewed player must be signed elsewhere by
+    // engine/season.js's rollover safety net (plan1.md M6 ✔ check: "a CPU
+    // club signs your Bosman if ignored").
+    const bosmanSeasonYear = 2015; // "next" season, matching how season.js calls this post season-bump
+    const bosmanTemplate = world.squadsByClub.get(sampleClubId)[2];
+    const bosman = { ...bosmanTemplate, clubId: userClub.id, contract: { ...bosmanTemplate.contract, endYear: bosmanSeasonYear, warnedExpiry: false } };
+    const bosmanState = {
+      seed, seasonStartYear: bosmanSeasonYear, club: userClub,
+      players: [bosman],
+      playersById: new Map([[bosman.id, bosman]]),
+      playersByClub: new Map([[userClub.id, [bosman]]]),
+      clubsById: new Map(world.clubs.map((c) => [c.id, c])),
+      clubLeague: new Map(world.clubs.map((c) => [c.id, c.leagueId])),
+      staticData: { leagues: world.leagues, clubs: world.clubs, nations: world.nations, cups: world.cups },
+    };
+    const departures = resolveExpiredContracts(bosmanState);
+    assert("resolveExpiredContracts moves the user's unrenewed player away", departures.length === 1 && bosman.clubId !== userClub.id, `now at ${bosman.clubId}`);
+    assert("the Bosman's new contract doesn't start already-expired", bosman.contract.endYear > bosmanSeasonYear);
+  }
+
+  group("engine/wage.js — wage ceiling + squad wage bill (Finances tile)");
+  {
+    const club = world.clubs.find((c) => c.id === sampleClubId);
+    const league = world.leagues.find((l) => l.id === sampleLeagueId);
+    const ceiling = computeWageCeiling(club, league);
+    assert(`computeWageCeiling returns a positive weekly figure (£${ceiling.toLocaleString()})`, ceiling > 0);
+    const roster = world.squadsByClub.get(sampleClubId);
+    const bill = squadWageBill(roster);
+    assert(`squadWageBill sums to a positive total across a 24-man squad (£${bill.toLocaleString()})`, bill > 0);
+    assert("squadWageBill equals the sum of each player's own contract.wage", bill === roster.reduce((s, p) => s + p.contract.wage, 0));
+
+    // A freshly generated squad's actual bill should sit under its own
+    // club's ceiling in the common case — the Finances tile's "Weekly Wage
+    // Budget" shouldn't read negative on day one for most clubs (the
+    // headroom's whole purpose per this file's own header). Checked across
+    // every club, every league tier, not just one sample.
+    let overBudget = 0;
+    for (const c of world.clubs) {
+      const l = world.leagues.find((lg) => lg.id === c.leagueId);
+      const r = world.squadsByClub.get(c.id) || [];
+      if (squadWageBill(r) > computeWageCeiling(c, l)) overBudget++;
+    }
+    const overBudgetPct = (overBudget / world.clubs.length) * 100;
+    assert(`fewer than 15% of freshly generated clubs start over their own wage ceiling (${overBudget}/${world.clubs.length}, ${overBudgetPct.toFixed(1)}%)`,
+      overBudgetPct < 15);
+  }
+
+  /* ================= M7 — Transfers ================= */
+
+  // Shared fake state for every M7 group below: a real 60-club sample of the
+  // generated world (full squads, real clubs/leagues) rather than the whole
+  // ~15k-player world, keeping per-test setup cheap while still exercising
+  // the real computeWantedFee/decisionChance/negotiation code paths against
+  // real player/club data (same "hand-built fakeState" pattern as the M6
+  // engine/contracts.js groups above, just with the extra fields M7's
+  // engine files read: state.transfers, state.manager.rep, state.news).
+  function buildM7FakeState(todayOverride) {
+    const sampledClubs = world.clubs.slice(0, 60);
+    if (!sampledClubs.some((c) => c.id === sampleClubId)) sampledClubs.push(world.clubs.find((c) => c.id === sampleClubId));
+    const testClubIds = new Set(sampledClubs.map((c) => c.id));
+    const club = world.clubs.find((c) => c.id === sampleClubId);
+    const league = world.leagues.find((l) => l.id === sampleLeagueId);
+    const players = world.players.filter((p) => testClubIds.has(p.clubId)).map((p) => ({ ...p, contract: { ...p.contract }, loan: null }));
+    const playersById = new Map(players.map((p) => [p.id, p]));
+    const playersByClub = new Map();
+    for (const p of players) {
+      if (!playersByClub.has(p.clubId)) playersByClub.set(p.clubId, []);
+      playersByClub.get(p.clubId).push(p);
+    }
+    const clubsById = new Map(sampledClubs.map((c) => [c.id, c]));
+    const clubLeague = new Map(sampledClubs.map((c) => [c.id, c.leagueId]));
+    // Sep 1 = the summer window's deadline day (config/calendar.js) — offers
+    // submitted "today" resolve synchronously, so these tests don't need a
+    // calendar-advance loop just to force a pending offer to resolve.
+    const today = todayOverride || new Date(2014, 8, 1);
+    return {
+      seed, seasonStartYear: 2014, club, league,
+      manager: { name: "Bob Jackson", rep: 10 },
+      calendar: { today },
+      players, playersById, playersByClub, clubsById, clubLeague,
+      staticData: { leagues: world.leagues, clubs: sampledClubs, nations: world.nations, cups: world.cups },
+      finances: { transferBudget: 50000000, wageCeiling: 999999999 },
+      squad: { roster: (playersByClub.get(club.id) || []).slice().sort((a, b) => b.overall - a.overall) },
+      transfers: { listings: new Map(), negotiation: null, pendingOffers: [] },
+      inbox: { emails: [] },
+      news: { transfer: [] },
+      clubTransferBudgets: new Map(),
+    };
+  }
+
+  group("engine/teamdecision.js — fee-negotiation acceptance (transferteamdecision.ini)");
+  {
+    const state = buildM7FakeState();
+    const sellingClub = state.club;
+    const seller = state.squad.roster[0];
+    const buyingClub = state.staticData.clubs.find((c) => c.id !== sellingClub.id);
+
+    const wantedFee = computeWantedFee({ player: seller, buyingClub, sellingClub, state });
+    assert(`computeWantedFee returns a positive figure scaled off the player's value (value £${seller.value.toLocaleString()}, wanted £${wantedFee.toLocaleString()})`, wantedFee > 0);
+
+    const generousChances = feeDecisionChances(wantedFee * 1.4, wantedFee, true);
+    assert(`an offer at 140% of wanted fee has a high accept chance (${generousChances.acceptPct}%)`, generousChances.acceptPct >= 90);
+    const lowballChances = feeDecisionChances(wantedFee * 0.4, wantedFee, true);
+    assert(`an offer at 40% of wanted fee has zero accept chance (${lowballChances.acceptPct}%)`, lowballChances.acceptPct === 0);
+
+    const rng = new RngStream(deriveSeed(seed, "teamdecision-threeway"));
+    let acceptCount = 0;
+    for (let i = 0; i < 100; i++) if (rollThreeWay(rng, { acceptPct: 100, counterPct: 0, rejectPct: 0 }) === "accept") acceptCount++;
+    assert("rollThreeWay always returns 'accept' when acceptPct=100", acceptCount === 100);
+
+    const counterFee = computeCounterFee({ wantedFee, buyingClub, sellingClub, rng });
+    assert(`computeCounterFee never counters below the club's own wanted fee (£${counterFee.toLocaleString()} vs £${wantedFee.toLocaleString()})`, counterFee >= wantedFee);
+  }
+
+  group("engine/playerdecision.js — new-club signing ask + decision (transfer.ini / transfers.ini)");
+  {
+    const state = buildM7FakeState();
+    const player = state.squad.roster[state.squad.roster.length - 1];
+    const sourceClub = state.club;
+    const destClub = state.staticData.clubs.reduce((a, b) => (b.prestige > a.prestige ? b : a));
+
+    const ask = computeSigningAsk({ player, sourceClub, destClub, state });
+    assert(`computeSigningAsk never suggests less than the player's current wage (£${ask.wage.toLocaleString()} >= £${player.contract.wage.toLocaleString()})`, ask.wage >= player.contract.wage);
+
+    const chanceGenerous = decisionChance({ player, sourceClub, destClub, offer: { wage: Math.round(ask.wage * 2) }, promisedRole: player.contract.squadRole, state });
+    assert(`a 2x-ask wage offer + same-tier role has a good acceptance chance (${(chanceGenerous * 100).toFixed(0)}%)`, chanceGenerous > 0.5);
+
+    const chanceReject = decisionChance({ player, sourceClub, destClub, offer: { wage: 1 }, promisedRole: "prospect", state });
+    assert(`a £1 offer + demoted role has a low acceptance chance (${(chanceReject * 100).toFixed(0)}%)`, chanceReject < 0.2);
+
+    assert("decisionCurveY(0) ≈ 10.01 (PAIR_X3/Y3, verbatim from transfers.ini)", Math.abs(decisionCurveY(0) - 10.011562) < 0.01);
+    assert("decisionCurveY clamps at MAX_X (200) → 200", decisionCurveY(500) === 200);
+    assert("decisionCurveY clamps at MIN_X (-100) → -200.90909", Math.abs(decisionCurveY(-500) - -200.90909) < 0.001);
+  }
+
+  group("engine/negotiation.js — fee talks -> contract talks -> completed transfer");
+  {
+    const state = buildM7FakeState();
+    // Several non-rival counterparty clubs (engine/playerdecision.js's own
+    // ISRIVALCLUB -200 penalty is a deliberately strong deterrent — picking
+    // just one arbitrary club risks landing on the user's actual rival, e.g.
+    // Manchester United/Manchester City, and correctly failing every retry;
+    // sampling several clubs like the M6 contracts.js tests do avoids that).
+    const otherClubs = state.staticData.clubs.filter((c) => c.id !== state.club.id && c.id !== state.club.rivalId).slice(0, 6);
+
+    let completed = false;
+    let completedTarget = null;
+    outer:
+    for (const otherClub of otherClubs) {
+      const targetRoster = state.playersByClub.get(otherClub.id) || [];
+      const target = targetRoster.reduce((cheapest, p) => (p.value < cheapest.value ? p : cheapest), targetRoster[0]);
+      for (let attempt = 0; attempt < 6; attempt++) {
+        state.transfers.negotiation = null;
+        state.transfers.pendingOffers = [];
+        startFeeNegotiation(state, target.id);
+        const n = state.transfers.negotiation;
+        n.promisedRole = target.contract.squadRole; // same-tier promise — isolates the wage-driven acceptance this test targets
+        n.feeOffer = Math.round(target.value * (2 + attempt)); // escalate well past any plausible wanted fee
+        submitFeeOffer(state);
+        if (state.transfers.negotiation.phase === "contract") {
+          state.transfers.negotiation.contractOffer.wage = Math.round(state.transfers.negotiation.contractOffer.wage * (2 + attempt));
+          submitNegotiationContractOffer(state);
+          if (state.transfers.negotiation.phase === "completed") {
+            completed = true;
+            completedTarget = target;
+            break outer;
+          }
+        }
+      }
+    }
+    const target = completedTarget;
+    assert(`a maximally generous fee + contract offer completes a transfer within a few retries across ${otherClubs.length} non-rival clubs`, completed);
+    if (completed) {
+      assert("completing a transfer moves the player to the user's club", target.clubId === state.club.id);
+      assert("completing a transfer deducts the fee from the user's transfer budget", state.finances.transferBudget < 50000000);
+      assert("completing a transfer adds the player to state.squad.roster", state.squad.roster.some((p) => p.id === target.id));
+      assert("completing a transfer pushes a transfer-news article", state.news.transfer.length > 0);
+    }
+
+    const overBudgetState = buildM7FakeState();
+    overBudgetState.finances.transferBudget = 100;
+    const otherClub2 = overBudgetState.staticData.clubs.find((c) => c.id !== overBudgetState.club.id);
+    const target2 = (overBudgetState.playersByClub.get(otherClub2.id) || [])[0];
+    startFeeNegotiation(overBudgetState, target2.id);
+    overBudgetState.transfers.negotiation.feeOffer = 999999999;
+    const overBudgetResult = submitFeeOffer(overBudgetState);
+    assert("submitFeeOffer refuses an offer above the user's transfer budget ('budgets enforce')", overBudgetResult.error === "over-budget");
+  }
+
+  group("engine/negotiation.js — loan request + return");
+  {
+    const state = buildM7FakeState();
+    // Not the user's own rival — see the fee/contract-talks group above for
+    // why (engine/playerdecision.js's ISRIVALCLUB penalty is a genuine, deliberately
+    // strong deterrent that would otherwise fail every sampled candidate).
+    const otherClub = state.staticData.clubs.find((c) => c.id !== state.club.id && c.id !== state.club.rivalId);
+    const candidates = (state.playersByClub.get(otherClub.id) || []).slice(0, 12);
+    let loanedCandidate = null;
+    for (const candidate of candidates) {
+      state.transfers.negotiation = null;
+      state.transfers.pendingOffers = [];
+      startLoanNegotiation(state, candidate.id, "short");
+      if (candidate.clubId === state.club.id) { loanedCandidate = candidate; break; }
+    }
+    assert(`a loan request is accepted for at least one of ${candidates.length} sampled candidates`, !!loanedCandidate);
+    if (loanedCandidate) {
+      assert("a loaned player's wage while on loan is reduced (user's wage-share)", loanedCandidate.contract.wage < loanedCandidate.loan.fullWage);
+      const afterReturn = new Date(loanedCandidate.loan.returnDate.getFullYear(), loanedCandidate.loan.returnDate.getMonth(), loanedCandidate.loan.returnDate.getDate() + 1);
+      resolveLoanReturns(state, afterReturn);
+      assert("resolveLoanReturns sends the player back to the parent club after returnDate", loanedCandidate.clubId === otherClub.id && loanedCandidate.loan === null);
+      assert("returning restores the player's full (pre-loan) wage", loanedCandidate.contract.wage > 0);
+    }
+  }
+
+  group("engine/freeagents.js — pre-contract approach (transfer.ini APPROACH_*)");
+  {
+    const state = buildM7FakeState();
+    const otherClub = state.staticData.clubs.find((c) => c.id !== state.club.id && c.id !== state.club.rivalId);
+    const candidates = (state.playersByClub.get(otherClub.id) || []).slice(0, 12);
+    for (const c of candidates) c.contract.endYear = state.seasonStartYear + 1; // "expires this season" — eligibility gate
+
+    const targets = eligibleFreeAgentTargets(state);
+    assert("eligibleFreeAgentTargets includes players whose contract expires this season", candidates.every((c) => targets.some((t) => t.id === c.id)));
+    assert("eligibleFreeAgentTargets excludes the user's own squad", targets.every((p) => p.clubId !== state.club.id));
+
+    let approved = null;
+    for (const candidate of candidates) {
+      state.transfers.negotiation = null;
+      state.transfers.pendingOffers = [];
+      startApproach(state, candidate.id);
+      const n = state.transfers.negotiation;
+      n.promisedRole = candidate.contract.squadRole;
+      n.contractOffer.wage = Math.round(n.contractOffer.wage * 3);
+      submitApproach(state);
+      if (candidate.contract.preAgreedClubId === state.club.id) { approved = candidate; break; }
+    }
+    assert(`a generous pre-contract approach is accepted for at least one of ${candidates.length} sampled candidates`, !!approved);
+    if (approved) {
+      assert("acceptance records preAgreedTerms with the offered wage", approved.contract.preAgreedTerms.wage > 0);
+      assert("the player hasn't actually moved yet (still at their current club until the contract lapses)", approved.clubId === otherClub.id);
+      assert("a free-agent news article is pushed", state.news.transfer.some((a) => a.title.includes(approved.commonName)));
+    }
+  }
+
+  group("engine/clubbudget.js — CPU club transfer budgets");
+  {
+    const state = buildM7FakeState();
+    const clubId = state.staticData.clubs[1].id;
+    const initial = getClubBudget(state, clubId);
+    assert(`getClubBudget lazily seeds from the club's own baseTransferBudget (£${initial.toLocaleString()})`, initial === state.clubsById.get(clubId).baseTransferBudget);
+    spendClubBudget(state, clubId, 1000000);
+    creditClubBudget(state, clubId, 250000);
+    assert("spend/credit adjust the same club's balance additively", getClubBudget(state, clubId) === initial - 1000000 + 250000);
+  }
+
+  group("engine/transferai.js — weekly CPU<->CPU activity + incoming bids on listed players");
+  {
+    // Smoke-tests the whole assess-need -> counterparty -> fee -> player-
+    // decision pipeline across a full summer window on the 60-club sample —
+    // deterministic seed, asserts it never throws, respects the plan's own
+    // ~40/window cap, and never touches the user's own club (same "one club
+    // id is skipped" precedent as engine/sim/worldsim.js).
+    const cpuState = buildM7FakeState();
+    const userRosterSizeBefore = (cpuState.playersByClub.get(cpuState.club.id) || []).length;
+    const windowStart = new Date(cpuState.seasonStartYear, 6, 1);
+    let totalCompleted = 0;
+    for (let d = 0; d < 62; d++) {
+      const day = new Date(windowStart.getFullYear(), windowStart.getMonth(), windowStart.getDate() + d);
+      totalCompleted += runWeeklyTransferActivity(cpuState, day);
+    }
+    assert(`runWeeklyTransferActivity completes deals over a full summer window on a 60-club sample (${totalCompleted} completed)`, totalCompleted > 0);
+    assert("runWeeklyTransferActivity never exceeds the plan's own per-window cap (40)", cpuState.transferWindowProgress.completed <= 40);
+    assert("runWeeklyTransferActivity never moves players into or out of the user's own club",
+      (cpuState.playersByClub.get(cpuState.club.id) || []).length === userRosterSizeBefore);
+    assert("CPU<->CPU deals push transfer-news articles", cpuState.news.transfer.length > 0);
+
+    const bidState = buildM7FakeState();
+    const myPlayer = bidState.squad.roster[bidState.squad.roster.length - 1];
+    bidState.transfers.listings.set(myPlayer.id, { type: "transfer", askingPrice: Math.round(myPlayer.value * 0.5), listedDate: bidState.calendar.today });
+    let bidEmail = null;
+    for (let d = 0; d < 120 && !bidEmail; d++) {
+      const day = new Date(bidState.seasonStartYear, 6, 1 + d);
+      checkIncomingBidsOnListedPlayers(bidState, day);
+      bidEmail = bidState.inbox.emails.find((e) => e.action && e.action.type === "transfer-bid") || null;
+    }
+    assert("listing a player below value eventually attracts a CPU bid email (YES/NO decision email)", !!bidEmail);
+    if (bidEmail) {
+      const budgetBefore = bidState.finances.transferBudget;
+      const result = acceptIncomingBid(bidState, bidEmail.action.bidId);
+      assert("acceptIncomingBid succeeds for a real pending bid", result.ok === true);
+      assert("accepting moves the player away from the user's club", myPlayer.clubId !== bidState.club.id);
+      assert("accepting credits the user's transfer budget", bidState.finances.transferBudget > budgetBefore);
+      assert("the resolved email's action is cleared (no longer actionable)", bidEmail.action === null);
+    }
+
+    const rejectState = buildM7FakeState();
+    const otherPlayer = rejectState.squad.roster[0];
+    rejectState.transfers.listings.set(otherPlayer.id, { type: "transfer", askingPrice: Math.round(otherPlayer.value * 0.5), listedDate: rejectState.calendar.today });
+    let rejectEmail = null;
+    for (let d = 0; d < 120 && !rejectEmail; d++) {
+      const day = new Date(rejectState.seasonStartYear, 6, 1 + d);
+      checkIncomingBidsOnListedPlayers(rejectState, day);
+      rejectEmail = rejectState.inbox.emails.find((e) => e.action && e.action.type === "transfer-bid") || null;
+    }
+    if (rejectEmail) {
+      const clubIdBefore = otherPlayer.clubId;
+      const result = rejectIncomingBid(rejectState, rejectEmail.action.bidId);
+      assert("rejectIncomingBid succeeds and leaves the player at the user's club", result.ok === true && otherPlayer.clubId === clubIdBefore);
+    }
   }
 
   render();
@@ -647,5 +1173,5 @@ async function runFullSeasonRolloverTest() {
 run().catch((err) => {
   document.getElementById("test-summary").textContent = `ERROR: ${err.message}`;
   document.getElementById("test-summary").className = "test-summary fail";
-  console.error(err);
+  console.error(err.stack || err);
 });

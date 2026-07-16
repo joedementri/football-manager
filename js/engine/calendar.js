@@ -10,7 +10,7 @@
 import { addDays, toEpochDay, isDateInRange } from "../core/clock.js";
 import {
   leagueKickoff, transferWindows, deadlineDays, growthDays,
-  boardReviewDate, intlBreakWeeks,
+  boardReviewDate, cpuContractRenewalDate, intlBreakWeeks,
 } from "../config/calendar.js";
 import { generateLeagueFixtures, buildLeagueTable } from "./comps/league.js";
 import { RngStream, deriveSeed } from "../core/rng.js";
@@ -113,6 +113,7 @@ export function eventsOnDate(date, seasonStartYear) {
   if (day === growthFeb1) events.push("growth");
   if (day === growthJul1) events.push("season-rollover");
   if (day === toEpochDay(boardReviewDate(seasonStartYear))) events.push("board-review");
+  if (day === toEpochDay(cpuContractRenewalDate(seasonStartYear))) events.push("contract-renewal");
   if (intlBreakWeeks(seasonStartYear).some((r) => isDateInRange(date, r.start, r.end))) events.push("intl-break");
 
   return events;

@@ -27,6 +27,10 @@ import { announceRetirements, applyRetirementsAndRegens } from "./retirement.js"
 import { buildSeasonAwardsEmail } from "./awards.js";
 import { refreshJobMarket } from "./jobs.js";
 import { computeForm } from "./form.js";
+import { recomputeAllValues } from "./value.js";
+import { computeWageCeiling } from "./wage.js";
+import { buildBosmanApproachEmails, resolveExpiredContracts, buildBosmanDepartureEmailsForUser } from "./contracts.js";
+import { resetAllClubBudgets } from "./clubbudget.js";
 
 /** clubs.json entries with `.leagueId` overridden by the current-season
  * clubLeague map (M5: promotion/relegation moves clubs between leagues
@@ -52,13 +56,23 @@ export function applyBoardReview(state) {
   }));
 
   announceRetirements(state, state.seed, `retire-announce-${state.seasonStartYear}`);
+
+  // M6 "Bosman: CPU clubs approach your expiring players ... in Jan" — a
+  // flavour email per user-squad player whose contract lapses this season;
+  // the actual departure (if the user never renews) lands at the July
+  // rollover via resolveExpiredContracts below.
+  state.inbox.emails.unshift(...buildBosmanApproachEmails(state));
 }
 
 /** February 1 mid-season growth application (config/calendar.js's
  * growthDays()[0]) — the July 1 application is folded into rolloverSeason
- * below instead, since plan1.md's bullet order needs it to run before age++. */
+ * below instead, since plan1.md's bullet order needs it to run before age++.
+ * M6: value is recomputed for the whole world right after (overall/potential
+ * just changed) — see engine/value.js's header on why wage is never touched
+ * here the same way. */
 export function applyMidSeasonGrowth(state) {
   applyGrowthToWorld(state, state.seed, `growth-${state.seasonStartYear}-02-01`);
+  recomputeAllValues(state);
 }
 
 /** The full July 1 season-rollover pipeline. */
@@ -117,6 +131,11 @@ export function rolloverSeason(state) {
   /* ---- 6. Age up ---- */
   for (const p of state.players) p.age += 1;
 
+  // M6: value recomputed once growth + age-up have both landed for the
+  // season that's ending (engine/value.js's header explains why wage isn't
+  // touched the same way — it only ever changes via a real contract event).
+  recomputeAllValues(state);
+
   /* ---- 7. Retirements + regens (announced back in January) ---- */
   applyRetirementsAndRegens(state, {
     clubsById: clubsByIdThisSeason, leaguesById, nationsById, nationsByName,
@@ -136,17 +155,7 @@ export function rolloverSeason(state) {
     }
   }
 
-  /* ---- 9. Contracts: "-1yr" is already implicit (endYear is an absolute
-   *      year), except contracts that just expired need *something* to
-   *      happen since M6 (renewal AI/negotiation) doesn't exist yet — a
-   *      flat extension is a deliberately simple placeholder, same footing
-   *      as gen/player.js's other M6-deferred wage/value placeholders. ---- */
-  const newSeasonStartYear = state.seasonStartYear + 1;
-  for (const p of state.players) {
-    if (p.contract.endYear <= newSeasonStartYear) p.contract.endYear = newSeasonStartYear + 2;
-  }
-
-  /* ---- 10. Season stats -> career history, form/growth-period reset ---- */
+  /* ---- 9. Season stats -> career history, form/growth-period reset ---- */
   for (const p of state.players) {
     p.careerStats.push({ season: state.seasonStartYear, ...p.seasonStats });
     p.seasonStats = { apps: 0, goals: 0, assists: 0, cleanSheets: 0, avgRating: 0, yellows: 0, reds: 0 };
@@ -155,12 +164,13 @@ export function rolloverSeason(state) {
     p.growthPeriod = { minutes: 0, ratingSum: 0, ratingCount: 0 };
   }
 
-  /* ---- 11. Bump the season; the user's own club may have changed division ---- */
+  /* ---- 10. Bump the season; the user's own club may have changed division ---- */
+  const newSeasonStartYear = state.seasonStartYear + 1;
   state.seasonStartYear = newSeasonStartYear;
   const newUserLeagueId = state.clubLeague.get(state.club.id);
   if (newUserLeagueId && newUserLeagueId !== state.league.id) state.league = leaguesById.get(newUserLeagueId);
 
-  /* ---- 12. New fixtures + cup brackets for the new season ---- */
+  /* ---- 11. New fixtures + cup brackets for the new season ---- */
   const clubsNextSeason = effectiveClubs(clubs, state.clubLeague);
   state.fixtures = buildFixtures({ leagues, clubs: clubsNextSeason, seed: state.seed, seasonStartYear: state.seasonStartYear });
   state.cups = new Map(cups.domestic.map((cup) => [
@@ -171,6 +181,22 @@ export function rolloverSeason(state) {
   state.league.clubs = clubsNextSeason.filter((c) => c.leagueId === state.league.id);
   state.league.table = buildLeagueTable(state.league, state.league.clubs, state.fixtures.byLeague.get(state.league.id), state.results);
 
+  /* ---- 12. Budgets reset + contracts "-1yr" (M6, plan1.md's own rollover
+   *      bullet order: "new fixtures, budgets reset, contracts -1yr"). The
+   *      real CPU renewal AI already ran back in May (engine/contracts.js's
+   *      applyCpuContractRenewals, config/calendar.js's
+   *      cpuContractRenewalDate) — resolveExpiredContracts here is the
+   *      safety net for anyone still expired, chiefly the user's own
+   *      unrenewed players ("a CPU club signs your Bosman if ignored"). ---- */
+  state.finances = { transferBudget: state.club.baseTransferBudget, wageCeiling: computeWageCeiling(state.club, state.league) };
+  // M7: every CPU club's own transfer budget resets alongside the user's own
+  // (same "budgets reset" rollover bullet) — resetAllClubBudgets just clears
+  // the map, so the next getClubBudget() call for any club lazily reseeds
+  // from baseTransferBudget rather than carrying last season's spend forward.
+  resetAllClubBudgets(state);
+  const bosmanDepartures = resolveExpiredContracts(state);
+  state.inbox.emails.unshift(...buildBosmanDepartureEmailsForUser(state, bosmanDepartures, clubsByIdThisSeason));
+
   /* ---- 13. New-season board objective emails ---- */
   const newCup = domesticCupFor(state.league, cups);
   state.inbox.emails.unshift(...buildObjectiveEmails({
@@ -178,7 +204,7 @@ export function rolloverSeason(state) {
   }));
   state.manager.warned = false;
 
-  /* ---- 14. Rebuild player indices (retirements/regens changed state.players) ---- */
+  /* ---- 14. Rebuild player indices (retirements/regens/Bosman moves changed state.players) ---- */
   state.playersById = new Map(state.players.map((p) => [p.id, p]));
   state.playersByClub = new Map();
   for (const p of state.players) {

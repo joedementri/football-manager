@@ -11,7 +11,7 @@
 
 import { SCREENS } from "./store.js";
 import {
-  renderAll, renderCentral, renderSeason, renderOffice,
+  renderAll, renderCentral, renderSeason, renderOffice, renderTransfers,
   renderEmailList, renderEmailDetail,
   renderNewsCategoryTabs, renderNewsList,
 } from "../ui/render.js";
@@ -20,6 +20,8 @@ import { renderPlayerBio } from "../ui/playerbio.js";
 import { renderCalendar, initCalendarHeaders } from "../ui/calendarui.js";
 import { renderMatchday, initMatchdayTicker } from "../ui/matchday.js";
 import { renderJobsOverlay } from "../ui/jobsui.js";
+import { renderContracts } from "../ui/contractsui.js";
+import { renderSearch, renderNegotiation, renderSellList, renderRequestFunds } from "../ui/transfersui.js";
 import { injectClubCrestSymbols } from "../gen/crest.js";
 import { fromEpochDay } from "./clock.js";
 
@@ -44,6 +46,24 @@ export function initRouter(store) {
   const footerJobs = document.getElementById("footer-jobs");
   const jobsOverlay = document.getElementById("jobs-overlay");
   const jobsBodyEl = document.getElementById("jobs-body");
+  const footerContracts = document.getElementById("footer-contracts");
+  const contractsOverlay = document.getElementById("contracts-overlay");
+  const ctListEl = document.getElementById("ct-list");
+  const ctDetailEl = document.getElementById("ct-detail");
+  const footerSearch = document.getElementById("footer-search");
+  const searchOverlay = document.getElementById("search-overlay");
+  const srFiltersEl = document.getElementById("sr-filters");
+  const srResultsEl = document.getElementById("sr-results");
+  const footerNegotiation = document.getElementById("footer-negotiation");
+  const negotiationOverlay = document.getElementById("negotiation-overlay");
+  const ngBodyEl = document.getElementById("ng-body");
+  const footerSelllist = document.getElementById("footer-selllist");
+  const selllistOverlay = document.getElementById("selllist-overlay");
+  const sl2ListEl = document.getElementById("sl2-list");
+  const sl2DetailEl = document.getElementById("sl2-detail");
+  const footerRequestfunds = document.getElementById("footer-requestfunds");
+  const requestfundsOverlay = document.getElementById("requestfunds-overlay");
+  const rfBodyEl = document.getElementById("rf-body");
   const newsTabsEl = document.getElementById("news-tabs");
   const newsListEl = document.getElementById("news-list");
   const squadlistBodyEl = document.getElementById("squadlist-body");
@@ -83,6 +103,26 @@ export function initRouter(store) {
       jobsOverlay.classList.toggle("is-active", open);
       footerJobs.hidden = !open;
       if (open) renderJobsOverlay(store.state);
+    } else if (name === "contracts") {
+      contractsOverlay.classList.toggle("is-active", open);
+      footerContracts.hidden = !open;
+      if (open) renderContracts(store.state);
+    } else if (name === "search") {
+      searchOverlay.classList.toggle("is-active", open);
+      footerSearch.hidden = !open;
+      if (open) renderSearch(store.state);
+    } else if (name === "negotiation") {
+      negotiationOverlay.classList.toggle("is-active", open);
+      footerNegotiation.hidden = !open;
+      if (open) renderNegotiation(store.state);
+    } else if (name === "selllist") {
+      selllistOverlay.classList.toggle("is-active", open);
+      footerSelllist.hidden = !open;
+      if (open) renderSellList(store.state);
+    } else if (name === "requestfunds") {
+      requestfundsOverlay.classList.toggle("is-active", open);
+      footerRequestfunds.hidden = !open;
+      if (open) renderRequestFunds(store.state);
     }
     const anyOverlayOpen = !!store.state.ui.overlay;
     tabbar.style.display = anyOverlayOpen ? "none" : "";
@@ -107,8 +147,23 @@ export function initRouter(store) {
     renderCentral(store.state);
     renderSeason(store.state);
     renderOffice(store.state); // M5: board-review/season-end/awards/sacking emails can land mid-advance
+    renderTransfers(store.state); // M6: Finances tile changes on rollover ("budgets reset") and contract renewals
     if (store.state.ui.overlay === "calendar") renderCalendar(store.state);
+    // M7: a calendar advance can resolve a pending fee/contract/loan/approach
+    // response or a CPU bid, any of which can change what these overlays
+    // show even if the user isn't the one who triggered the resolution
+    // (e.g. simply advancing past a due date).
+    if (store.state.ui.overlay === "negotiation") renderNegotiation(store.state);
+    if (store.state.ui.overlay === "selllist") renderSellList(store.state);
+    if (store.state.ui.overlay === "requestfunds") renderRequestFunds(store.state);
+    if (store.state.ui.overlay === "search") renderSearch(store.state);
+    if (store.state.ui.overlay === "email") { renderEmailList(store.state); renderEmailDetail(store.state); }
   });
+  store.on("contracts", () => renderContracts(store.state));
+  store.on("search", () => renderSearch(store.state));
+  store.on("negotiation", () => renderNegotiation(store.state));
+  store.on("selllist", () => renderSellList(store.state));
+  store.on("requestfunds", () => renderRequestFunds(store.state));
   store.on("calendar:view", () => renderCalendar(store.state));
   store.on("matchday", () => renderMatchday(store.state));
   initMatchdayTicker(store);
@@ -146,6 +201,16 @@ export function initRouter(store) {
     if (row) store.selectEmail(Number(row.dataset.email));
   });
 
+  // M7: YES/NO decision emails (currently just incoming CPU transfer bids —
+  // see ui/render.js's renderEmailActions) — Accept/Reject buttons rendered
+  // into the open email's body.
+  document.getElementById("email-actions").addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    if (el.dataset.action === "accept-bid") store.acceptIncomingBid(el.dataset.bid);
+    else if (el.dataset.action === "reject-bid") store.rejectIncomingBid(el.dataset.bid);
+  });
+
   // Generic: any tile with data-open="<overlayName>" opens that overlay
   // (news, squadlist, ...) — matches store.openOverlay's signature directly.
   // "calendar"/"jobs" are the exceptions: each needs a bit of state reset
@@ -155,6 +220,10 @@ export function initRouter(store) {
     tile.addEventListener("click", () => {
       if (tile.dataset.open === "calendar") store.openCalendar();
       else if (tile.dataset.open === "jobs") store.openBrowseJobs();
+      else if (tile.dataset.open === "contracts") store.openContracts();
+      else if (tile.dataset.open === "search") store.openTransferSearch();
+      else if (tile.dataset.open === "selllist") store.openSellList();
+      else if (tile.dataset.open === "requestfunds") store.openRequestFunds();
       else store.openOverlay(tile.dataset.open);
     });
   });
@@ -175,6 +244,144 @@ export function initRouter(store) {
     if (!el) return;
     if (el.dataset.action === "apply") store.applyForSelectedJob();
     else if (el.dataset.action === "back") store.closeOverlay();
+  });
+
+  // Contracts overlay (M6): click a squad row to select it; the detail
+  // panel's stepper buttons and the footer's Send Offer/Suggested Terms
+  // prompts share one data-action handler since both drive the exact same
+  // store methods.
+  ctListEl.addEventListener("click", (e) => {
+    const row = e.target.closest(".ct-row");
+    if (row) store.selectContractPlayer(Number(row.dataset.player));
+  });
+  function handleContractsAction(action) {
+    switch (action) {
+      case "wage-down": store.adjustContractOfferWage(-0.05); break;
+      case "wage-up": store.adjustContractOfferWage(0.05); break;
+      case "years-down": store.adjustContractOfferYears(-1); break;
+      case "years-up": store.adjustContractOfferYears(1); break;
+      case "suggest": store.suggestContractTerms(); break;
+      case "offer": store.submitContractOffer(); break;
+      case "back": store.closeOverlay(); break;
+    }
+  }
+  ctDetailEl.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (el) handleContractsAction(el.dataset.action);
+  });
+  footerContracts.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (el) handleContractsAction(el.dataset.action);
+  });
+
+  // Search Players (M7): area-picker/stepper/toggle clicks in the filter
+  // row, row selection in the results list, and the footer's Bid/Loan/
+  // Approach (which of these three shows depends on the Free Agents Only
+  // toggle — see ui/transfersui.js's renderSearchFooter).
+  function handleSearchFilterAction(action, target) {
+    const f = store.state.ui.transferSearch;
+    switch (action) {
+      case "set-area": store.setSearchFilter("area", target.dataset.value); break;
+      case "minovr-down": store.setSearchFilter("minOverall", Math.max(0, f.minOverall - 5)); break;
+      case "minovr-up": store.setSearchFilter("minOverall", Math.min(99, f.minOverall + 5)); break;
+      case "maxvalue-down": store.setSearchFilter("maxValue", Math.max(0, f.maxValue - 1000000)); break;
+      case "maxvalue-up": store.setSearchFilter("maxValue", f.maxValue + 1000000); break;
+      case "toggle-freeagents": store.setSearchFilter("freeAgentsOnly", !f.freeAgentsOnly); break;
+    }
+  }
+  srFiltersEl.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (el) handleSearchFilterAction(el.dataset.action, el);
+  });
+  srResultsEl.addEventListener("click", (e) => {
+    const row = e.target.closest(".sr-row");
+    if (row) store.selectSearchResult(Number(row.dataset.player));
+  });
+  function handleSearchFooterAction(action) {
+    const f = store.state.ui.transferSearch;
+    if (action === "back") { store.closeOverlay(); return; }
+    if (f.selectedPlayerId == null) return;
+    switch (action) {
+      case "bid": store.startBid(f.selectedPlayerId); break;
+      case "loan": store.startLoanBid(f.selectedPlayerId, "season"); break;
+      case "approach": store.startFreeAgentApproach(f.selectedPlayerId); break;
+    }
+  }
+  footerSearch.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (el) handleSearchFooterAction(el.dataset.action);
+  });
+
+  // Negotiation (M7): fee-talks/contract-talks steppers + submit/cancel —
+  // one data-action handler shared by the body and footer, same pattern as
+  // Contracts above.
+  function handleNegotiationAction(action) {
+    switch (action) {
+      case "fee-down": store.negoAdjustFeeOffer(-0.05); break;
+      case "fee-up": store.negoAdjustFeeOffer(0.05); break;
+      case "wage-down": store.negoAdjustContractWage(-0.05); break;
+      case "wage-up": store.negoAdjustContractWage(0.05); break;
+      case "years-down": store.negoAdjustContractYears(-1); break;
+      case "years-up": store.negoAdjustContractYears(1); break;
+      case "role-down": store.negoCycleRole(-1); break;
+      case "role-up": store.negoCycleRole(1); break;
+      case "submit-fee": store.negoSubmitFeeOffer(); break;
+      case "submit-contract": store.negoSubmitContractOffer(); break;
+      case "back": store.closeNegotiation(); break;
+    }
+  }
+  ngBodyEl.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (el) handleNegotiationAction(el.dataset.action);
+  });
+  footerNegotiation.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (el) handleNegotiationAction(el.dataset.action);
+  });
+
+  // Sell / Loan List (M7): click a squad row to select it; asking-price
+  // stepper + List for Transfer/Loan/Remove Listing.
+  sl2ListEl.addEventListener("click", (e) => {
+    const row = e.target.closest(".sl2-row");
+    if (row) store.selectSellListPlayer(Number(row.dataset.player));
+  });
+  function handleSellListAction(action) {
+    switch (action) {
+      case "price-down": store.adjustAskingPrice(-0.05); break;
+      case "price-up": store.adjustAskingPrice(0.05); break;
+      case "list-transfer": store.listPlayer("transfer"); break;
+      case "list-loan": store.listPlayer("loan"); break;
+      case "unlist": store.unlistPlayer(); break;
+      case "back": store.closeOverlay(); break;
+    }
+  }
+  sl2DetailEl.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (el) handleSellListAction(el.dataset.action);
+  });
+  footerSelllist.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (el) handleSellListAction(el.dataset.action);
+  });
+
+  // Request Funds (M7): amount stepper + Ask The Board / reallocate wage<->transfer.
+  function handleRequestFundsAction(action) {
+    switch (action) {
+      case "amount-down": store.adjustRequestFundsAmount(-50000); break;
+      case "amount-up": store.adjustRequestFundsAmount(50000); break;
+      case "board": store.submitBoardFundsRequest(); break;
+      case "wage-to-transfer": store.submitReallocateBudget("wageToTransfer"); break;
+      case "transfer-to-wage": store.submitReallocateBudget("transferToWage"); break;
+      case "back": store.closeOverlay(); break;
+    }
+  }
+  rfBodyEl.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (el) handleRequestFundsAction(el.dataset.action);
+  });
+  footerRequestfunds.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (el) handleRequestFundsAction(el.dataset.action);
   });
 
   // Central's Advance tile (fable-plans/plan1.md M3): clicking the "A
@@ -304,6 +511,13 @@ export function initRouter(store) {
       if (e.key === "ArrowUp") { store.selectJobRow(Math.max(0, idx - 1)); return; }
       if (e.key === "Enter") { store.applyForSelectedJob(); return; }
     }
+    if (store.state.ui.overlay === "contracts") {
+      const roster = [...store.state.squad.roster].sort((a, b) => a.contract.endYear - b.contract.endYear);
+      const idx = roster.findIndex((p) => p.id === store.state.ui.contracts.selectedPlayerId);
+      if (e.key === "ArrowDown" && roster.length) { store.selectContractPlayer(roster[Math.min(roster.length - 1, idx + 1)].id); return; }
+      if (e.key === "ArrowUp" && roster.length) { store.selectContractPlayer(roster[Math.max(0, idx - 1)].id); return; }
+      if (e.key === "Enter") { store.submitContractOffer(); return; }
+    }
     switch (e.key) {
       case "ArrowLeft": store.page(-1); break;
       case "ArrowRight": store.page(1); break;
@@ -316,6 +530,10 @@ export function initRouter(store) {
         // closeMatchday() itself already no-ops unless finished, but a
         // plain closeOverlay() here would bypass that check entirely.
         if (store.state.ui.overlay === "matchday") store.closeMatchday();
+        // Negotiation: closeNegotiation() also clears state.transfers.negotiation
+        // (see engine/negotiation.js's cancelNegotiation) — a plain
+        // closeOverlay() would leave a stale in-flight deal behind.
+        else if (store.state.ui.overlay === "negotiation") store.closeNegotiation();
         else if (store.state.ui.overlay) store.closeOverlay();
         break;
     }

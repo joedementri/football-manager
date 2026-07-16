@@ -156,6 +156,18 @@ export function serializePlayer(p) {
     // retirement.js's "announced but not yet retired" flag.
     p.growthPeriod.minutes, p.growthPeriod.ratingSum, p.growthPeriod.ratingCount,
     p.retiringAnnounced ? 1 : 0,
+    // M6 addition: engine/contracts.js's "already sent the 60-day expiry
+    // warning email for this contract" flag (cleared on renewal/rollover).
+    p.contract.warnedExpiry ? 1 : 0,
+    // M7 additions: engine/negotiation.js's active loan spell (null outside
+    // one) and engine/freeagents.js's pre-agreed free-transfer destination
+    // (null until an approach is accepted) — both need to survive a reload
+    // since neither is re-derivable from anything else in the save.
+    p.loan ? 1 : 0, p.loan ? p.loan.parentClubId : "", p.loan ? toEpochDay(p.loan.returnDate) : -1, p.loan ? p.loan.fullWage : 0,
+    p.contract.preAgreedClubId != null ? 1 : 0, p.contract.preAgreedClubId ?? "",
+    p.contract.preAgreedTerms ? p.contract.preAgreedTerms.wage : 0,
+    p.contract.preAgreedTerms ? p.contract.preAgreedTerms.years : 0,
+    p.contract.preAgreedTerms ? SQUAD_ROLE_CODES.indexOf(p.contract.preAgreedTerms.squadRole) : -1,
   ];
 }
 
@@ -184,12 +196,20 @@ export function deserializePlayer(arr) {
   const ratingHistory = c.take(RATING_HISTORY_SLOTS).filter((v) => v >= 0);
   const growthMinutes = c.next(), growthRatingSum = c.next(), growthRatingCount = c.next();
   const retiringAnnounced = c.next();
+  const warnedExpiry = c.next();
+  const hasLoan = c.next(), loanParentClubId = c.next(), loanReturnDate = c.next(), loanFullWage = c.next();
+  const hasPreAgreed = c.next(), preAgreedClubId = c.next();
+  const preAgreedWage = c.next(), preAgreedYears = c.next(), preAgreedRoleIdx = c.next();
 
   return {
     id, firstName, lastName, commonName, nationId, clubId, natTeamId,
     age, birthDate, heightCm, weightKg, position, altPositions, foot, weakFoot, skillMoves,
     workRateAtt, workRateDef, attrs, overall, potential, joinedClubYear,
-    contract: { wage, endYear, signingBonus, squadRole },
+    contract: {
+      wage, endYear, signingBonus, squadRole, warnedExpiry: !!warnedExpiry,
+      preAgreedClubId: hasPreAgreed ? preAgreedClubId : null,
+      preAgreedTerms: hasPreAgreed ? { wage: preAgreedWage, years: preAgreedYears, squadRole: SQUAD_ROLE_CODES[preAgreedRoleIdx] } : null,
+    },
     value, form, morale, fitness,
     injury: hasInjury ? { type: injuryType, daysLeft: injuryDaysLeft } : null,
     ratingHistory,
@@ -199,6 +219,7 @@ export function deserializePlayer(arr) {
     scouting: { level: scoutLevel, ovrRange: [ovrLo, ovrHi], potRange: [potLo, potHi] },
     growthPeriod: { minutes: growthMinutes, ratingSum: growthRatingSum, ratingCount: growthRatingCount },
     retiringAnnounced: !!retiringAnnounced,
+    loan: hasLoan ? { parentClubId: loanParentClubId, returnDate: fromEpochDay(loanReturnDate), fullWage: loanFullWage } : null,
   };
 }
 
@@ -241,6 +262,24 @@ function deserializeCupState(cup) {
   };
 }
 
+/** M7: state.transfers.listings (Map<playerId,{type,askingPrice,listedDate}>)
+ * and state.transfers.pendingOffers (delayed fee/contract/loan/approach
+ * responses) — both persist directly, same rationale as clubLeague/cupsState
+ * above (neither is re-derivable from the seed alone). `negotiation` itself
+ * is deliberately not persisted — see core/store.js's deriveIndices header. */
+function serializeListingEntry([playerId, listing]) {
+  return [playerId, { ...listing, listedDate: toEpochDay(listing.listedDate) }];
+}
+function deserializeListingEntry([playerId, listing]) {
+  return [playerId, { ...listing, listedDate: fromEpochDay(listing.listedDate) }];
+}
+function serializePendingOffer(o) {
+  return { ...o, dueDate: toEpochDay(o.dueDate) };
+}
+function deserializePendingOffer(o) {
+  return { ...o, dueDate: fromEpochDay(o.dueDate) };
+}
+
 /** GameState -> a small, IndexedDB-ready blob: static reference data
  * (leagues/clubs/nations/cups) is deliberately excluded — gen/world.js
  * re-fetches it from data/*.json on load — only what generation/play
@@ -270,6 +309,26 @@ export function serializeSave(state) {
     clubLeague: [...state.clubLeague.entries()],
     cupsState: [...state.cups.entries()].map(([id, cup]) => [id, serializeCupState(cup)]),
     jobMarket: state.jobMarket,
+    // M6: transfer budget spend (engine/contracts.js's renewal fees) has to
+    // survive a reload, or saving/reloading would silently refill it —
+    // wageCeiling is cheap to recompute but persisted alongside it anyway so
+    // a loaded save's Finances tile is byte-identical to what was saved.
+    finances: state.finances,
+    // M7: the user's own Sell/Loan List, any offers awaiting a delayed
+    // response, and every CPU club's own transfer-budget spend. Guarded
+    // (like clubTransferBudgets below) rather than assumed, since a handful
+    // of dev/tests.js's own hand-built fakeSaveState fixtures predate this
+    // field and don't carry a `transfers` object at all.
+    transferListings: [...(state.transfers?.listings || new Map()).entries()].map(serializeListingEntry),
+    transferPendingOffers: (state.transfers?.pendingOffers || []).map(serializePendingOffer),
+    clubTransferBudgets: [...(state.clubTransferBudgets || new Map()).entries()],
+    // M7: state.news.transfer is the one part of core/store.js's M0-era
+    // NEWS_DATA stub this milestone starts writing real articles into
+    // (engine/transferai.js/negotiation.js/freeagents.js's pushTransferNews)
+    // — persisted directly (articles are plain strings/objects, no Date
+    // fields to convert) so a session's transfer news survives a reload
+    // instead of silently reverting to the hardcoded stub headlines.
+    newsTransfer: state.news?.transfer || [],
   };
 }
 
@@ -290,6 +349,11 @@ export function deserializeSave(saved) {
     clubLeague: new Map(saved.clubLeague || []),
     cupsState: new Map((saved.cupsState || []).map(([id, cup]) => [id, deserializeCupState(cup)])),
     jobMarket: saved.jobMarket || { vacancies: [] },
+    finances: saved.finances || null,
+    transferListings: new Map((saved.transferListings || []).map(deserializeListingEntry)),
+    transferPendingOffers: (saved.transferPendingOffers || []).map(deserializePendingOffer),
+    clubTransferBudgets: new Map(saved.clubTransferBudgets || []),
+    newsTransfer: saved.newsTransfer,
   };
 }
 

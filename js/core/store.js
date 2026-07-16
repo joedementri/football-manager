@@ -13,7 +13,7 @@
 // `store.state` and call mutator methods below — never mutate state or hold
 // game logic themselves, so the sim stays testable headless later.
 
-import { addDays } from "./clock.js";
+import { addDays, toEpochDay } from "./clock.js";
 import { buildFixtures, buildLeagueTable, advanceTowards, fixtureOnDate, eventsOnDate } from "../engine/calendar.js";
 import { buildObjectiveEmails, domesticCupFor } from "../engine/objectives.js";
 import { simulateWorldDay } from "../engine/sim/worldsim.js";
@@ -21,6 +21,12 @@ import * as matchEngine from "../engine/sim/match.js";
 import { buildCupState } from "../engine/comps/cup.js";
 import { applyBoardReview, applyMidSeasonGrowth, rolloverSeason } from "../engine/season.js";
 import { acceptJob } from "../engine/jobs.js";
+import { computeWageCeiling } from "../engine/wage.js";
+import { checkContractExpiryWarnings, applyCpuContractRenewals, computeAsk, renewUserContract } from "../engine/contracts.js";
+import * as negotiation from "../engine/negotiation.js";
+import * as freeagents from "../engine/freeagents.js";
+import * as transferai from "../engine/transferai.js";
+import { reallocateBudget, requestFundsFromBoard } from "../engine/finances.js";
 
 export const SCREENS = ["central", "squad", "transfers", "office", "season"];
 
@@ -225,7 +231,6 @@ function createStubExtras(today) {
           { name: "Matěj Vydra", pos: "ST", flag: "cze", clubCrest: "crest-b" },
         ],
       },
-      finances: { transferBudget: 401500, wageBudget: 16750 },
     },
 
     news: NEWS_DATA,
@@ -252,6 +257,25 @@ function createUiDefaults(today) {
     matchdaySubInId: null,
     // Browse Jobs overlay (M5, ui/jobsui.js): selected vacancy row.
     jobsSelectedIndex: -1,
+    // Contracts overlay (M6, ui/contractsui.js): selected squad player + the
+    // in-progress offer (wage/years) the user is building before submitting
+    // it to engine/contracts.js's renewUserContract. lastResult is
+    // 'accepted'|'rejected'|null, shown as a banner until the next selection.
+    contracts: { selectedPlayerId: null, offerWage: 0, offerYears: 3, lastResult: null },
+
+    // M7 (ui/transfersui.js): Search Players' filter form + result selection —
+    // purely presentational (the actual listings/negotiation/pendingOffers
+    // data lives on state.transfers, not here, since engine code reads/
+    // writes it directly).
+    transferSearch: {
+      area: "ALL", minOverall: 0, maxValue: 0, freeAgentsOnly: false, selectedPlayerId: null,
+    },
+    // Sell/Loan List overlay: selected squad player + the asking-price draft
+    // being adjusted before listPlayer() commits it.
+    sellList: { selectedPlayerId: null, askingPriceDraft: 0 },
+    // Request Funds overlay: the amount being adjusted before submission, and
+    // the outcome of the last request/reallocation (shown as a banner).
+    requestFunds: { amount: 100000, lastResult: null },
   };
 }
 
@@ -282,7 +306,10 @@ function createUiDefaults(today) {
  * re-fetching) and `state.cups` is this season's domestic-cup brackets
  * (engine/comps/cup.js).
  */
-function deriveIndices(state, { allClubs, allLeagues, allNations, allCups, results = new Map(), clubLeague, cups }) {
+function deriveIndices(state, {
+  allClubs, allLeagues, allNations, allCups, results = new Map(), clubLeague, cups, finances,
+  transferListings, transferPendingOffers, clubTransferBudgets,
+}) {
   state.staticData = { leagues: allLeagues, clubs: allClubs, nations: allNations, cups: allCups };
   state.clubLeague = clubLeague || new Map(allClubs.map((c) => [c.id, c.leagueId]));
 
@@ -298,6 +325,15 @@ function deriveIndices(state, { allClubs, allLeagues, allNations, allCups, resul
   state.squad.roster = state.players
     .filter((p) => p.clubId === state.club.id)
     .sort((a, b) => b.overall - a.overall);
+
+  // M6: transfer/wage budgets (fable-plans/plan1.md's Finances tile). A
+  // loaded save passes its persisted `finances` through unchanged (spend
+  // from engine/contracts.js's renewal fees must survive a reload, same
+  // rationale as `results`/`cups` above); a brand-new career starts with the
+  // club's own baseTransferBudget untouched. engine/season.js's rollover
+  // resets this every July 1 ("budgets reset"), jobs.js's acceptJob
+  // recomputes it for whichever club is accepted.
+  state.finances = finances || { transferBudget: state.club.baseTransferBudget, wageCeiling: computeWageCeiling(state.club, state.league) };
 
   state.fixtures = buildFixtures({
     leagues: allLeagues, clubs: effectiveClubs, seed: state.seed, seasonStartYear: state.seasonStartYear,
@@ -315,6 +351,23 @@ function deriveIndices(state, { allClubs, allLeagues, allNations, allCups, resul
   state.cups = (cups && cups.size > 0) ? cups : new Map(allCups.domestic.map((cup) => [
     cup.id, buildCupState({ cup, clubs: effectiveClubs, leagues: allLeagues, seed: state.seed, seasonStartYear: state.seasonStartYear }),
   ]));
+
+  // M7: the user's own listed players (Sell/Loan List) and any offers
+  // awaiting a delayed response (fee talks, contract talks, loan requests,
+  // free-agent approaches, incoming CPU bids) — both persist directly (like
+  // `results`/`cups` above), since neither is re-derivable from the seed.
+  // `negotiation` (the single in-flight deal) is deliberately NOT persisted —
+  // same "in-flight UI state doesn't survive a reload" convention as
+  // `state.matchday` — a save mid-negotiation just drops it, and any
+  // pendingOffers entry for it quietly no-ops when it resolves (see
+  // engine/negotiation.js's applyFeeResolution/applyContractResolution guards).
+  state.transfers.listings = transferListings || new Map();
+  state.transfers.pendingOffers = transferPendingOffers || [];
+  state.transfers.negotiation = null;
+  // CPU clubs' own transfer budgets (engine/clubbudget.js) — lazily
+  // populated per club as CPU<->CPU activity/incoming bids touch them;
+  // persists across saves so a club's spend isn't silently refilled on reload.
+  state.clubTransferBudgets = clubTransferBudgets || new Map();
 
   return state;
 }
@@ -433,9 +486,18 @@ export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
     ui: createUiDefaults(today),
   };
 
+  // M7: state.news.transfer is the one createStubExtras() field that's no
+  // longer purely static once a session has pushed real CPU/user transfer
+  // articles into it — override the just-spread stub with whatever was
+  // persisted (db.js's serializeSave), falling back to the stub only for a
+  // pre-M7 save that never had this field at all (undefined, not just empty).
+  if (saved.newsTransfer !== undefined) state.news.transfer = saved.newsTransfer;
+
   return deriveIndices(state, {
     allClubs: clubs, allLeagues: leagues, allNations: nations, allCups: cups,
-    results: saved.results, clubLeague: saved.clubLeague, cups: saved.cupsState,
+    results: saved.results, clubLeague: saved.clubLeague, cups: saved.cupsState, finances: saved.finances,
+    transferListings: saved.transferListings, transferPendingOffers: saved.transferPendingOffers,
+    clubTransferBudgets: saved.clubTransferBudgets,
   });
 }
 
@@ -582,19 +644,55 @@ export class Store {
    * plan1.md M5): non-user fixtures + cup ties always resolve
    * (engine/sim/worldsim.js), and the season's fixed dates trigger their
    * engine/season.js hooks — mid-season growth (Feb 1), the board review +
-   * retirement announcements (January), and the full rollover pipeline
-   * (July 1, which is also next season's kickoff). `state.calendar.today`
-   * is updated *first* (advanceToDate's own copy at the end of its own walk
-   * is just a redundant, harmless final sync) so any email these hooks
-   * build (buildMidSeasonReviewEmail, buildSeasonEndEmail, ...) is dated
-   * the day it's actually sent on, not the previous day. */
+   * retirement announcements (January), the CPU contract-renewal pass (May,
+   * M6), and the full rollover pipeline (July 1, which is also next
+   * season's kickoff). `state.calendar.today` is updated *first*
+   * (advanceToDate's own copy at the end of its own walk is just a
+   * redundant, harmless final sync) so any email these hooks build
+   * (buildMidSeasonReviewEmail, buildSeasonEndEmail, ...) is dated the day
+   * it's actually sent on, not the previous day.
+   *
+   * M6: checkContractExpiryWarnings runs every day (not gated behind an
+   * `events` entry) — it's a per-player date comparison over just the
+   * user's ~24-man squad, cheap enough not to need its own calendar event,
+   * and "60 days before expiry" is a rolling per-player threshold rather
+   * than a single fixed date the way growth/board-review/rollover are. */
   _processCalendarDay(day) {
     this.state.calendar.today = day;
     const events = eventsOnDate(day, this.state.seasonStartYear);
     if (events.includes("growth")) applyMidSeasonGrowth(this.state);
     if (events.includes("board-review")) applyBoardReview(this.state);
+    if (events.includes("contract-renewal")) applyCpuContractRenewals(this.state);
+    checkContractExpiryWarnings(this.state, day);
+    // M7: resolve any of the user's own delayed transfer/loan/approach
+    // responses due today, run this day's CPU<->CPU window activity (a
+    // no-op outside an open window or off its weekly cadence — see
+    // engine/transferai.js), check for fresh incoming bids on the user's
+    // listed players, and return any loans whose spell has ended.
+    this._resolvePendingTransferOffers(day);
+    transferai.runWeeklyTransferActivity(this.state, day);
+    transferai.checkIncomingBidsOnListedPlayers(this.state, day);
+    negotiation.resolveLoanReturns(this.state, day);
     simulateWorldDay(this.state, day);
     if (events.includes("season-rollover")) rolloverSeason(this.state);
+  }
+
+  /** Dispatches every state.transfers.pendingOffers entry due on or before
+   * `day` to its owning module's resolver — negotiation.js owns fee/contract/
+   * loan responses, freeagents.js owns pre-contract approach responses. Kept
+   * here (rather than importing freeagents.js into negotiation.js or vice
+   * versa) so those two files never need to know about each other. */
+  _resolvePendingTransferOffers(day) {
+    const state = this.state;
+    const due = state.transfers.pendingOffers.filter((o) => toEpochDay(o.dueDate) <= toEpochDay(day));
+    if (!due.length) return;
+    state.transfers.pendingOffers = state.transfers.pendingOffers.filter((o) => toEpochDay(o.dueDate) > toEpochDay(day));
+    for (const entry of due) {
+      if (entry.type === "fee-response") negotiation.resolveFeeOfferEntry(state, entry);
+      else if (entry.type === "contract-response") negotiation.resolveContractOfferEntry(state, entry);
+      else if (entry.type === "loan-response") negotiation.resolveLoanRequestEntry(state, entry);
+      else if (entry.type === "approach-response") freeagents.resolveApproachEntry(state, entry);
+    }
   }
 
   /* ----- Match Day (M4): engine/sim/match.js owns the actual state
@@ -768,5 +866,245 @@ export class Store {
     this.closeOverlay();
     this.emit("advance", null); // reuse Central/Season's re-render hook — club/league/squad all changed
     this.emit("jobs:accepted", clubId);
+  }
+
+  /* ----- Contracts (M6, engine/contracts.js): Office ▸ Contracts renewal UI ----- */
+
+  /** Opens the Contracts overlay, defaulting the selection to the squad's
+   * most urgent (fewest years left) player, if any. */
+  openContracts() {
+    const roster = this.state.squad.roster;
+    const first = [...roster].sort((a, b) => a.contract.endYear - b.contract.endYear)[0];
+    this.selectContractPlayer(first ? first.id : null);
+    this.openOverlay("contracts");
+  }
+
+  /** Selects a squad player and seeds the offer with their computed ask
+   * (engine/contracts.js's computeAsk) — a sensible starting point the user
+   * can then adjust with adjustContractOfferWage/Years. */
+  selectContractPlayer(playerId) {
+    const c = this.state.ui.contracts;
+    c.selectedPlayerId = playerId;
+    c.lastResult = null;
+    const player = playerId != null ? this.state.playersById.get(playerId) : null;
+    if (player) {
+      c.offerWage = computeAsk(player).wage;
+      c.offerYears = 3;
+    }
+    this.emit("contracts", null);
+  }
+
+  /** Nudges the offered wage by `deltaPct` (e.g. ±0.05) of the player's ask —
+   * fixed percentage-of-ask steps keep the stepper meaningful across every
+   * wage scale (a lower-league player's ask and a superstar's ask are wildly
+   * different absolute numbers). Never below the player's current wage — a
+   * renewal offer is never a pay cut. */
+  adjustContractOfferWage(deltaPct) {
+    const c = this.state.ui.contracts;
+    const player = this.state.playersById.get(c.selectedPlayerId);
+    if (!player) return;
+    const ask = computeAsk(player).wage;
+    c.offerWage = Math.max(player.contract.wage, Math.round((c.offerWage + ask * deltaPct) / 10) * 10);
+    this.emit("contracts", null);
+  }
+
+  adjustContractOfferYears(delta) {
+    const c = this.state.ui.contracts;
+    c.offerYears = Math.min(5, Math.max(1, c.offerYears + delta));
+    this.emit("contracts", null);
+  }
+
+  /** Auto-fills the offer with the player's exact ask (100% wage, 3-year
+   * length) — the Contracts UI's "Suggested Terms" shortcut. */
+  suggestContractTerms() {
+    const c = this.state.ui.contracts;
+    const player = this.state.playersById.get(c.selectedPlayerId);
+    if (!player) return;
+    c.offerWage = computeAsk(player).wage;
+    c.offerYears = 3;
+    this.emit("contracts", null);
+  }
+
+  /** Submits the current offer (engine/contracts.js's renewUserContract) —
+   * single-shot, not iterative fee-talk rounds (see that file's header for
+   * why, same footing as engine/jobs.js's Browse Jobs). */
+  submitContractOffer() {
+    const c = this.state.ui.contracts;
+    if (c.selectedPlayerId == null) return;
+    const result = renewUserContract(this.state, c.selectedPlayerId, { wage: c.offerWage, years: c.offerYears });
+    c.lastResult = result.accepted ? "accepted" : "rejected";
+    this.emit("contracts", null);
+    this.emit("advance", null); // reuse Central/Season/Transfers' re-render hook — wage bill/finances changed
+  }
+
+  /* ----- M7: Search Players (world-wide, real numbers — fuzzy GTN ranges
+   * are M8) ----- */
+
+  openTransferSearch() {
+    this.state.ui.transferSearch.selectedPlayerId = null;
+    this.openOverlay("search");
+  }
+
+  setSearchFilter(key, value) {
+    this.state.ui.transferSearch[key] = value;
+    this.emit("search", null);
+  }
+
+  selectSearchResult(playerId) {
+    this.state.ui.transferSearch.selectedPlayerId = playerId;
+    this.emit("search", null);
+  }
+
+  /* ----- M7: Negotiation (fee talks -> contract talks, loans, free-agent
+   * pre-contract approaches) — engine/negotiation.js + engine/freeagents.js
+   * own the actual state machine; these methods just call into it and emit
+   * "negotiation" for ui/transfersui.js to re-render from. ----- */
+
+  startBid(playerId) {
+    negotiation.startFeeNegotiation(this.state, playerId);
+    this.openOverlay("negotiation");
+  }
+
+  startLoanBid(playerId, loanLength) {
+    negotiation.startLoanNegotiation(this.state, playerId, loanLength);
+    this.openOverlay("negotiation");
+  }
+
+  startFreeAgentApproach(playerId) {
+    freeagents.startApproach(this.state, playerId);
+    this.openOverlay("negotiation");
+  }
+
+  negoAdjustFeeOffer(deltaPct) {
+    negotiation.adjustFeeOffer(this.state, deltaPct);
+    this.emit("negotiation", null);
+  }
+
+  negoCycleRole(delta) {
+    negotiation.cycleNegotiationRole(this.state, delta);
+    this.emit("negotiation", null);
+  }
+
+  /** Deadline day resolves synchronously inside submitFeeOffer itself, so a
+   * budget/news change can land immediately — re-emitting "advance" covers
+   * that case the same way submitContractOffer's own comment above does. */
+  negoSubmitFeeOffer() {
+    negotiation.submitFeeOffer(this.state);
+    this.emit("negotiation", null);
+    this.emit("advance", null);
+  }
+
+  negoAdjustContractWage(deltaPct) {
+    negotiation.adjustNegotiationContractWage(this.state, deltaPct);
+    this.emit("negotiation", null);
+  }
+
+  negoAdjustContractYears(delta) {
+    negotiation.adjustNegotiationContractYears(this.state, delta);
+    this.emit("negotiation", null);
+  }
+
+  /** Submits whichever contract-style offer is pending — a real transfer's
+   * contract talks, or a free-agent approach's pre-contract terms (the two
+   * share state.transfers.negotiation, distinguished by dealType). */
+  negoSubmitContractOffer() {
+    const n = this.state.transfers.negotiation;
+    if (n && n.dealType === "free-agent") freeagents.submitApproach(this.state);
+    else negotiation.submitNegotiationContractOffer(this.state);
+    this.emit("negotiation", null);
+    this.emit("advance", null);
+  }
+
+  closeNegotiation() {
+    negotiation.cancelNegotiation(this.state);
+    this.closeOverlay();
+  }
+
+  /* ----- M7: Sell/Loan List ----- */
+
+  openSellList() {
+    const first = this.state.squad.roster[0];
+    this.selectSellListPlayer(first ? first.id : null);
+    this.openOverlay("selllist");
+  }
+
+  selectSellListPlayer(playerId) {
+    const s = this.state.ui.sellList;
+    s.selectedPlayerId = playerId;
+    const player = playerId != null ? this.state.playersById.get(playerId) : null;
+    const existing = playerId != null ? this.state.transfers.listings.get(playerId) : null;
+    s.askingPriceDraft = existing ? existing.askingPrice : (player ? player.value : 0);
+    this.emit("selllist", null);
+  }
+
+  adjustAskingPrice(deltaPct) {
+    const s = this.state.ui.sellList;
+    const player = this.state.playersById.get(s.selectedPlayerId);
+    if (!player) return;
+    s.askingPriceDraft = Math.max(0, Math.round((s.askingPriceDraft + player.value * deltaPct) / 1000) * 1000);
+    this.emit("selllist", null);
+  }
+
+  listPlayer(type) {
+    const s = this.state.ui.sellList;
+    if (s.selectedPlayerId == null) return;
+    this.state.transfers.listings.set(s.selectedPlayerId, {
+      type, askingPrice: s.askingPriceDraft, listedDate: this.state.calendar.today,
+    });
+    this.emit("selllist", null);
+    this.emit("advance", null); // Transfers hub's Sell Players tile reflects the new listing count
+  }
+
+  unlistPlayer() {
+    const s = this.state.ui.sellList;
+    if (s.selectedPlayerId == null) return;
+    this.state.transfers.listings.delete(s.selectedPlayerId);
+    this.emit("selllist", null);
+    this.emit("advance", null);
+  }
+
+  /* ----- M7: incoming CPU bids (Office/Email inbox YES/NO decision emails) ----- */
+
+  acceptIncomingBid(bidId) {
+    transferai.acceptIncomingBid(this.state, bidId);
+    this.emit("email:select", this.state.ui.emailSelectedIndex);
+    this.emit("advance", null);
+  }
+
+  rejectIncomingBid(bidId) {
+    transferai.rejectIncomingBid(this.state, bidId);
+    this.emit("email:select", this.state.ui.emailSelectedIndex);
+  }
+
+  /* ----- M7: Request Funds ----- */
+
+  openRequestFunds() {
+    this.state.ui.requestFunds.lastResult = null;
+    this.openOverlay("requestfunds");
+  }
+
+  adjustRequestFundsAmount(deltaAbs) {
+    const r = this.state.ui.requestFunds;
+    r.amount = Math.max(0, r.amount + deltaAbs);
+    this.emit("requestfunds", null);
+  }
+
+  /** direction: 'wageToTransfer' | 'transferToWage' — an always-successful
+   * reallocation between the same season's two budget halves. */
+  submitReallocateBudget(direction) {
+    const r = this.state.ui.requestFunds;
+    reallocateBudget(this.state, r.amount, direction);
+    r.lastResult = { reallocated: true, direction };
+    this.emit("requestfunds", null);
+    this.emit("advance", null);
+  }
+
+  /** Begs the board for extra transfer funds — a real probabilistic roll
+   * (engine/finances.js's requestFundsFromBoard), not a guaranteed top-up. */
+  submitBoardFundsRequest() {
+    const r = this.state.ui.requestFunds;
+    r.lastResult = requestFundsFromBoard(this.state, r.amount);
+    this.emit("requestfunds", null);
+    this.emit("advance", null);
   }
 }

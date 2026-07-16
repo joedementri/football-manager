@@ -11,6 +11,7 @@ import { upcomingFixtures, fixtureOnDate } from "../engine/calendar.js";
 import { toEpochDay } from "../core/clock.js";
 import { domesticCupFor } from "../engine/objectives.js";
 import { cupStatusForClub } from "../engine/comps/cup.js";
+import { squadWageBill } from "../engine/wage.js";
 
 function flagSpan(code) {
   return `<span class="flag" data-flag="${code}"></span>`;
@@ -158,9 +159,13 @@ export function renderTransfers(state) {
     `</div>`
   )).join("");
 
+  // M6: real numbers — remaining transfer budget (spent by engine/
+  // contracts.js's renewal fees, reset every rollover) and remaining weekly
+  // wage headroom (the club's wage ceiling minus the squad's current wage
+  // bill, so renewing a contract at a higher wage visibly eats into it).
   const finLines = document.querySelectorAll(".tr-fin .fin-line b");
-  finLines[0].textContent = money(state.transfers.finances.transferBudget);
-  finLines[1].textContent = money(state.transfers.finances.wageBudget);
+  finLines[0].textContent = money(state.finances.transferBudget);
+  finLines[1].textContent = money(state.finances.wageCeiling - squadWageBill(state.squad.roster));
 }
 
 /* ----------------------------- Office -------------------------------------- */
@@ -256,6 +261,23 @@ export function renderEmailList(state) {
   if (badge) badge.textContent = unread;
 }
 
+/** M7: emails carrying an `action` field (currently only
+ * `{type:'transfer-bid', bidId, ...}`, engine/transferai.js's incoming CPU
+ * bids on a listed player) render as a real YES/NO decision — the screens
+ * table's "Inbox ... YES/NO decision emails" note, first given real content
+ * here. Cleared (`email.action = null`) once acted on, so a re-render of the
+ * same email afterward just shows plain read mail. */
+function renderEmailActions(d) {
+  const el = document.getElementById("email-actions");
+  if (!d.action) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  if (d.action.type === "transfer-bid") {
+    el.innerHTML =
+      `<button type="button" class="email-action-btn email-action-btn--yes" data-action="accept-bid" data-bid="${d.action.bidId}">Accept Bid</button>` +
+      `<button type="button" class="email-action-btn email-action-btn--no" data-action="reject-bid" data-bid="${d.action.bidId}">Reject Bid</button>`;
+  }
+}
+
 export function renderEmailDetail(state) {
   const d = state.inbox.emails[state.ui.emailSelectedIndex];
   if (!d) return;
@@ -267,6 +289,7 @@ export function renderEmailDetail(state) {
   meta[3].innerHTML = `<span class="k">Cc</span> ${d.cc}`;
   meta[4].innerHTML = `<span class="k">Subject</span> ${d.subject}`;
   document.querySelector(".email-text").innerHTML = d.body.map((p) => `<p>${p}</p>`).join("");
+  renderEmailActions(d);
 }
 
 /* ----------------------------- News overlay --------------------------------- */

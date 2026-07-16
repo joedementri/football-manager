@@ -6,14 +6,14 @@
 // target overall), height/weight/workrates/weak-foot/skill-moves (scout.ini
 // tables via config/playergen.js).
 //
-// Value/wage/contract here are a deliberately simple placeholder — the plan
-// assigns the real port of playervalues.ini/playerwages.ini to M6
-// ("engine/value.js", "engine/wage.js"); M2 only needs the Player schema's
-// fields populated with *something* plausible so Squad List/Bio can render
-// them, not the calibrated formula. `recomputeOverall` documents the
-// schema's "COMPUTED — never stored stale" contract: overall is cached on
-// the player object at generation time, and any future code that mutates
-// `attrs` (engine/growth.js in M5) must call it again.
+// Wage/value use M6's real playerwages.ini/playervalues.ini ports
+// (engine/wage.js's computeWage, engine/value.js's computeValue) — contract
+// years remain a plausible plan-authored roll (there's no INI table for "how
+// many years does a freshly generated player already have left"), which
+// computeValue's [CONTRACT] modifier then reads. `recomputeOverall`
+// documents the schema's "COMPUTED — never stored stale" contract: overall
+// is cached on the player object at generation time, and any future code
+// that mutates `attrs` (engine/growth.js in M5) must call it again.
 
 import { positionInfo } from "../config/positions.js";
 import { ratioForAge } from "../config/growth.js";
@@ -24,6 +24,8 @@ import {
 import { computeOverall, WEIGHTS } from "./overall.js";
 import { randomName } from "./names.js";
 import { ARCHETYPES } from "./archetypes.js";
+import { computeWage } from "../engine/wage.js";
+import { computeValue } from "../engine/value.js";
 
 let nextPlayerId = 1;
 export function resetPlayerIdCounter(start = 1) {
@@ -124,10 +126,10 @@ function pickAltPositions(rng, positionCode) {
  * @param {object} opts.club - a data/clubs.json entry
  * @param {number} opts.targetOverall - sampled by gen/squad.js from clubOverallTarget
  * @param {number} opts.seasonStartYear - e.g. 2014 for the 2014/15 season
- * @param {number} opts.wageModifier - league.wageModifier (placeholder wage calc)
+ * @param {object} opts.league - a data/leagues.json entry (engine/wage.js's computeWage needs wageModifier)
  */
 export function generatePlayer(opts) {
-  const { rng, positionCode, nation, club, targetOverall, seasonStartYear, wageModifier, ageOverride } = opts;
+  const { rng, positionCode, nation, club, league, targetOverall, seasonStartYear, ageOverride } = opts;
   const info = positionInfo(positionCode);
   const overallGroup = info.overallGroup;
 
@@ -154,11 +156,26 @@ export function generatePlayer(opts) {
   const name = randomName(rng, nation);
   const joinedClubYear = seasonStartYear - rng.int(0, Math.max(0, age - 17));
 
-  // Placeholder economics — M6 (engine/value.js, engine/wage.js) replaces
-  // these with the full playervalues.ini/playerwages.ini ports.
-  const wage = Math.round(Math.pow(overall / 50, 4) * 400 * (wageModifier / 30));
-  const value = Math.round(wage * 220 * (1 + Math.max(0, 23 - age) * 0.04));
+  // Contract length has no INI source (there's no table for "how many years
+  // does a freshly generated player already have left") — a plausible
+  // plan-authored roll, same footing as config/playergen.js's other authored
+  // formulas. Wage/value are the real M6 ports (engine/wage.js,
+  // engine/value.js); value needs the contract's years-remaining, so the
+  // contract object is built before it.
   const contractYears = rng.int(1, 5);
+  const wage = computeWage({ overall, age, position: positionCode }, league);
+  const contract = {
+    wage,
+    endYear: seasonStartYear + contractYears,
+    signingBonus: 0,
+    squadRole: "rotation", // gen/squad.js assigns the real role once the full squad is known
+    warnedExpiry: false,
+    // M7: engine/freeagents.js's pre-contract approach — null until a free-
+    // agent approach is accepted (see engine/contracts.js's signWithNewClub).
+    preAgreedClubId: null,
+    preAgreedTerms: null,
+  };
+  const value = computeValue({ overall, potential, age, position: positionCode, form: 5, contract }, club, seasonStartYear);
 
   return {
     id: nextPlayerId++,
@@ -183,17 +200,13 @@ export function generatePlayer(opts) {
     overall,
     potential,
     joinedClubYear,
-    contract: {
-      wage,
-      endYear: seasonStartYear + contractYears,
-      signingBonus: 0,
-      squadRole: "rotation", // gen/squad.js assigns the real role once the full squad is known
-    },
+    contract,
     value,
     form: 5,
     morale: 7,
     fitness: 100,
     injury: null,
+    loan: null, // M7: engine/negotiation.js's active loan spell — {parentClubId, returnDate, fullWage} while out on loan
     // Most-recent-first match-rating history engine/form.js's rolling form
     // average reads from (M4) — empty at generation time, capped at 10 by
     // recordMatchRating as matches get played.

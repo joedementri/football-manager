@@ -18,6 +18,8 @@ import { seasonStart } from "../js/config/calendar.js";
 import { addDays, toEpochDay } from "../js/core/clock.js";
 import { buildCupState } from "../js/engine/comps/cup.js";
 import { applyBoardReview, applyMidSeasonGrowth, rolloverSeason } from "../js/engine/season.js";
+import { applyCpuContractRenewals } from "../js/engine/contracts.js";
+import { runWeeklyTransferActivity } from "../js/engine/transferai.js";
 
 const SEASON_START_YEAR = 2014;
 const NO_USER_CLUB = "__none__"; // worldsim.js only skips a fixture involving state.club.id
@@ -60,7 +62,11 @@ function buildHeadlessState(world, seed) {
   const state = {
     seed,
     seasonStartYear: SEASON_START_YEAR,
-    club: { id: NO_USER_CLUB, name: "No Club", shortName: "No Club", boardExpectationTier: "mid-table-safety" },
+    // M6: prestige/baseTransferBudget aren't otherwise meaningful for a
+    // sentinel "no one manages this club" — present so engine/season.js's
+    // rollover (state.finances, computeWageCeiling) has real numbers to
+    // compute against instead of NaN.
+    club: { id: NO_USER_CLUB, name: "No Club", shortName: "No Club", boardExpectationTier: "mid-table-safety", prestige: 5, baseTransferBudget: 0 },
     league: { ...world.leagues[0] },
     manager: { name: "Headless Sim", rep: 5, warned: false, sacked: false },
     calendar: { today: seasonStart(SEASON_START_YEAR) },
@@ -73,6 +79,12 @@ function buildHeadlessState(world, seed) {
     results: new Map(),
     staticData: { leagues: world.leagues, clubs: world.clubs, nations: world.nations, cups: world.cups },
     clubLeague: new Map(world.clubs.map((c) => [c.id, c.leagueId])),
+    // M7: no user club means no listings/negotiation ever happen here, but
+    // engine/transferai.js's runWeeklyTransferActivity (CPU<->CPU) still
+    // needs these fields to exist on any state it's handed.
+    transfers: { listings: new Map(), pendingOffers: [], negotiation: null },
+    clubTransferBudgets: new Map(),
+    news: { transfer: [] },
   };
   state.clubsById = new Map(world.clubs.map((c) => [c.id, c]));
   state.fixtures = buildFixtures({ leagues: world.leagues, clubs: world.clubs, seed, seasonStartYear: state.seasonStartYear });
@@ -88,16 +100,20 @@ function buildHeadlessState(world, seed) {
  * core/store.js's Store._processCalendarDay drives, just without a Store
  * wrapper (headless, no DOM, no interactive Match Day to resolve since
  * NO_USER_CLUB never has a fixture of its own).
- * @returns {Map} the cup-brackets Map exactly as it stood immediately
- *   before the rollover call that just fired replaced it with next season's
- *   fresh (round-0) brackets — engine/season.js's rolloverSeason reassigns
- *   `state.cups` outright, so "how did this season's cups finish" has to be
- *   read from this snapshot, not from `state.cups` after this function returns.
+ * @returns {{cupsBeforeRollover: Map, transfersCompleted: number}}
+ *   `cupsBeforeRollover` is the cup-brackets Map exactly as it stood
+ *   immediately before the rollover call that just fired replaced it with
+ *   next season's fresh (round-0) brackets — engine/season.js's
+ *   rolloverSeason reassigns `state.cups` outright, so "how did this
+ *   season's cups finish" has to be read from this snapshot, not from
+ *   `state.cups` after this function returns. `transfersCompleted` is the
+ *   season's total CPU<->CPU deals (M7, engine/transferai.js).
  */
 async function advanceOneSeason(state, onProgress) {
   const targetDate = seasonStart(state.seasonStartYear + 1);
   let day = state.calendar.today;
   let dayCount = 0;
+  let transfersCompleted = 0;
   let cupsBeforeRollover = state.cups;
   while (toEpochDay(day) < toEpochDay(targetDate)) {
     day = addDays(day, 1);
@@ -106,6 +122,8 @@ async function advanceOneSeason(state, onProgress) {
     const events = eventsOnDate(day, state.seasonStartYear);
     if (events.includes("growth")) applyMidSeasonGrowth(state);
     if (events.includes("board-review")) applyBoardReview(state);
+    if (events.includes("contract-renewal")) applyCpuContractRenewals(state);
+    transfersCompleted += runWeeklyTransferActivity(state, day);
     simulateWorldDay(state, day);
     if (events.includes("season-rollover")) rolloverSeason(state);
     dayCount++;
@@ -114,7 +132,7 @@ async function advanceOneSeason(state, onProgress) {
       await yieldToUI();
     }
   }
-  return cupsBeforeRollover;
+  return { cupsBeforeRollover, transfersCompleted };
 }
 
 async function runMultiSeasonSim({ numSeasons, onProgress }) {
@@ -130,13 +148,15 @@ async function runMultiSeasonSim({ numSeasons, onProgress }) {
   const englandStaticLeague = new Map(world.clubs.filter((c) => c.leagueId.startsWith("eng-")).map((c) => [c.id, c.leagueId]));
   const movementHistory = [];
   const cupChampionHistory = [];
+  const transferVolumeHistory = [];
 
   for (let s = 0; s < numSeasons; s++) {
     const seasonLabel = `${state.seasonStartYear}/${String(state.seasonStartYear + 1).slice(2)}`;
     const seasonNumber = state.seasonStartYear;
-    const cupsBeforeRollover = await advanceOneSeason(state, (dayCount) => {
+    const { cupsBeforeRollover, transfersCompleted } = await advanceOneSeason(state, (dayCount) => {
       onProgress(`Season ${seasonLabel}… day ${dayCount}`, s * 370 + dayCount, numSeasons * 370);
     });
+    transferVolumeHistory.push({ season: seasonNumber, completed: transfersCompleted });
 
     for (const [id, history] of overallHistoryById) {
       const p = state.playersById.get(id);
@@ -162,7 +182,7 @@ async function runMultiSeasonSim({ numSeasons, onProgress }) {
     }
   }
 
-  return { world, state, overallHistoryById, youngCohort, playerCountHistory, movementHistory, cupChampionHistory };
+  return { world, state, overallHistoryById, youngCohort, playerCountHistory, movementHistory, cupChampionHistory, transferVolumeHistory };
 }
 
 function renderLeagueTable(league, clubs, fixturesByLeague, results) {
@@ -229,6 +249,21 @@ function renderGrowthReport(overallHistoryById, youngCohort) {
   );
 }
 
+/** CPU<->CPU transfer volume per season (M7's own plan1.md line: "Cap volume
+ * (~40 completed CPU transfers/window across top leagues, scaled down for
+ * minor leagues) for performance and realism" — two windows/season, so a
+ * believable season total sits somewhere under the ~80/season theoretical
+ * ceiling, comfortably above zero). */
+function renderTransferReport(transferVolumeHistory) {
+  const rows = transferVolumeHistory.map((h) => `<tr><td>${h.season}/${String(h.season + 1).slice(2)}</td><td class="num">${h.completed}</td></tr>`).join("");
+  const avg = transferVolumeHistory.reduce((s, h) => s + h.completed, 0) / transferVolumeHistory.length;
+  const believable = avg > 0 && avg <= 80;
+  return (
+    `<div class="count-tile"><div class="n ${believable ? "ok" : "bad"}">${avg.toFixed(1)}</div><div class="l">Avg completed CPU&lt;-&gt;CPU transfers/season (believable range: 1-80, i.e. up to the ~40/window cap x2 windows)</div></div>` +
+    `<table class="tbl" style="margin-top:16px"><thead><tr><th>Season</th><th>Completed CPU&lt;-&gt;CPU transfers</th></tr></thead><tbody>${rows}</tbody></table>`
+  );
+}
+
 function renderRolloverReport(playerCountHistory, movementHistory, cupChampionHistory) {
   const countRows = playerCountHistory.map((h) => `<tr><td>${h.season}</td><td class="num">${h.count}</td></tr>`).join("");
   const moveRows = movementHistory.map((h) => `<tr><td>${h.season}/${String(h.season + 1).slice(2)}</td><td class="num">${h.movedFromStart}</td></tr>`).join("");
@@ -249,6 +284,7 @@ async function init() {
   const summaryEl = document.getElementById("balance-summary");
   const growthEl = document.getElementById("balance-growth");
   const rolloverEl = document.getElementById("balance-rollover");
+  const transfersEl = document.getElementById("balance-transfers");
   const tablesEl = document.getElementById("balance-tables");
   const runBtn = document.getElementById("balance-run");
   const seasonsInput = document.getElementById("balance-seasons");
@@ -258,9 +294,10 @@ async function init() {
     summaryEl.innerHTML = "";
     growthEl.innerHTML = "";
     rolloverEl.innerHTML = "";
+    transfersEl.innerHTML = "";
     tablesEl.innerHTML = "";
     const numSeasons = Math.max(1, Math.min(15, Number(seasonsInput.value) || DEFAULT_SEASONS));
-    const { world, state, overallHistoryById, youngCohort, playerCountHistory, movementHistory, cupChampionHistory } = await runMultiSeasonSim({
+    const { world, state, overallHistoryById, youngCohort, playerCountHistory, movementHistory, cupChampionHistory, transferVolumeHistory } = await runMultiSeasonSim({
       numSeasons,
       onProgress: (label, done, total) => {
         progressEl.textContent = `${label} (${Math.round((done / Math.max(1, total)) * 100)}%)`;
@@ -273,6 +310,7 @@ async function init() {
     growthEl.className = "counts";
     growthEl.innerHTML = renderGrowthReport(overallHistoryById, youngCohort);
     rolloverEl.innerHTML = renderRolloverReport(playerCountHistory, movementHistory, cupChampionHistory);
+    transfersEl.innerHTML = renderTransferReport(transferVolumeHistory);
 
     // Full standings for the 3 highest-prestige leagues (the ones a reader
     // can eyeball fastest), using the *final* season's effective club->league

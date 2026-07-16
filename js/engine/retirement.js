@@ -57,8 +57,8 @@ function generateRegen({ rng, positionCode, club, league, nationsById, nationsBy
   const targetOverall = Math.round(rng.gaussian(mean * 0.75, spread));
   const nation = pickNation(rng, club, league, nationsById, nationsByName);
   return generatePlayer({
-    rng, positionCode, nation, club, targetOverall, seasonStartYear,
-    wageModifier: league.wageModifier, ageOverride: rng.int(16, 18),
+    rng, positionCode, nation, club, league, targetOverall, seasonStartYear,
+    ageOverride: rng.int(16, 18),
   });
 }
 

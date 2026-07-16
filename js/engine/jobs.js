@@ -20,6 +20,7 @@
 import { pickBestXI } from "../gen/squad.js";
 import { buildObjectiveEmails, domesticCupFor, leagueIndex, leagueObjectiveMet } from "./objectives.js";
 import { buildLeagueTable } from "./comps/league.js";
+import { computeWageCeiling } from "./wage.js";
 import { RngStream, deriveSeed } from "../core/rng.js";
 
 const MAX_VACANCIES = 20;
@@ -77,6 +78,9 @@ export function acceptJob(state, clubId) {
   state.squad.lineup = pickBestXI(roster);
   state.manager.sacked = false;
   state.manager.warned = false;
+  // M6: a new club means a new transfer/wage budget (fable-plans/plan1.md's
+  // Finances tile) — same "fresh start" spirit as the board emails below.
+  state.finances = { transferBudget: club.baseTransferBudget, wageCeiling: computeWageCeiling(club, league) };
 
   const cup = domesticCupFor(league, state.staticData.cups);
   const emails = buildObjectiveEmails({ club, league, cup, managerName: state.manager.name, today: state.calendar.today });
