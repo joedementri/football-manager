@@ -21,7 +21,9 @@ const ATTR_LABELS = {
   jumping: "Jumping", stamina: "Stamina", strength: "Strength", aggression: "Aggression",
 };
 
-function cmToFtIn(cm) {
+// Exported for reuse by ui/teamsheetui.js (F1's Player Information page —
+// ms_TEAM_SHEET_VIEW_PLAYER_INFORMATION.png shows the same ft'in" height).
+export function cmToFtIn(cm) {
   const totalIn = cm / 2.54;
   const ft = Math.floor(totalIn / 12);
   const inch = Math.round(totalIn % 12);

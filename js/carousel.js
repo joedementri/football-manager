@@ -69,3 +69,15 @@ function build(root) {
 export function initCarousels() {
   Array.prototype.slice.call(document.querySelectorAll("[data-carousel]")).forEach(build);
 }
+
+/** fable-plans/plan2.md F1: the Squad hub's team-sheet tile rebuilds its own
+ * `.cpages` from state (dynamic 1-6 sheet count, unlike every other
+ * carousel's static page list) — re-running build() would stack a second
+ * nav bar on top of the first, so this removes the stale one first. Callers
+ * (ui/render.js's renderSquad) call this instead of relying on the one-time
+ * initCarousels() sweep. */
+export function rebuildCarousel(root) {
+  const stale = root.querySelector(":scope > .carousel-bar");
+  if (stale) stale.remove();
+  build(root);
+}

@@ -497,6 +497,13 @@ export function serializeSave(state) {
     calendarToday: toEpochDay(state.calendar.today),
     players: state.players.map(serializePlayer),
     lineup: state.squad.lineup,
+    // F1 (fable-plans/plan2.md): every saved team sheet (formation label +
+    // XI + 7-man bench) plus which one is active. Plain JSON — lineup
+    // entries and bench slots are already just numbers/plain objects, same
+    // footing as jobMarket/finances below.
+    squadSheets: state.squad.sheets,
+    squadActiveSheetIndex: state.squad.activeSheetIndex,
+    squadNextSheetId: state.squad.nextSheetId,
     // M11 (config/settings.js): difficulty/currency/autosave/sim-detail —
     // plain JSON, no Date fields.
     settings: state.settings,
@@ -568,6 +575,9 @@ export function deserializeSave(saved) {
     calendarToday: fromEpochDay(saved.calendarToday),
     players: saved.players.map(deserializePlayer),
     lineup: saved.lineup,
+    squadSheets: saved.squadSheets || null,
+    squadActiveSheetIndex: saved.squadActiveSheetIndex ?? 0,
+    squadNextSheetId: saved.squadNextSheetId || null,
     settings: saved.settings || null,
     squadTacticId: saved.squadTacticId || null,
     squadCaptainId: saved.squadCaptainId ?? null,

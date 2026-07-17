@@ -9,7 +9,7 @@
 //   index.html?screen=squad     (query-string form, matches the M0 checklist)
 // Same for overlays: #email/#news or ?screen=email/?screen=news.
 
-import { SCREENS } from "./store.js";
+import { SCREENS, teamSheetFocusableSlots } from "./store.js";
 import {
   renderAll, renderCentral, renderSeason, renderOffice, renderTransfers, renderSquad,
   renderEmailTabs, renderEmailList, renderEmailDetail,
@@ -30,6 +30,7 @@ import { renderMyCareer } from "../ui/mycareerui.js";
 import { renderSquadReport, renderSquadRanking } from "../ui/squadreportui.js";
 import { renderKitNumbers } from "../ui/kitnumbersui.js";
 import { renderTactics } from "../ui/tacticsui.js";
+import { renderTeamSheet } from "../ui/teamsheetui.js";
 import { renderTeamStats, renderPlayerStats } from "../ui/statsui.js";
 import { renderSettings } from "../ui/settingsui.js";
 import { renderSaves } from "../ui/savesui.js";
@@ -100,6 +101,11 @@ export function initRouter(store) {
   const footerTactics = document.getElementById("footer-tactics");
   const tacticsOverlay = document.getElementById("tactics-overlay");
   const tacticsBodyEl = document.getElementById("tactics-body");
+  const footerTeamsheet = document.getElementById("footer-teamsheet");
+  const teamsheetOverlay = document.getElementById("teamsheet-overlay");
+  const sqtsTabbarEl = document.getElementById("sqts-tabbar");
+  const sqtsBodyEl = document.getElementById("sqts-body");
+  const sqSheetEl = document.querySelector(".sq-sheet");
   const footerTeamstats = document.getElementById("footer-teamstats");
   const teamstatsOverlay = document.getElementById("teamstats-overlay");
   const tsBodyEl = document.getElementById("ts-body");
@@ -212,6 +218,14 @@ export function initRouter(store) {
       // the Squad screen's pitch to reflect the new "C" badge (same
       // "refresh the screen underneath on close" precedent as natlsquad).
       else renderSquad(store.state);
+    } else if (name === "teamsheet") {
+      teamsheetOverlay.classList.toggle("is-active", open);
+      footerTeamsheet.hidden = !open;
+      if (open) renderTeamSheet(store.state);
+      // Backing out: swaps made inside Team Sheet must show up on the Squad
+      // hub tile's own pitch preview (same "refresh the screen underneath on
+      // close" precedent as tactics/natlsquad above).
+      else renderSquad(store.state);
     } else if (name === "teamstats") {
       teamstatsOverlay.classList.toggle("is-active", open);
       footerTeamstats.hidden = !open;
@@ -296,6 +310,7 @@ export function initRouter(store) {
   store.on("squadreport", () => renderSquadReport(store.state));
   store.on("kitnumbers", () => renderKitNumbers(store.state));
   store.on("tactics", () => renderTactics(store.state));
+  store.on("teamsheet", () => renderTeamSheet(store.state));
   store.on("teamstats", () => renderTeamStats(store.state));
   store.on("playerstats", () => renderPlayerStats(store.state));
   store.on("settings", () => renderSettings(store.state));
@@ -521,6 +536,57 @@ export function initRouter(store) {
     if (el.dataset.action === "prev-page") store.tacticsChangePage(-1);
     else if (el.dataset.action === "next-page") store.tacticsChangePage(1);
     else if (el.dataset.action === "back") store.closeOverlay();
+  });
+
+  // F1 (fable-plans/plan2.md): Squad hub's team-sheet tile — delegated
+  // (not the generic [data-open] sweep) because ui/render.js's
+  // renderSheetCarousel regenerates .sq-sheet .cpages' children on every
+  // render (dynamic 1-6 sheet count), which would orphan any listener
+  // attached to those nodes directly; .sq-sheet itself is never replaced.
+  sqSheetEl.addEventListener("click", (e) => {
+    const createEl = e.target.closest('[data-action="create-team-sheet"]');
+    if (createEl) { store.createTeamSheet(); return; }
+    const pageEl = e.target.closest("[data-sheet-index]");
+    if (pageEl) store.openTeamSheet(Number(pageEl.dataset.sheetIndex));
+  });
+
+  // F1: SQUAD/FORMATIONS/TACTICS/ROLES sub-tab bar — only SQUAD renders a
+  // body this milestone (ui/teamsheetui.js's own header explains why).
+  sqtsTabbarEl.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-tab]");
+    if (el) store.teamSheetSetTab(el.dataset.tab);
+  });
+
+  // F1: pitch jerseys + bench/reserve/suggested-subs cards + the drawer bar.
+  // Hover moves focus only (mouseover bubbles, unlike mouseenter, so this
+  // works delegated against content ui/teamsheetui.js rebuilds wholesale
+  // every render); a click both focuses *and* activates (X) in one gesture —
+  // see core/store.js's teamSheetActivateSlot for why that's the right
+  // mouse-equivalent of "move the cursor here, then press X".
+  sqtsBodyEl.addEventListener("mouseover", (e) => {
+    const el = e.target.closest("[data-zone]");
+    if (el) store.teamSheetFocus(el.dataset.zone, Number(el.dataset.index));
+  });
+  sqtsBodyEl.addEventListener("click", (e) => {
+    const slotEl = e.target.closest("[data-zone]");
+    if (slotEl) { store.teamSheetActivateSlot(slotEl.dataset.zone, Number(slotEl.dataset.index)); return; }
+    const drawerEl = e.target.closest('[data-action="toggle-drawer"]');
+    if (drawerEl) { store.teamSheetToggleDrawer(); return; }
+    // (RS) attribute-panel page cycling has no on-pitch button — clicking
+    // the pager dots themselves is this screen's mouse equivalent (full
+    // mouse support per plan2.md §A4).
+    if (e.target.closest(".fx-attrpanel__pagedots")) store.teamSheetChangeAttrPage(1);
+  });
+  footerTeamsheet.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    switch (el.dataset.action) {
+      case "advance": store.advanceOneDay(); break;
+      case "back": store.teamSheetBack(); break;
+      case "suggested-subs": store.teamSheetSuggestedSubs(); break;
+      case "select-player": store.teamSheetSelectPlayer(); break;
+      case "change-view": store.teamSheetChangeView(1); break;
+    }
   });
 
   // Team Stats (M11): league nav buttons cycle the whole screen; a row in
@@ -938,6 +1004,30 @@ export function initRouter(store) {
       if (e.key === "ArrowUp" && roster.length) { store.selectContractPlayer(roster[Math.max(0, idx - 1)].id); return; }
       if (e.key === "Enter") { store.submitContractOffer(); return; }
     }
+    // F1 (fable-plans/plan2.md): Team Sheet's SQUAD tab. LS/RS have no
+    // keyboard equivalent yet in this codebase (only LB/RB/LT/RT do — see
+    // §A4) — V (mnemonic: "view", plan2.md's own choice for Change View)
+    // and R ("right stick", the attribute panel's own pager) are this
+    // milestone's alternates, logged in plan2-decisions.md F1. Arrow keys
+    // walk teamSheetFocusableSlots' flat list rather than the pitch's x/y
+    // layout — good enough for "keyboard support exists", not pixel-precise
+    // 2D navigation (full mouse support covers that; see §A4).
+    if (store.state.ui.overlay === "teamsheet" && store.state.ui.teamSheet.tab === "squad") {
+      const key = e.key;
+      if (key === "v" || key === "V") { store.teamSheetChangeView(1); return; }
+      if (key === "r" || key === "R") { store.teamSheetChangeAttrPage(1); return; }
+      if (key === "y" || key === "Y") { store.teamSheetSuggestedSubs(); return; }
+      if (key === "x" || key === "X" || key === "Enter") { store.teamSheetSelectPlayer(); return; }
+      if (key === "ArrowUp" || key === "ArrowDown" || key === "ArrowLeft" || key === "ArrowRight") {
+        const slots = teamSheetFocusableSlots(store.state);
+        const focus = store.state.ui.teamSheet.focus;
+        const idx = slots.findIndex((s) => s.zone === focus.zone && s.index === focus.index);
+        const dir = (key === "ArrowUp" || key === "ArrowLeft") ? -1 : 1;
+        const next = slots[((idx === -1 ? 0 : idx) + dir + slots.length) % slots.length];
+        if (next) store.teamSheetFocus(next.zone, next.index);
+        return;
+      }
+    }
     switch (e.key) {
       case "ArrowLeft": store.page(-1); break;
       case "ArrowRight": store.page(1); break;
@@ -954,6 +1044,9 @@ export function initRouter(store) {
         // (see engine/negotiation.js's cancelNegotiation) — a plain
         // closeOverlay() would leave a stale in-flight deal behind.
         else if (store.state.ui.overlay === "negotiation") store.closeNegotiation();
+        // Team Sheet: (B)/Esc steps back through its own nested modes
+        // (suggested subs -> armed selection -> open drawer) before closing.
+        else if (store.state.ui.overlay === "teamsheet") store.teamSheetBack();
         else if (store.state.ui.overlay) store.closeOverlay();
         break;
     }

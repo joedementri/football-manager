@@ -136,6 +136,31 @@ export function pickBestXI(players) {
   });
 }
 
+const BENCH_SIZE = 7;
+
+/** fable-plans/plan2.md F1: a team sheet's default 7-slot substitutes bench
+ * — the squad's next-best players (by overall) once the starting XI is
+ * picked. Reserves aren't a separate persisted list (F1's Team Sheet build
+ * note): everyone left in the roster after XI + bench is a reserve, so no
+ * bench slot ever needs to stay empty for a 24-man squad (11 + 7 = 18 <= 24).
+ * Exported for reuse by core/store.js (initial sheet + createTeamSheet). */
+export function pickDefaultBench(players, lineup) {
+  const xiIds = new Set(lineup.map((l) => l.playerId));
+  return [...players]
+    .filter((p) => !xiIds.has(p.id))
+    .sort((a, b) => b.overall - a.overall)
+    .slice(0, BENCH_SIZE)
+    .map((p) => p.id);
+}
+
+/** Every squad player not named in the XI or the bench — the Team Sheet's
+ * Reserves grid (fable-plans/plan2.md F1.3). Order follows `players`' own
+ * order (state.squad.roster is already sorted by overall descending). */
+export function reservesOf(players, lineup, bench) {
+  const takenIds = new Set([...lineup.map((l) => l.playerId), ...bench.filter((id) => id != null)]);
+  return players.filter((p) => !takenIds.has(p.id));
+}
+
 /** M11 Player Roles (ui/tacticsui.js): re-marks which lineup entry carries
  * the captain's armband — called by core/store.js's setCaptain whenever the
  * user changes captaincy. A captain who isn't currently in the starting XI

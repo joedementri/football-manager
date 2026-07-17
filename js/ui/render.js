@@ -19,6 +19,7 @@ import { squadWageBill } from "../engine/wage.js";
 import {
   primaryMission, missionNewCount, missionUpdateCount, missionTitle, missionTagsLabel,
 } from "../engine/gtn.js";
+import { rebuildCarousel } from "../carousel.js";
 
 function flagSpan(code) {
   return `<span class="flag" data-flag="${code}"></span>`;
@@ -169,9 +170,8 @@ export function renderCentral(state) {
 }
 
 /* ----------------------------- Squad -------------------------------------- */
-export function renderSquad(state) {
-  const pitch = document.querySelector(".sq-sheet__formation .pitch");
-  const jerseysHtml = state.squad.lineup.map((p) => {
+function sheetPitchHtml(sheet) {
+  const jerseysHtml = sheet.lineup.map((p) => {
     const gkClass = p.gk ? " gk" : "";
     const cap = p.captain ? `<span class="jersey__cap">C</span>` : "";
     return (
@@ -185,11 +185,45 @@ export function renderSquad(state) {
       `</div>`
     );
   }).join("");
-  // pitch.pitch__surface must survive the rewrite — it's the grass backdrop, not player data.
-  pitch.innerHTML = `<div class="pitch__surface"></div>${jerseysHtml}`;
+  return (
+    `<div class="pitch"><div class="pitch__surface"></div>${jerseysHtml}</div>` +
+    `<div class="sq-sheet__title">${sheet.name}</div>` +
+    `<div class="sq-sheet__shape"><b>${sheet.formationLabel}</b><span>${sheet.formationStyle}</span></div>`
+  );
+}
 
-  document.querySelector(".sq-sheet__shape b").textContent = state.squad.formationLabel;
-  document.querySelector(".sq-sheet__shape span").textContent = state.squad.formationStyle;
+/** F1 (fable-plans/plan2.md): the Squad hub's team-sheet tile — a 1-6 page
+ * carousel (one page per state.squad.sheets entry + a "create new" page
+ * while under the 6-slot cap), matching FIFA15_SQUAD_SCREEN*.png's dots and
+ * "SELECT TO CREATE A NEW TEAM SHEET" page. Rebuilt from scratch every
+ * render (sheet count changes at runtime, unlike every other carousel in
+ * this codebase) — js/carousel.js's rebuildCarousel re-wires paging/dots
+ * against the fresh page list each time. */
+function renderSheetCarousel(state) {
+  const root = document.querySelector(".sq-sheet");
+  const sheets = state.squad.sheets;
+  const pages = sheets.map((sheet, i) => (
+    `<div class="cpage sq-sheet__formation${i === state.squad.activeSheetIndex ? " is-active" : ""}" data-sheet-index="${i}">` +
+      sheetPitchHtml(sheet) +
+    `</div>`
+  ));
+  if (sheets.length < 6) {
+    pages.push(
+      `<div class="cpage sq-sheet__create" data-action="create-team-sheet">` +
+        `<div class="pitch pitch--ghost"><div class="pitch__surface"></div></div>` +
+        `<div class="create-cta">` +
+          `<span class="plus"><svg class="icon"><use href="#ic-plus"></use></svg></span>` +
+          `<span class="cta-text">Select To<br>Create A New<br>Team Sheet</span>` +
+        `</div>` +
+      `</div>`
+    );
+  }
+  root.querySelector(".cpages").innerHTML = pages.join("");
+  rebuildCarousel(root);
+}
+
+export function renderSquad(state) {
+  renderSheetCarousel(state);
 
   document.querySelector(".sq-club__crest use").setAttribute("href", `#crest-${state.club.id}`);
   document.querySelector(".sq-club__name").textContent = state.club.name;

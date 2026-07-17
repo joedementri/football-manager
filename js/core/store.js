@@ -24,7 +24,9 @@ import { buildCupState } from "../engine/comps/cup.js";
 import { createInitialContinentalState } from "../engine/comps/continental.js";
 import { createInitialIntlState, intlFixtureOnDate } from "../engine/comps/intl.js";
 import * as ntJobsEngine from "../engine/ntjobs.js";
-import { pickBestXI, applyCaptainToLineup } from "../gen/squad.js";
+import { pickBestXI, applyCaptainToLineup, pickDefaultBench, reservesOf } from "../gen/squad.js";
+import { positionInfo } from "../config/positions.js";
+import { isSimilarPosition, suggestedSubScore } from "../config/managerai.js";
 import { applyBoardReview, applyMidSeasonGrowth, rolloverSeason } from "../engine/season.js";
 import { acceptJob } from "../engine/jobs.js";
 import { computeWageCeiling } from "../engine/wage.js";
@@ -347,6 +349,28 @@ function createUiDefaults(today) {
     // Career's page state above (the real data lives on state.squad).
     tactics: { page: "tactics" },
 
+    // F1 (ui/teamsheetui.js): the Team Sheet view's own sub-tab bar (`tab` —
+    // only "squad" has real content this milestone; FORMATIONS/TACTICS/
+    // ROLES render the bar entry but no body, per plan2.md F1's own scope
+    // note) plus the SQUAD tab's interaction state: `changeView` (0
+    // position/OVR, 1 energy/form, 2 positional colouring — cycled by LS/V),
+    // `drawer` ('collapsed'|'substitutes'|'reserves'|'suggested'), `focus`
+    // (the currently-viewed slot — `{zone:'xi'|'bench'|'reserve', index}` —
+    // teal ring, right panel follows it), `armed` (the first-picked slot of
+    // an in-progress (X) swap, or null), `suggested` (Y's ranked-candidates
+    // drawer content, or null) and `attrPage` (right panel's §B4 page index).
+    // All purely presentational — the real data (sheets/lineup/bench) lives
+    // on state.squad, same footing as every other overlay's `ui.*` slice.
+    teamSheet: {
+      tab: "squad",
+      changeView: 0,
+      drawer: "collapsed",
+      focus: { zone: "xi", index: 0 },
+      armed: null,
+      suggested: null,
+      attrPage: 0,
+    },
+
     // M11 (ui/statsui.js): Season ▸ Team Stats — L1/R1 cycles `leagueIndex`
     // (into state.staticData.leagues); "select" view lists that league's
     // clubs, "team" view shows the chosen club's individual player stats
@@ -536,10 +560,21 @@ export function createCareerState({ managerName, club, league, world, seasonStar
     },
 
     players: world.players,
+    // F1: `lineup`/`bench`/`formationLabel`/`formationStyle` always mirror
+    // the active entry of `sheets` (same array/object references, not
+    // copies — see setActiveSheet below) so every pre-F1 reader of
+    // state.squad.lineup (engine/sim/lineup.js's resolveUserXI,
+    // gen/squad.js's applyCaptainToLineup, ui/render.js's renderSquad hub
+    // preview) keeps working unchanged; only Team Sheet-aware code needs to
+    // know `sheets`/`activeSheetIndex` exist at all.
     squad: {
       formationLabel: "4-4-2",
       formationStyle: "Flat",
       lineup: world.lineupsByClub.get(club.id),
+      bench: [],
+      sheets: [],
+      activeSheetIndex: 0,
+      nextSheetId: 1,
       // M11 (config/tactics.js, ui/tacticsui.js): the user's active in-match
       // tactic preset — real effect wired into engine/sim/core.js's
       // teamStrength() via events.js/quick.js's own call sites.
@@ -593,6 +628,23 @@ export function createCareerState({ managerName, club, league, world, seasonStar
   for (const p of built.squad.roster) {
     p.scouting = { level: 3, ovrRange: [p.overall, p.overall], potRange: [p.potential, p.potential] };
   }
+
+  // F1: the "Default Team Sheet" — wraps the already-generated XI (M2) with
+  // a fresh 7-man bench (gen/squad.js's pickDefaultBench). `lineup`/`bench`
+  // on the sheet and on `built.squad` are the *same* array references (not
+  // copies), so in-place edits (Team Sheet swaps) made through either one
+  // are visible through the other with no extra sync step.
+  built.squad.bench = pickDefaultBench(built.squad.roster, built.squad.lineup);
+  built.squad.sheets = [{
+    id: built.squad.nextSheetId++,
+    name: "Default Team Sheet",
+    formationLabel: built.squad.formationLabel,
+    formationStyle: built.squad.formationStyle,
+    lineup: built.squad.lineup,
+    bench: built.squad.bench,
+  }];
+  built.squad.activeSheetIndex = 0;
+
   gtnEngine.createInitialGtnState(built);
   academyEngine.createInitialAcademyState(built);
   // M10: continental clubs (Champions Cup/Trophy/South American Cup) —
@@ -644,6 +696,10 @@ export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
       formationLabel: "4-4-2",
       formationStyle: "Flat",
       lineup: saved.lineup,
+      bench: [],
+      sheets: [],
+      activeSheetIndex: 0,
+      nextSheetId: 1,
       tacticId: saved.squadTacticId || DEFAULT_TACTIC_ID,
       captainId: saved.squadCaptainId ?? null,
       penaltyTakerId: saved.squadPenaltyTakerId ?? null,
@@ -672,6 +728,33 @@ export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
     clubTransferBudgets: saved.clubTransferBudgets,
   });
 
+  // F1: a pre-F1 save never had state.squad.sheets at all — same "fresh
+  // default for an older save" footing as gtn/academy below (no version
+  // bump/hard-fail per plan2.md §A4: this project's established convention,
+  // consistently used since M6, is a graceful per-field fallback rather than
+  // a save-format break). `saved.squadSheets`'s lineup entries reference the
+  // same player ids as `built.squad.lineup` — no separate rehydration needed.
+  if (saved.squadSheets && saved.squadSheets.length) {
+    built.squad.sheets = saved.squadSheets;
+    built.squad.activeSheetIndex = Math.min(saved.squadActiveSheetIndex ?? 0, saved.squadSheets.length - 1);
+    built.squad.nextSheetId = saved.squadNextSheetId || saved.squadSheets.length + 1;
+  } else {
+    built.squad.bench = pickDefaultBench(built.squad.roster, built.squad.lineup);
+    built.squad.sheets = [{
+      id: built.squad.nextSheetId++,
+      name: "Default Team Sheet",
+      formationLabel: built.squad.formationLabel,
+      formationStyle: built.squad.formationStyle,
+      lineup: built.squad.lineup,
+      bench: built.squad.bench,
+    }];
+    built.squad.activeSheetIndex = 0;
+  }
+  built.squad.lineup = built.squad.sheets[built.squad.activeSheetIndex].lineup;
+  built.squad.bench = built.squad.sheets[built.squad.activeSheetIndex].bench;
+  built.squad.formationLabel = built.squad.sheets[built.squad.activeSheetIndex].formationLabel;
+  built.squad.formationStyle = built.squad.sheets[built.squad.activeSheetIndex].formationStyle;
+
   // M8: a pre-M8 save never had state.gtn at all — same "fresh default for
   // an older save" footing as jobMarket's own `|| { vacancies: [] }` above.
   built.gtn = saved.gtn || gtnEngine.createInitialGtnState(built);
@@ -684,6 +767,114 @@ export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
   setDisplayCurrency(built.settings.currency); // M11: core/format.js's money() default
 
   return built;
+}
+
+/* ----- F1 (ui/teamsheetui.js): Team Sheet slot addressing -----------------
+ * A "slot" is `{zone, index}` — zone 'xi' indexes state.squad.lineup (11
+ * entries, always filled), 'bench' indexes state.squad.bench (up to 7,
+ * playerId or null), 'reserve' indexes the *derived* reservesOf() list (no
+ * persisted array — see gen/squad.js's own header for why). Every mutator
+ * below reads/writes a slot only through these helpers, so the swap logic
+ * doesn't need 6 special cases for XI/bench/reserve combinations. ------- */
+
+// Exported (like emailsForTab above) so ui/teamsheetui.js's pure renderer
+// can address the exact same slots the mutators below do, without
+// duplicating the XI/bench/reserve addressing scheme.
+export function teamSheetReserves(state) {
+  const squad = state.squad;
+  return reservesOf(squad.roster, squad.lineup, squad.bench);
+}
+
+export function teamSheetSlotPlayerId(state, slot) {
+  const squad = state.squad;
+  if (slot.zone === "xi") return squad.lineup[slot.index] ? squad.lineup[slot.index].playerId : null;
+  if (slot.zone === "bench") return squad.bench[slot.index] ?? null;
+  if (slot.zone === "reserve") {
+    const p = teamSheetReserves(state)[slot.index];
+    return p ? p.id : null;
+  }
+  return null;
+}
+
+export function teamSheetSlotPlayer(state, slot) {
+  const id = teamSheetSlotPlayerId(state, slot);
+  return id != null ? state.playersById.get(id) : null;
+}
+
+/** Every slot keyboard arrow-navigation can currently reach: the 11 XI
+ * slots, always, plus whatever the bottom drawer has open (Substitutes'
+ * filled bench slots, the Reserves grid, or Suggested Subs' ranked
+ * candidates) — core/router.js's keydown handler walks this flat list so
+ * arrow keys don't need to know the pitch's x/y layout. */
+export function teamSheetFocusableSlots(state) {
+  const squad = state.squad;
+  const ts = state.ui.teamSheet;
+  const slots = squad.lineup.map((_, i) => ({ zone: "xi", index: i }));
+  if (ts.drawer === "substitutes") {
+    squad.bench.forEach((id, i) => { if (id != null) slots.push({ zone: "bench", index: i }); });
+  } else if (ts.drawer === "reserves") {
+    teamSheetReserves(state).forEach((_, i) => slots.push({ zone: "reserve", index: i }));
+  } else if (ts.drawer === "suggested" && ts.suggested) {
+    const reserves = teamSheetReserves(state);
+    for (const id of ts.suggested.candidateIds) {
+      const benchIdx = squad.bench.indexOf(id);
+      if (benchIdx !== -1) { slots.push({ zone: "bench", index: benchIdx }); continue; }
+      const reserveIdx = reserves.findIndex((p) => p.id === id);
+      if (reserveIdx !== -1) slots.push({ zone: "reserve", index: reserveIdx });
+    }
+  }
+  return slots;
+}
+
+function teamSheetWriteSlot(state, slot, playerId) {
+  const squad = state.squad;
+  if (slot.zone === "xi") {
+    const entry = squad.lineup[slot.index];
+    const player = state.playersById.get(playerId);
+    entry.playerId = playerId;
+    entry.name = player.commonName;
+    entry.rating = player.overall;
+  } else if (slot.zone === "bench") {
+    squad.bench[slot.index] = playerId;
+  }
+  // 'reserve' zone has no array to write — vacating/filling it is implicit,
+  // see teamSheetSwap's own header.
+}
+
+function sameSlot(a, b) {
+  return !!a && !!b && a.zone === b.zone && a.index === b.index;
+}
+
+/**
+ * Swaps the players at slots `a` and `b` (fable-plans/plan2.md F1.4: "second
+ * select => swap positions/slots (XI<->XI, XI<->bench, bench<->reserve)").
+ * 'reserve' zone slots have no backing array (gen/squad.js's reservesOf is
+ * derived, not persisted) — a reserve "slot" only ever needs *reading*
+ * (whoever's being pulled out of it), since a player no longer named in the
+ * XI or bench is, by definition, a reserve again; reserve<->reserve is a
+ * genuine no-op (nothing is persisted about reserve order).
+ */
+function teamSheetSwap(state, a, b) {
+  if (a.zone === "reserve" && b.zone === "reserve") return;
+  const aId = teamSheetSlotPlayerId(state, a);
+  const bId = teamSheetSlotPlayerId(state, b);
+  if (aId == null || bId == null || aId === bId) return;
+  if (a.zone !== "reserve") teamSheetWriteSlot(state, a, bId);
+  if (b.zone !== "reserve") teamSheetWriteSlot(state, b, aId);
+  applyCaptainToLineup(state.squad.lineup, state.squad.captainId);
+}
+
+/** Locates whichever slot currently holds `playerId` (bench first, then
+ * reserves — Suggested Subs' candidate pool never includes XI players, see
+ * Store.teamSheetSuggestedSubs). Used to auto-focus the top-ranked
+ * candidate once (Y) computes the list. */
+function teamSheetLocate(state, playerId) {
+  const squad = state.squad;
+  const benchIdx = squad.bench.indexOf(playerId);
+  if (benchIdx !== -1) return { zone: "bench", index: benchIdx };
+  const reserveIdx = teamSheetReserves(state).findIndex((p) => p.id === playerId);
+  if (reserveIdx !== -1) return { zone: "reserve", index: reserveIdx };
+  return null;
 }
 
 /**
@@ -1386,6 +1577,215 @@ export class Store {
   setPenaltyTaker(playerId) {
     this.state.squad.penaltyTakerId = playerId;
     this.emit("tactics", null);
+  }
+
+  /* ----- F1 (ui/teamsheetui.js): Team Sheet view (Squad hub's team-sheet
+   * tile) — the SQUAD tab only; FORMATIONS/TACTICS/ROLES render the sub-tab
+   * bar entry but no body until F2. ----- */
+
+  /** Opens the Team Sheet view, optionally switching the active sheet first
+   * — the hub tile's per-sheet carousel pages each carry their own
+   * sheetIndex, and clicking one both views *and* activates it (editing a
+   * sheet you're not looking at wouldn't make sense; see plan2-decisions.md
+   * F1 for why there's no separate "set active" step). */
+  openTeamSheet(sheetIndex) {
+    if (sheetIndex != null) this.setActiveSheet(sheetIndex);
+    this.state.ui.teamSheet = {
+      tab: "squad",
+      changeView: 0,
+      drawer: "collapsed",
+      focus: { zone: "xi", index: 0 },
+      armed: null,
+      suggested: null,
+      attrPage: 0,
+    };
+    this.openOverlay("teamsheet");
+  }
+
+  /** Makes `index` the sheet Team Sheet edits and matches use (engine/sim/
+   * lineup.js's resolveUserXI reads state.squad.lineup directly) — repoints
+   * the mirror fields at the sheet's own arrays, no copying. */
+  setActiveSheet(index) {
+    const squad = this.state.squad;
+    if (index < 0 || index >= squad.sheets.length) return;
+    squad.activeSheetIndex = index;
+    const sheet = squad.sheets[index];
+    squad.lineup = sheet.lineup;
+    squad.bench = sheet.bench;
+    squad.formationLabel = sheet.formationLabel;
+    squad.formationStyle = sheet.formationStyle;
+  }
+
+  /** Hub tile's "Select To Create A New Team Sheet" page — clones the
+   * active sheet (formation + XI + bench), caps at 6 (plan2.md F1.7's
+   * "6-slot carousel"), and immediately opens+activates the new copy. */
+  createTeamSheet() {
+    const squad = this.state.squad;
+    if (squad.sheets.length >= 6) return;
+    const active = squad.sheets[squad.activeSheetIndex];
+    const clone = {
+      id: squad.nextSheetId++,
+      name: `Team Sheet ${squad.sheets.length + 1}`,
+      formationLabel: active.formationLabel,
+      formationStyle: active.formationStyle,
+      lineup: active.lineup.map((l) => ({ ...l })),
+      bench: [...active.bench],
+    };
+    squad.sheets.push(clone);
+    this.openTeamSheet(squad.sheets.length - 1);
+  }
+
+  teamSheetSetTab(tab) {
+    if (["squad", "formations", "tactics", "roles"].indexOf(tab) === -1) return;
+    this.state.ui.teamSheet.tab = tab;
+    this.emit("teamsheet", null);
+  }
+
+  /** LS / key V: cycles the pitch's 3 jersey-caption modes (plan2.md F1.2). */
+  teamSheetChangeView(dir = 1) {
+    const ts = this.state.ui.teamSheet;
+    if (ts.tab !== "squad") return;
+    ts.changeView = (ts.changeView + dir + 3) % 3;
+    this.emit("teamsheet", null);
+  }
+
+  /** Moves the teal "currently-viewed" ring — mouse hover and keyboard
+   * arrow-navigation both call this (a swap only ever executes from
+   * teamSheetSelectPlayer, i.e. an explicit (X)/click — see that method's
+   * own header). Doesn't touch `armed`: browsing around while a swap is in
+   * progress is just looking, per every SELECT_PLAYER* pic. */
+  teamSheetFocus(zone, index) {
+    const ts = this.state.ui.teamSheet;
+    if (ts.tab !== "squad") return;
+    if (sameSlot(ts.focus, { zone, index })) return; // no-op: renderTeamSheet replaces
+    // #sqts-body's innerHTML on every "teamsheet" emit, which would put a
+    // freshly-created element under a *stationary* mouse pointer — the
+    // browser fires a new mouseover for it, re-triggering this method, in an
+    // infinite loop. Skipping the redundant emit here is what breaks it.
+    if (zone !== "xi" && teamSheetSlotPlayerId(this.state, { zone, index }) == null) return;
+    ts.focus = { zone, index };
+    this.emit("teamsheet", null);
+  }
+
+  /**
+   * (X) Select Player: first press on a filled slot arms it (teal ring,
+   * matches ms_TEAM_SHEET_VIEW_SELECT_PLAYER.png); pressing the same slot
+   * again cancels; pressing a *different* slot swaps the two
+   * (teamSheetSwap) and clears the armed state. No-op on an empty slot
+   * (nothing to arm) or while a non-SQUAD tab is showing.
+   */
+  teamSheetSelectPlayer() {
+    const ts = this.state.ui.teamSheet;
+    if (ts.tab !== "squad") return;
+    if (!ts.armed) {
+      if (teamSheetSlotPlayerId(this.state, ts.focus) == null) return;
+      ts.armed = { ...ts.focus };
+      this.emit("teamsheet", null);
+      return;
+    }
+    if (sameSlot(ts.armed, ts.focus)) {
+      ts.armed = null;
+      if (ts.suggested) { ts.suggested = null; ts.drawer = "substitutes"; }
+      this.emit("teamsheet", null);
+      return;
+    }
+    teamSheetSwap(this.state, ts.armed, ts.focus);
+    ts.armed = null;
+    if (ts.suggested) { ts.suggested = null; ts.drawer = "substitutes"; }
+    this.emit("teamsheet", null);
+  }
+
+  /** Mouse equivalent of "move the cursor here, then press (X)" — hover
+   * (teamSheetFocus) already tracks the pointer continuously, so a click
+   * both focuses and activates in the one gesture real hardware needs two
+   * inputs for. */
+  teamSheetActivateSlot(zone, index) {
+    const ts = this.state.ui.teamSheet;
+    if (ts.tab !== "squad") return;
+    if (teamSheetSlotPlayerId(this.state, { zone, index }) == null) return;
+    ts.focus = { zone, index };
+    this.teamSheetSelectPlayer();
+  }
+
+  /** Bottom drawer: collapsed -> Substitutes -> Reserves -> collapsed
+   * (plan2.md F1.3). No-op while the Suggested Subs list is showing — (B)
+   * is the way out of that (teamSheetBack), not the drawer bar. */
+  teamSheetToggleDrawer() {
+    const ts = this.state.ui.teamSheet;
+    if (ts.tab !== "squad" || ts.drawer === "suggested") return;
+    const order = ["collapsed", "substitutes", "reserves"];
+    ts.drawer = order[(order.indexOf(ts.drawer) + 1) % order.length];
+    this.emit("teamsheet", null);
+  }
+
+  /**
+   * (Y) Suggested Subs: arms the focused XI slot (same visual state as a
+   * manual (X) pick) and swaps the drawer to a ranked candidate list — same-
+   * position first, then altPositions, then best OVR*fitness*form
+   * (js/config/managerai.js, ported from managerai.ini's
+   * [MAI_TOTAL_SCORE_1ST_11]) — auto-focusing the top candidate exactly like
+   * ms_TEAM_SHEET_VIEW_SUGGESTED_SUBS.png (Westcarr pre-highlighted, gold
+   * ring + swap icon). Empty pool -> ms_..._NO_SIMILAR.png's "No similar
+   * players available." (armed stays set so (X)/(B) still behave sensibly).
+   */
+  teamSheetSuggestedSubs() {
+    const ts = this.state.ui.teamSheet;
+    if (ts.tab !== "squad" || ts.focus.zone !== "xi") return;
+    const slotEntry = this.state.squad.lineup[ts.focus.index];
+    if (!slotEntry) return;
+    const squad = this.state.squad;
+    const pool = [...squad.bench, ...teamSheetReserves(this.state).map((p) => p.id)]
+      .filter((id) => id != null)
+      .map((id) => this.state.playersById.get(id));
+    const candidates = pool
+      .filter((p) => isSimilarPosition(p, slotEntry.pos))
+      .sort((a, b) => suggestedSubScore(b, slotEntry.pos) - suggestedSubScore(a, slotEntry.pos));
+
+    ts.armed = { ...ts.focus };
+    ts.suggested = { forZone: ts.focus.zone, forIndex: ts.focus.index, candidateIds: candidates.map((p) => p.id) };
+    ts.drawer = "suggested";
+    if (candidates.length) {
+      const loc = teamSheetLocate(this.state, candidates[0].id);
+      if (loc) ts.focus = loc;
+    }
+    this.emit("teamsheet", null);
+  }
+
+  /** (B)/Esc — steps back through Team Sheet's own nested modes (suggested
+   * subs -> armed selection -> open drawer) before finally closing the
+   * overlay, same "cancel the innermost thing first" convention as
+   * negotiation/matchday's own closeX() overrides. */
+  teamSheetBack() {
+    const ts = this.state.ui.teamSheet;
+    if (ts.drawer === "suggested") {
+      ts.suggested = null;
+      ts.armed = null;
+      ts.drawer = "substitutes";
+      this.emit("teamsheet", null);
+      return;
+    }
+    if (ts.armed) {
+      ts.armed = null;
+      this.emit("teamsheet", null);
+      return;
+    }
+    if (ts.drawer !== "collapsed") {
+      ts.drawer = "collapsed";
+      this.emit("teamsheet", null);
+      return;
+    }
+    this.closeOverlay();
+  }
+
+  /** (RS) attribute-panel page cycling — GK slots get a 5th "GK Attributes"
+   * page ahead of the other 4 (plan2.md §B4). */
+  teamSheetChangeAttrPage(dir = 1) {
+    const ts = this.state.ui.teamSheet;
+    if (ts.tab !== "squad") return;
+    const player = teamSheetSlotPlayer(this.state, ts.focus);
+    const count = player && positionInfo(player.position).area === "GK" ? 5 : 4;
+    ts.attrPage = (ts.attrPage + dir + count) % count;
+    this.emit("teamsheet", null);
   }
 
   /* ----- M11 (ui/statsui.js): Season ▸ Team Stats / Player Stats ----- */

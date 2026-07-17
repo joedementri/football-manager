@@ -31,7 +31,9 @@ import { applyGrowthToWorld } from "../js/engine/growth.js";
 import { applyRetirementsAndRegens } from "../js/engine/retirement.js";
 import { buildCupState } from "../js/engine/comps/cup.js";
 import { acceptJob } from "../js/engine/jobs.js";
-import { Store, createCareerState, emailsForTab } from "../js/core/store.js";
+import {
+  Store, createCareerState, emailsForTab, teamSheetSlotPlayerId, teamSheetFocusableSlots,
+} from "../js/core/store.js";
 import { computeValue } from "../js/engine/value.js";
 import { computeWage, computeWageCeiling, squadWageBill } from "../js/engine/wage.js";
 import {
@@ -81,6 +83,9 @@ import { roundLabel, resolvePenaltyShootout } from "../js/engine/comps/knockoutu
 import { NT_JOB_REP_THRESHOLD, refreshNtJobMarket, acceptNtJob } from "../js/engine/ntjobs.js";
 import { attrBand } from "../js/ui/panelkit.js";
 import { isTransferWindowOpen } from "../js/config/calendar.js";
+import { attrPageDefs, formArrow, fitnessBand } from "../js/ui/teamsheetui.js";
+import { isSimilarPosition, suggestedSubScore, positionFitScore } from "../js/config/managerai.js";
+import { pickDefaultBench, reservesOf } from "../js/gen/squad.js";
 
 const groups = []; // [{ title, results: [{name, pass, detail}] }]
 let current = null;
@@ -1669,6 +1674,142 @@ async function run() {
     assert("archive tab returns only archived emails", emailsForTab(fakeState, "archive").length === 1 && emailsForTab(fakeState, "archive")[0].id === 2);
     assert("conversations tab is always empty (no backing feature)", emailsForTab(fakeState, "conversations").length === 0);
     assert("omitting the tab arg falls back to state.ui.emailTab", emailsForTab(fakeState).length === emailsForTab(fakeState, "inbox").length);
+  }
+
+  /* ---------------- F1 (fable-plans/plan2.md): Team Sheet view ---------------- */
+  group("js/config/managerai.js — Suggested Subs ranking (managerai.ini port)");
+  {
+    // Fixture data (plan2.md F1's own phrasing): a same-position, lower-
+    // overall candidate must outrank a wrong-position, higher-overall one —
+    // [MAI_PLAYER_POS_SCORE]'s NOT_PREFERRED_POS(-50) dominates the OVR_POS_
+    // BIAS(3.0)-weighted term even after a 20-point overall gap.
+    const slotPos = "LCB";
+    const samePosLowOvr = { position: "LCB", altPositions: [], overall: 60, form: 5, fitness: 100 };
+    const wrongPosHighOvr = { position: "ST", altPositions: [], overall: 80, form: 5, fitness: 100 };
+    assert("same-position fit score (35) beats wrong-position (-50)",
+      positionFitScore(samePosLowOvr, slotPos) > positionFitScore(wrongPosHighOvr, slotPos));
+    assert("Suggested Subs score: same-position 60 OVR outranks wrong-position 80 OVR",
+      suggestedSubScore(samePosLowOvr, slotPos) > suggestedSubScore(wrongPosHighOvr, slotPos));
+    assert("altPositions' 1st entry scores PREFERRED_POS_2 (30)",
+      positionFitScore({ position: "CB", altPositions: ["LCB"] }, "LCB") === 30);
+    assert("a non-matching, non-alt position is NOT_PREFERRED_POS (-50) -> not similar",
+      !isSimilarPosition(wrongPosHighOvr, slotPos));
+    assert("an exact-position match is similar", isSimilarPosition(samePosLowOvr, slotPos));
+  }
+
+  group("js/ui/teamsheetui.js — form-arrow + attribute-page-order pure fns");
+  {
+    assert("delta +8 or more -> up arrow", formArrow([80, 70, 70]) === "↑");
+    assert("delta +3..+7 -> up-right arrow", formArrow([75, 70, 70]) === "↗");
+    assert("delta within ±3 -> flat arrow", formArrow([71, 70, 70]) === "→");
+    assert("delta -4..-7 -> down-right arrow", formArrow([65, 70, 70]) === "↘");
+    assert("delta -8 or more -> down arrow", formArrow([60, 70, 70]) === "↓");
+    assert("fewer than 2 ratings -> flat arrow (no data)", formArrow([70]) === "→" && formArrow([]) === "→");
+
+    const gkPages = attrPageDefs({ position: "GK" });
+    const outfieldPages = attrPageDefs({ position: "ST" });
+    assert("GK's attribute panel shows GK Attributes first", gkPages[0].key === "gk" && gkPages.length === 5);
+    assert("outfield players get 4 pages, Physical first (no GK page)",
+      outfieldPages.length === 4 && outfieldPages[0].key === "physical");
+    assert("fitnessBand bands: 95->green, 80->yellow, 60->orange, 30->red",
+      fitnessBand({ fitness: 95, injury: null }) === "green" &&
+      fitnessBand({ fitness: 80, injury: null }) === "yellow" &&
+      fitnessBand({ fitness: 60, injury: null }) === "orange" &&
+      fitnessBand({ fitness: 30, injury: null }) === "red");
+    assert("an injured player is always red regardless of fitness%",
+      fitnessBand({ fitness: 100, injury: { daysLeft: 5 } }) === "red");
+  }
+
+  group("gen/squad.js — pickDefaultBench / reservesOf (F1 team sheet slots)");
+  {
+    const fixtureClub = world.clubs[0];
+    const fixtureSquad = world.squadsByClub.get(fixtureClub.id);
+    const fixtureLineup = pickBestAvailableXI(fixtureSquad).map((p) => ({ playerId: p.id }));
+    const bench = pickDefaultBench(fixtureSquad, fixtureLineup);
+    assert("pickDefaultBench returns exactly 7 ids for a 24-man squad", bench.length === 7);
+    assert("bench never repeats an XI player", bench.every((id) => !fixtureLineup.some((l) => l.playerId === id)));
+    assert("bench has no duplicate ids", new Set(bench).size === bench.length);
+    const reserves = reservesOf(fixtureSquad, fixtureLineup, bench);
+    assert("XI(11) + bench(7) + reserves fill the whole 24-man squad exactly once",
+      reserves.length === fixtureSquad.length - 11 - 7);
+    const reserveIds = new Set(reserves.map((p) => p.id));
+    assert("reserves never overlap the XI or bench", bench.every((id) => !reserveIds.has(id)) &&
+      fixtureLineup.every((l) => !reserveIds.has(l.playerId)));
+  }
+
+  group("core/store.js — Team Sheet slot swap + Suggested Subs (F1, live Store)");
+  {
+    const tsClub = world.clubs.find((c) => c.id !== "manchester-united") || world.clubs[1];
+    const tsLeague = world.leagues.find((l) => l.id === tsClub.leagueId);
+    const tsState = createCareerState({ managerName: "Test Manager", club: tsClub, league: tsLeague, world, seasonStartYear: 2014 });
+    const tsStore = new Store(tsState);
+
+    // XI<->bench swap preserves exactly 11 starters with no duplicates.
+    const beforeXI = tsStore.state.squad.lineup.map((l) => l.playerId);
+    const benchPlayerId = tsStore.state.squad.bench[0];
+    tsStore.teamSheetFocus("xi", 0);
+    tsStore.teamSheetSelectPlayer(); // arm slot 0
+    tsStore.teamSheetFocus("bench", 0);
+    tsStore.teamSheetSelectPlayer(); // swap
+    const afterXI = tsStore.state.squad.lineup.map((l) => l.playerId);
+    assert("XI<->bench swap keeps exactly 11 starters", afterXI.length === 11);
+    assert("XI<->bench swap produces no duplicate playerIds", new Set(afterXI).size === 11);
+    assert("the bench player moved into XI slot 0", afterXI[0] === benchPlayerId);
+    assert("the displaced XI[0] player moved onto the bench", tsStore.state.squad.bench[0] === beforeXI[0]);
+    assert("teamSheetSlotPlayerId agrees with the raw lineup array after the swap",
+      teamSheetSlotPlayerId(tsStore.state, { zone: "xi", index: 0 }) === benchPlayerId);
+
+    // Re-selecting the armed slot cancels instead of swapping.
+    tsStore.teamSheetFocus("xi", 1);
+    tsStore.teamSheetSelectPlayer(); // arm
+    tsStore.teamSheetFocus("xi", 1);
+    tsStore.teamSheetSelectPlayer(); // cancel (same slot)
+    assert("pressing Select twice on the same slot cancels the arm (no swap, nothing armed)",
+      tsStore.state.ui.teamSheet.armed === null);
+
+    // XI<->reserve swap: the vacated XI player becomes a reserve implicitly
+    // (no persisted reserve array — gen/squad.js's reservesOf is derived).
+    const reservesBefore = reservesOf(tsStore.state.squad.roster, tsStore.state.squad.lineup, tsStore.state.squad.bench);
+    const reservePlayerId = reservesBefore[0].id;
+    const displacedFromXI = tsStore.state.squad.lineup[2].playerId;
+    tsStore.teamSheetFocus("xi", 2);
+    tsStore.teamSheetSelectPlayer();
+    tsStore.teamSheetFocus("reserve", 0);
+    tsStore.teamSheetSelectPlayer();
+    assert("XI<->reserve swap moves the reserve into the XI slot", tsStore.state.squad.lineup[2].playerId === reservePlayerId);
+    const reservesAfter = reservesOf(tsStore.state.squad.roster, tsStore.state.squad.lineup, tsStore.state.squad.bench);
+    assert("the displaced XI player is now a reserve (implicitly, no array write needed)",
+      reservesAfter.some((p) => p.id === displacedFromXI));
+
+    // Suggested Subs: same-position candidates only, ranked, empty state honoured.
+    tsStore.teamSheetFocus("xi", 0);
+    tsStore.teamSheetSuggestedSubs();
+    const ts = tsStore.state.ui.teamSheet;
+    assert("Suggested Subs arms the focused XI slot", ts.armed && ts.armed.zone === "xi" && ts.armed.index === 0);
+    assert("Suggested Subs opens the drawer in 'suggested' mode", ts.drawer === "suggested");
+    const slotPosCode = tsStore.state.squad.lineup[0].pos;
+    const candidatesOk = ts.suggested.candidateIds.every((id) => {
+      const p = tsStore.state.playersById.get(id);
+      return isSimilarPosition(p, slotPosCode);
+    });
+    assert("every Suggested Subs candidate genuinely fits the slot's position", candidatesOk);
+    const scores = ts.suggested.candidateIds.map((id) => suggestedSubScore(tsStore.state.playersById.get(id), slotPosCode));
+    const sortedDesc = scores.every((s, i) => i === 0 || scores[i - 1] >= s);
+    assert("Suggested Subs candidates are sorted best-score-first", sortedDesc);
+    if (ts.suggested.candidateIds.length) {
+      assert("the top candidate is auto-focused", ts.focus.zone !== "xi" &&
+        teamSheetSlotPlayerId(tsStore.state, ts.focus) === ts.suggested.candidateIds[0]);
+    }
+
+    // (B) steps back through nested modes before closing the overlay.
+    tsStore.teamSheetBack();
+    assert("(B) from Suggested Subs clears the drawer back to Substitutes, not closed", tsStore.state.ui.teamSheet.drawer === "substitutes" && tsStore.state.ui.teamSheet.armed === null);
+
+    // teamSheetFocusableSlots widens with the drawer state (used by keyboard nav).
+    const collapsedCount = teamSheetFocusableSlots({ squad: tsStore.state.squad, ui: { teamSheet: { ...ts, drawer: "collapsed" } } }).length;
+    const substitutesCount = teamSheetFocusableSlots({ squad: tsStore.state.squad, ui: { teamSheet: { ...ts, drawer: "substitutes" } } }).length;
+    assert("focusable slots = 11 XI-only when the drawer is collapsed", collapsedCount === 11);
+    assert("focusable slots grow to include the bench once Substitutes is open", substitutesCount === 11 + tsStore.state.squad.bench.filter((id) => id != null).length);
   }
 
   render();

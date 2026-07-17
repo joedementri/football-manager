@@ -1,0 +1,193 @@
+/* ===========================================================================
+   teamsheet.css — fable-plans/plan2.md F1: Team Sheet view (Squad hub's
+   team-sheet tile). Own sub-tab bar sits exactly where the 5-hub tab bar
+   normally does (.tabbar's own top:150px) since router.js already hides
+   .tabbar/.screen for any open overlay; .sqts-body sits where .screen does
+   (top:196px). Pairs with js/ui/teamsheetui.js. Reuses css/panels.css's
+   §B4 chip/dot primitives (.fx-attr-chip, .fx-pos-dot, .fx-attrpanel__*)
+   and css/screens.css's .jersey/.pitch primitives — extended, not redefined.
+   =========================================================================== */
+
+#teamsheet-overlay { display: none; }
+#teamsheet-overlay.is-active { display: block; }
+
+.sqts-tabbar {
+  position: absolute;
+  top: 150px; left: 30px; right: 30px;
+  display: flex; gap: 40px; align-items: center;
+  z-index: 5;
+}
+.sqts-tab {
+  position: relative;
+  background: none; border: 0; cursor: pointer;
+  color: var(--ink-dim);
+  font-family: var(--font-cond); font-size: 24px; font-weight: 600;
+  letter-spacing: 1px; text-transform: uppercase;
+  padding: 4px 2px 10px;
+}
+.sqts-tab:hover { color: var(--ink); }
+.sqts-tab.is-active { color: var(--gold); text-shadow: 0 0 14px rgba(242, 193, 78, 0.5); }
+.sqts-tab.is-active::after {
+  content: ""; position: absolute; left: -6px; right: -6px; bottom: 0; height: 3px;
+  background: linear-gradient(90deg, rgba(242,193,78,0), var(--gold), rgba(242,193,78,0));
+  box-shadow: 0 0 12px 2px rgba(242, 193, 78, 0.6);
+}
+
+.sqts-body {
+  position: absolute;
+  top: 196px; left: 30px; right: 30px; bottom: 58px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+/* ---------------------------- left: pitch panel ---------------------------- */
+.sqts-left { min-height: 0; display: flex; }
+.sqts-pitchpanel {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  border-radius: 7px;
+  overflow: hidden;
+  border: 1px solid rgba(120, 140, 160, 0.12);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3);
+  background: linear-gradient(180deg, #244a2a, #15281a);
+}
+.sqts-crestbanner {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  padding: 10px 0 4px;
+  background: rgba(0, 0, 0, 0.22);
+}
+.sqts-crestbanner .crest { width: 46px; height: 52px; }
+
+.sqts-pitch { position: relative; flex: 1 1 auto; }
+.sqts-pitch .jersey { width: 96px; }
+.sqts-pitch .jersey__kit { width: 36px; height: 36px; }
+.sqts-pitch .jersey__pos { font-size: 12px; }
+.sqts-pitch .jersey__rating { font-size: 18px; }
+.sqts-pitch .jersey__cap { top: -6px; }
+
+.sqts-jersey__statusrow { display: flex; align-items: center; gap: 4px; margin: 2px auto 0; width: 60%; }
+.sqts-jersey__dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--green-ok); }
+.sqts-jersey__dot--green { background: #39b54a; }
+.sqts-jersey__dot--yellow { background: #e8c227; }
+.sqts-jersey__dot--orange { background: #d9822b; }
+.sqts-jersey__dot--red { background: #c0392b; }
+.sqts-jersey__bar { flex: 1 1 auto; height: 3px; border-radius: 2px; background: rgba(0,0,0,0.35); overflow: hidden; }
+.sqts-jersey__bar > i { display: block; height: 100%; background: var(--green-ok); }
+.sqts-jersey__arrow {
+  display: block; text-align: center; font-family: var(--font-cond); font-weight: 700; font-size: 18px;
+  color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.8); line-height: 1;
+}
+
+/* focus/armed rings — teal(armed) beats gold(focus), same convention on
+   jerseys and drawer slot cards (js/ui/teamsheetui.js's ringClass). */
+.sqts-jersey.is-focus::before, .sqts-jersey.is-armed::before {
+  content: ""; position: absolute; left: 50%; top: 40%; width: 92px; height: 92px;
+  transform: translate(-50%, -50%); border-radius: 50%; z-index: -1;
+}
+.sqts-jersey.is-focus::before { background: radial-gradient(circle, rgba(242,193,78,0.55), rgba(242,193,78,0) 70%); }
+.sqts-jersey.is-armed::before { background: radial-gradient(circle, rgba(79,195,217,0.55), rgba(79,195,217,0) 70%); }
+
+.sqts-swapicon {
+  position: absolute; left: 50%; top: 2px; transform: translateX(-50%);
+  width: 22px; height: 22px; padding: 3px; border-radius: 50%;
+  background: linear-gradient(150deg, var(--gold-bright), var(--gold-deep));
+  color: var(--gold-text-dark);
+}
+
+.sqts-formation { position: absolute; left: 14px; bottom: 14px; z-index: 3; color: #fff; }
+.sqts-formation b { font-family: var(--font-cond); font-weight: 700; font-size: 22px; line-height: 1; display: block; text-shadow: 0 2px 6px rgba(0,0,0,0.7); }
+.sqts-formation span { font-family: var(--font-ui); font-size: 13px; opacity: 0.9; text-shadow: 0 1px 4px rgba(0,0,0,0.7); }
+
+/* ---------------------------- bottom drawer -------------------------------- */
+.sqts-drawer { flex: 0 0 auto; position: relative; z-index: 4; }
+.sqts-drawer--open { flex: 0 1 auto; }
+.sqts-drawer__bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 16px;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--gold);
+  font-family: var(--font-cond); font-weight: 700; font-size: 15px; letter-spacing: 0.5px;
+  cursor: pointer;
+}
+.sqts-drawer__bar--gold { color: var(--gold-bright); }
+.sqts-drawer__arrow { color: var(--ink-dim); font-size: 11px; }
+.sqts-drawer__body {
+  max-height: 210px; overflow-y: auto;
+  background: rgba(4, 6, 8, 0.86);
+  padding: 10px 14px;
+}
+.sqts-drawer__body::-webkit-scrollbar { width: 8px; }
+.sqts-drawer__body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 4px; }
+.sqts-drawer__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.sqts-drawer__empty { padding: 18px 0; text-align: center; color: var(--ink-dim); font-family: var(--font-ui); font-size: 14px; }
+
+.sqts-slotcard {
+  position: relative;
+  border-radius: 4px;
+  background: #171b1f;
+  padding: 8px;
+  cursor: pointer;
+}
+.sqts-slotcard--empty { background: transparent; cursor: default; }
+.sqts-slotcard.is-focus { background: linear-gradient(150deg, var(--gold-bright), var(--gold-deep)); }
+.sqts-slotcard.is-armed { background: linear-gradient(150deg, #6fd9e8, #2b98ab); }
+.sqts-slotcard__top { display: flex; align-items: center; justify-content: space-between; position: relative; }
+.sqts-slotcard__portrait {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #3a4148, #14171b);
+}
+.sqts-slotcard__ovr { font-family: var(--font-cond); font-weight: 700; font-size: 16px; color: var(--ink); }
+.sqts-slotcard.is-focus .sqts-slotcard__ovr, .sqts-slotcard.is-armed .sqts-slotcard__ovr { color: var(--gold-text-dark); }
+.sqts-slotcard__statusrow { display: flex; align-items: center; gap: 5px; margin-top: 5px; }
+.sqts-slotcard__name { font-family: var(--font-ui); font-size: 12px; font-weight: 600; color: var(--ink); margin-top: 3px; }
+.sqts-slotcard.is-focus .sqts-slotcard__name, .sqts-slotcard.is-armed .sqts-slotcard__name { color: var(--gold-text-dark); }
+.sqts-slotcard .sqts-swapicon { position: static; transform: none; width: 18px; height: 18px; }
+
+/* ---------------------------- right: attribute panel ------------------------ */
+.sqts-right {
+  min-height: 0;
+  display: flex; flex-direction: column;
+  background: rgba(17, 20, 24, 0.97);
+  border-radius: 6px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 30px rgba(0,0,0,0.5);
+  padding: 18px 22px;
+  font-family: var(--font-cond);
+}
+
+.sqts-panelhead-row { flex: 0 0 auto; display: flex; justify-content: space-between; gap: 16px; }
+.sqts-panelhead-row .sqts-panelhead { flex: 0 1 auto; }
+.sqts-panelhead-row .sqts-panelhead.is-candidate { flex-direction: row-reverse; text-align: right; }
+.sqts-panelhead-row .sqts-panelhead.is-candidate > div:last-child { text-align: right; }
+
+.sqts-panelhead { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.sqts-panelhead__name { font-size: 16px; font-weight: 700; color: var(--gold); }
+.sqts-panelhead.is-anchor .sqts-panelhead__name { color: #4fc3d9; }
+
+.sqts-pagetitle { flex: 0 0 auto; text-align: left; font-size: 18px; margin-bottom: 4px; text-transform: none; letter-spacing: normal; }
+/* Only the attribute list scrolls — header/title above and the (RS) pager
+   dots below both stay pinned, matching every attribute-page reference pic
+   (the pager never moves even on the 16-row Skill Attributes page). */
+.sqts-panelbody { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.sqts-panelbody::-webkit-scrollbar { width: 8px; }
+.sqts-panelbody::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 4px; }
+.fx-attrpanel__pagedots { flex: 0 0 auto; }
+
+.sqts-attr-row--compare {
+  display: grid; grid-template-columns: 40px 1fr 40px;
+  align-items: center; justify-items: center;
+  padding: 4px 0;
+  font-family: var(--font-ui); font-size: 14px; color: var(--ink);
+}
+.sqts-attr-row__name { justify-self: center; text-align: center; }
+
+.sqts-spec-heading {
+  font-family: var(--font-cond); font-weight: 700; font-size: 16px; color: var(--ink);
+  margin: 10px 0 4px;
+}
+.sqts-spec-heading:first-child { margin-top: 0; }
+.sqts-spec-row { font-family: var(--font-ui); font-size: 14px; color: var(--ink-dim); padding: 2px 0; }
+.sqts-spec-row--none { color: var(--ink-faint); }

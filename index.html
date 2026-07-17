@@ -26,6 +26,7 @@
   <link rel="stylesheet" href="css/squadreport.css" />
   <link rel="stylesheet" href="css/kitnumbers.css" />
   <link rel="stylesheet" href="css/tactics.css" />
+  <link rel="stylesheet" href="css/teamsheet.css" />
   <link rel="stylesheet" href="css/stats.css" />
   <link rel="stylesheet" href="css/settings.css" />
   <link rel="stylesheet" href="css/saves.css" />
@@ -300,44 +301,19 @@
       <!-- =====================  SQUAD  ============================= -->
       <section class="screen screen--squad" data-screen="squad">
 
-        <!-- LEFT: team-sheet feature (carousel: formation / create new) -->
-        <div class="sq-sheet" data-carousel>
-          <div class="cpages">
-
-            <!-- page 1: Default Team Sheet -->
-            <div class="cpage is-active sq-sheet__formation">
-              <div class="pitch">
-                <div class="pitch__surface"></div>
-                <!-- strikers -->
-                <div class="jersey" style="left:34%;top:18%"><div class="jersey__top"><span class="jersey__pos">LS</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">64</span></div><div class="jersey__name">Taylor</div></div>
-                <div class="jersey" style="left:66%;top:18%"><div class="jersey__top"><span class="jersey__pos">RS</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">67</span></div><div class="jersey__name">Dongou</div></div>
-                <!-- midfield 4 -->
-                <div class="jersey" style="left:13%;top:46%"><div class="jersey__top"><span class="jersey__pos">LM</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">66</span></div><div class="jersey__name">Barcham</div></div>
-                <div class="jersey" style="left:39%;top:50%"><div class="jersey__top"><span class="jersey__pos">LCM</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">63</span></div><div class="jersey__name">Hollands</div></div>
-                <div class="jersey" style="left:61%;top:50%"><div class="jersey__top"><span class="jersey__pos">RCM</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">67</span><span class="jersey__cap">C</span></div><div class="jersey__name">Fogden</div></div>
-                <div class="jersey" style="left:87%;top:46%"><div class="jersey__top"><span class="jersey__pos">RM</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">67</span></div><div class="jersey__name">Wallace</div></div>
-                <!-- defence 4 -->
-                <div class="jersey" style="left:15%;top:72%"><div class="jersey__top"><span class="jersey__pos">LB</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">61</span></div><div class="jersey__name">Dunne</div></div>
-                <div class="jersey" style="left:39%;top:75%"><div class="jersey__top"><span class="jersey__pos">LCB</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">67</span></div><div class="jersey__name">Macky</div></div>
-                <div class="jersey" style="left:61%;top:75%"><div class="jersey__top"><span class="jersey__pos">RCB</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">64</span></div><div class="jersey__name">Robinson</div></div>
-                <div class="jersey" style="left:85%;top:72%"><div class="jersey__top"><span class="jersey__pos">RB</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">69</span></div><div class="jersey__name">Zimmermann</div></div>
-                <!-- gk -->
-                <div class="jersey gk" style="left:50%;top:92%"><div class="jersey__top"><span class="jersey__pos">GK</span><svg class="jersey__kit"><use href="#kit"></use></svg><span class="jersey__rating">63</span></div><div class="jersey__name">Gersbeck</div></div>
-              </div>
-              <div class="sq-sheet__title">Default Team Sheet</div>
-              <div class="sq-sheet__shape"><b>4-4-2</b><span>Flat</span></div>
-            </div>
-
-            <!-- page 2: Create a new team sheet -->
-            <div class="cpage sq-sheet__create">
-              <div class="pitch pitch--ghost"><div class="pitch__surface"></div></div>
-              <div class="create-cta">
-                <span class="plus"><svg class="icon"><use href="#ic-plus"></use></svg></span>
-                <span class="cta-text">Select To<br>Create A New<br>Team Sheet</span>
-              </div>
-            </div>
-
-          </div>
+        <!-- LEFT: team-sheet feature — F1: a dynamic 1-6 page carousel (one
+             page per saved team sheet + a "create new" page while under the
+             6-slot cap), rebuilt from state.squad.sheets by ui/render.js's
+             renderSquad (js/carousel.js's rebuildCarousel re-wires paging
+             each time, since the page count itself changes at runtime,
+             unlike every other carousel in this file). Clicking a sheet page
+             opens the F1 Team Sheet view (SQUAD tab); clicking "create new"
+             clones the active sheet — see core/store.js's openTeamSheet/
+             createTeamSheet and core/router.js's dedicated .sq-sheet click
+             delegation (the generic [data-open] wiring doesn't reach these
+             pages since they're regenerated after that wiring runs once). -->
+        <div class="sq-sheet">
+          <div class="cpages"><!-- built by ui/render.js's renderSquad --></div>
         </div>
 
         <!-- RIGHT: 2x3 tile grid -->
@@ -872,6 +848,12 @@
         <div class="tac-body" id="tactics-body"><!-- built by ui/tacticsui.js --></div>
       </div>
 
+      <!-- =====================  TEAM SHEET VIEW OVERLAY (F1)  ============= -->
+      <div id="teamsheet-overlay">
+        <div class="sqts-tabbar" id="sqts-tabbar"><!-- built by ui/teamsheetui.js --></div>
+        <div class="sqts-body" id="sqts-body"><!-- built by ui/teamsheetui.js --></div>
+      </div>
+
       <!-- =====================  KIT NUMBERS OVERLAY (M11)  =============== -->
       <div id="kitnumbers-overlay">
         <div class="news-crumb">
@@ -994,6 +976,7 @@
         <span class="prompt" data-action="next-page"><span class="btn-glyph rb">RB</span> Next Page</span>
         <span class="prompt" data-action="back"><span class="btn-glyph b">B</span> Back</span>
       </footer>
+      <footer class="footer" id="footer-teamsheet" hidden><!-- built by ui/teamsheetui.js (prompts change with focus) --></footer>
       <footer class="footer" id="footer-kitnumbers" hidden>
         <span class="prompt" data-action="select"><span class="btn-glyph a">A</span> Select / Edit Number</span>
         <span class="prompt" data-action="back"><span class="btn-glyph b">B</span> Back</span>
