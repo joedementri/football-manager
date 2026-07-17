@@ -39,9 +39,11 @@ import * as gtnEngine from "../engine/gtn.js";
 import * as academyEngine from "../engine/academy.js";
 import { createManagerCareerFields } from "../engine/career.js";
 import { rankSquadByForm } from "../engine/form.js";
-import { DEFAULT_TACTIC_ID } from "../config/tactics.js";
+import { DEFAULT_TACTIC_ID, TACTICS } from "../config/tactics.js";
 import { DEFAULT_SETTINGS } from "../config/settings.js";
 import { setDisplayCurrency } from "./format.js";
+import { FORMATIONS, gridCellAt, formationByLabel, remapLineupToFormation } from "../config/formations.js";
+import { INSTRUCTION_GROUPS, instructionGroupFor, defaultInstructionsFor } from "../config/instructions.js";
 
 export const SCREENS = ["central", "squad", "transfers", "office", "season"];
 
@@ -344,15 +346,8 @@ function createUiDefaults(today) {
     // openKitNumbers().
     kitNumbers: { selectedPlayerId: null, editing: false, changes: {} },
 
-    // M11 (ui/tacticsui.js): Tactics / Player Roles overlay — one of 2 pages
-    // ("tactics", "roles"), same "purely presentational" footing as My
-    // Career's page state above (the real data lives on state.squad).
-    tactics: { page: "tactics" },
-
-    // F1 (ui/teamsheetui.js): the Team Sheet view's own sub-tab bar (`tab` —
-    // only "squad" has real content this milestone; FORMATIONS/TACTICS/
-    // ROLES render the bar entry but no body, per plan2.md F1's own scope
-    // note) plus the SQUAD tab's interaction state: `changeView` (0
+    // F1/F2 (ui/teamsheetui.js + ui/formationsui.js): the Team Sheet view's
+    // own sub-tab bar (`tab`) plus the SQUAD tab's interaction state: `changeView` (0
     // position/OVR, 1 energy/form, 2 positional colouring — cycled by LS/V),
     // `drawer` ('collapsed'|'substitutes'|'reserves'|'suggested'), `focus`
     // (the currently-viewed slot — `{zone:'xi'|'bench'|'reserve', index}` —
@@ -370,6 +365,25 @@ function createUiDefaults(today) {
       armed: null,
       suggested: null,
       attrPage: 0,
+      // F2 (plan2.md): FORMATIONS tab. `customiseMode` null|'menu'|
+      // 'instructions'|'positioning' (FORMATIONS > EDIT breadcrumb depth);
+      // instrEditingIndex non-null while a player's category cards + Info
+      // panel are open (null = plain per-player attribute browsing, per
+      // ms_..._CUSTOMISE_FORMATIONS_PLAYER_INSTRUCTIONS.png's un-selected
+      // state); posFocusIndex is Player Positioning's own separate cursor
+      // (no "armed" concept there — arrows nudge whoever's focused).
+      formationsCursor: 0,
+      customiseMode: null,
+      customiseMenuCursor: 0,
+      instrFocusIndex: 0,
+      instrEditingIndex: null,
+      instrCategoryIndex: 0,
+      posFocusIndex: 0,
+      // F2: TACTICS tab (D-pad-icon grid, config/tactics.js's 4 presets).
+      tacticsCursor: 0,
+      // F2: ROLES tab (3x2 PLAYER ROLES grid + its squad-list picker).
+      rolesCursor: 0,
+      rolesPickerOpen: false,
     },
 
     // M11 (ui/statsui.js): Season ▸ Team Stats — L1/R1 cycles `leagueIndex`
@@ -576,7 +590,7 @@ export function createCareerState({ managerName, club, league, world, seasonStar
       sheets: [],
       activeSheetIndex: 0,
       nextSheetId: 1,
-      // M11 (config/tactics.js, ui/tacticsui.js): the user's active in-match
+      // M11 (config/tactics.js, ui/rolestacticsui.js): the user's active in-match
       // tactic preset — real effect wired into engine/sim/core.js's
       // teamStrength() via events.js/quick.js's own call sites.
       tacticId: DEFAULT_TACTIC_ID,
@@ -586,6 +600,26 @@ export function createCareerState({ managerName, club, league, world, seasonStar
       // rollChancesForSide). Both null until the user picks one.
       captainId: null,
       penaltyTakerId: null,
+      // F2 (plan2.md ROLES tab): set-piece takers, same "null until the user
+      // picks one" footing as captainId/penaltyTakerId above.
+      // Sim hooks (plan2.md: "penalty/FK taker gets those set-piece chances;
+      // corner takers weight assist attribution; captain +2 morale"):
+      // corner takers get a small ASSIST_ATTRIBS weight bonus via the same
+      // instructionMults hook F2's Player Instructions use (engine/sim/
+      // match.js's buildRoleMults) — [TUNED], logged in plan2-decisions.md
+      // F2. Free-kick takers have no dedicated set-piece chance type to
+      // redirect into (same "no chance-type taxonomy" limit as
+      // config/instructions.js's own header) — stored/displayed only.
+      // "captain +2 morale" is F6's engine/morale.js's own responsibility
+      // (that mechanic doesn't exist yet at all) — deferred, not dropped;
+      // logged in plan2-decisions.md F2 for F6 to wire.
+      leftCornerId: null,
+      rightCornerId: null,
+      shortFreeKickId: null,
+      longFreeKickId: null,
+      // F2: per-sheet Player Instructions (mirrors squad.lineup/bench's own
+      // "same array reference as the active sheet" convention below).
+      instructions: {},
     },
 
     // Day-1 board objective emails (plan1.md M3: "board objective emails on
@@ -636,6 +670,11 @@ export function createCareerState({ managerName, club, league, world, seasonStar
   // copies), so in-place edits (Team Sheet swaps) made through either one
   // are visible through the other with no extra sync step.
   built.squad.bench = pickDefaultBench(built.squad.roster, built.squad.lineup);
+  // F2: seeds each XI slot's Player Positioning baseline (±8% clamp anchor,
+  // config/formations.js's own header) at its freshly-generated coordinate —
+  // every formation re-application (Store.applyFormation) re-seeds this the
+  // same way.
+  seedFormationBaseline(built.squad.lineup);
   built.squad.sheets = [{
     id: built.squad.nextSheetId++,
     name: "Default Team Sheet",
@@ -643,6 +682,7 @@ export function createCareerState({ managerName, club, league, world, seasonStar
     formationStyle: built.squad.formationStyle,
     lineup: built.squad.lineup,
     bench: built.squad.bench,
+    instructions: built.squad.instructions,
   }];
   built.squad.activeSheetIndex = 0;
 
@@ -704,6 +744,12 @@ export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
       tacticId: saved.squadTacticId || DEFAULT_TACTIC_ID,
       captainId: saved.squadCaptainId ?? null,
       penaltyTakerId: saved.squadPenaltyTakerId ?? null,
+      // F2: a pre-F2 save has none of these — same fallback footing.
+      leftCornerId: saved.squadLeftCornerId ?? null,
+      rightCornerId: saved.squadRightCornerId ?? null,
+      shortFreeKickId: saved.squadShortFreeKickId ?? null,
+      longFreeKickId: saved.squadLongFreeKickId ?? null,
+      instructions: {},
     },
     inbox: { emails: saved.inbox },
     matchday: null,
@@ -739,8 +785,16 @@ export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
     built.squad.sheets = saved.squadSheets;
     built.squad.activeSheetIndex = Math.min(saved.squadActiveSheetIndex ?? 0, saved.squadSheets.length - 1);
     built.squad.nextSheetId = saved.squadNextSheetId || saved.squadSheets.length + 1;
+    // F2: a pre-F2 save's sheets have no `.instructions`, and their lineup
+    // entries have no Player Positioning baseline — same graceful per-field
+    // fallback as everywhere else in this function.
+    for (const sheet of built.squad.sheets) {
+      if (!sheet.instructions) sheet.instructions = {};
+      if (sheet.lineup.length && sheet.lineup[0].baseX == null) seedFormationBaseline(sheet.lineup);
+    }
   } else {
     built.squad.bench = pickDefaultBench(built.squad.roster, built.squad.lineup);
+    seedFormationBaseline(built.squad.lineup);
     built.squad.sheets = [{
       id: built.squad.nextSheetId++,
       name: "Default Team Sheet",
@@ -748,6 +802,7 @@ export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
       formationStyle: built.squad.formationStyle,
       lineup: built.squad.lineup,
       bench: built.squad.bench,
+      instructions: {},
     }];
     built.squad.activeSheetIndex = 0;
   }
@@ -755,6 +810,7 @@ export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
   built.squad.bench = built.squad.sheets[built.squad.activeSheetIndex].bench;
   built.squad.formationLabel = built.squad.sheets[built.squad.activeSheetIndex].formationLabel;
   built.squad.formationStyle = built.squad.sheets[built.squad.activeSheetIndex].formationStyle;
+  built.squad.instructions = built.squad.sheets[built.squad.activeSheetIndex].instructions;
 
   // M8: a pre-M8 save never had state.gtn at all — same "fresh default for
   // an older save" footing as jobMarket's own `|| { vacancies: [] }` above.
@@ -825,6 +881,21 @@ export function teamSheetFocusableSlots(state) {
     }
   }
   return slots;
+}
+
+/** F2 (config/formations.js): stamps every XI entry's current x/y as its
+ * Player Positioning baseline — called once at squad generation and again
+ * every time a formation is (re)applied (Store.applyFormation), since a
+ * remap always starts every slot back at its formation-assigned coordinate. */
+// F2 ROLES tab: PLAYER ROLES grid cell index -> state.squad field, in the
+// pic's 3x2 reading order (ms_TEAM_SHEET_VIEW_ROLES.png).
+const ROLE_FIELDS = ["captainId", "leftCornerId", "rightCornerId", "shortFreeKickId", "penaltyTakerId", "longFreeKickId"];
+
+function seedFormationBaseline(lineup) {
+  for (const entry of lineup) {
+    entry.baseX = entry.x;
+    entry.baseY = entry.y;
+  }
 }
 
 function teamSheetWriteSlot(state, slot, playerId) {
@@ -1545,20 +1616,13 @@ export class Store {
     this.emit("kitnumbers", null);
   }
 
-  /* ----- M11 (config/tactics.js, ui/tacticsui.js): Squad ▸ Tactics / Player
-   * Roles ----- */
-
-  openTactics(page = "tactics") {
-    this.state.ui.tactics.page = page;
-    this.openOverlay("tactics");
-  }
-
-  tacticsChangePage(dir) {
-    const pages = ["tactics", "roles"];
-    const i = pages.indexOf(this.state.ui.tactics.page);
-    this.state.ui.tactics.page = pages[(i + dir + pages.length) % pages.length];
-    this.emit("tactics", null);
-  }
+  /* ----- config/tactics.js: Squad ▸ Team Sheet ▸ TACTICS/ROLES tabs. M11
+   * built these as a standalone overlay (ui/tacticsui.js); F2 (plan2.md)
+   * retired that overlay and moved both onto the Team Sheet's own tab bar —
+   * see plan2-decisions.md F2 for why (the pic showed a D-pad-icon assigned-
+   * tactics grid, not the "3 preset bars" plan2.md's own summary text
+   * guessed). These 3 mutators are unchanged from M11; only their `emit`
+   * target moved from "tactics" to "teamsheet". ----- */
 
   /** Picks the active tactic preset — real effect: engine/sim/core.js's
    * teamStrength() picks up the new modifier the very next time the user's
@@ -1566,18 +1630,18 @@ export class Store {
    * tie), no re-sim of anything already resolved. */
   setTactic(tacticId) {
     this.state.squad.tacticId = tacticId;
-    this.emit("tactics", null);
+    this.emit("teamsheet", null);
   }
 
   setCaptain(playerId) {
     this.state.squad.captainId = playerId;
     applyCaptainToLineup(this.state.squad.lineup, playerId);
-    this.emit("tactics", null);
+    this.emit("teamsheet", null);
   }
 
   setPenaltyTaker(playerId) {
     this.state.squad.penaltyTakerId = playerId;
-    this.emit("tactics", null);
+    this.emit("teamsheet", null);
   }
 
   /* ----- F1 (ui/teamsheetui.js): Team Sheet view (Squad hub's team-sheet
@@ -1588,11 +1652,13 @@ export class Store {
    * — the hub tile's per-sheet carousel pages each carry their own
    * sheetIndex, and clicking one both views *and* activates it (editing a
    * sheet you're not looking at wouldn't make sense; see plan2-decisions.md
-   * F1 for why there's no separate "set active" step). */
-  openTeamSheet(sheetIndex) {
+   * F1 for why there's no separate "set active" step). `tab` (F2, plan2.md):
+   * the Squad hub's Formations/Tactics/Player Roles tile pages deep-link
+   * straight into that sub-tab instead of always landing on SQUAD. */
+  openTeamSheet(sheetIndex, tab = "squad") {
     if (sheetIndex != null) this.setActiveSheet(sheetIndex);
     this.state.ui.teamSheet = {
-      tab: "squad",
+      tab,
       changeView: 0,
       drawer: "collapsed",
       drawerMinimized: false,
@@ -1600,7 +1666,21 @@ export class Store {
       armed: null,
       suggested: null,
       attrPage: 0,
+      formationsCursor: 0,
+      customiseMode: null,
+      customiseMenuCursor: 0,
+      instrFocusIndex: 0,
+      instrEditingIndex: null,
+      instrCategoryIndex: 0,
+      posFocusIndex: 0,
+      tacticsCursor: 0,
+      rolesCursor: 0,
+      rolesPickerOpen: false,
     };
+    if (tab === "tactics") {
+      const i = TACTICS.findIndex((t) => t.id === this.state.squad.tacticId);
+      this.state.ui.teamSheet.tacticsCursor = i === -1 ? 0 : i;
+    }
     this.openOverlay("teamsheet");
   }
 
@@ -1616,11 +1696,13 @@ export class Store {
     squad.bench = sheet.bench;
     squad.formationLabel = sheet.formationLabel;
     squad.formationStyle = sheet.formationStyle;
+    squad.instructions = sheet.instructions;
   }
 
   /** Hub tile's "Select To Create A New Team Sheet" page — clones the
-   * active sheet (formation + XI + bench), caps at 6 (plan2.md F1.7's
-   * "6-slot carousel"), and immediately opens+activates the new copy. */
+   * active sheet (formation + XI + bench + F2's per-player instructions),
+   * caps at 6 (plan2.md F1.7's "6-slot carousel"), and immediately
+   * opens+activates the new copy. */
   createTeamSheet() {
     const squad = this.state.squad;
     if (squad.sheets.length >= 6) return;
@@ -1632,6 +1714,7 @@ export class Store {
       formationStyle: active.formationStyle,
       lineup: active.lineup.map((l) => ({ ...l })),
       bench: [...active.bench],
+      instructions: JSON.parse(JSON.stringify(active.instructions || {})),
     };
     squad.sheets.push(clone);
     this.openTeamSheet(squad.sheets.length - 1);
@@ -1639,14 +1722,247 @@ export class Store {
 
   teamSheetSetTab(tab) {
     if (["squad", "formations", "tactics", "roles"].indexOf(tab) === -1) return;
-    this.state.ui.teamSheet.tab = tab;
+    const ts = this.state.ui.teamSheet;
+    ts.tab = tab;
+    // F2: landing on TACTICS should highlight whichever preset is actually
+    // active, not always default to the grid's first cell.
+    if (tab === "tactics") {
+      const i = TACTICS.findIndex((t) => t.id === this.state.squad.tacticId);
+      ts.tacticsCursor = i === -1 ? 0 : i;
+    }
     this.emit("teamsheet", null);
   }
 
-  /** LS / key V: cycles the pitch's 3 jersey-caption modes (plan2.md F1.2). */
+  /* ----- F2 (plan2.md): FORMATIONS tab. `formationsCursor` is an absolute
+   * index into config/formations.js's 34-cell gridCells() list (not a
+   * page-relative one) — [PIC-GUESS] (plan2-decisions.md F2): the 6
+   * FORMATIONS_PAGE pics show a scrollbar thumb, not an LB/RB page prompt in
+   * the footer, so this reads as a scrolling 3-column list (arrow keys walk
+   * cell-by-cell, auto-revealing the next 6-cell "page" ui/formationsui.js
+   * windows around the cursor) rather than shoulder-button-paged pages. ----- */
+
+  teamSheetFormationsFocus(index) {
+    const ts = this.state.ui.teamSheet;
+    ts.formationsCursor = index;
+    this.emit("teamsheet", null);
+  }
+
+  /** delta: ±1 (Left/Right) or ±3 (Up/Down, the grid's own column count). */
+  teamSheetFormationsMove(delta) {
+    const ts = this.state.ui.teamSheet;
+    const total = FORMATIONS.length + 1; // +1 for the "<Club>/Default Formation" pseudo-cell
+    ts.formationsCursor = Math.max(0, Math.min(total - 1, ts.formationsCursor + delta));
+    this.emit("teamsheet", null);
+  }
+
+  /** (A)/click a FORMATIONS grid cell: re-maps the current XI onto the
+   * chosen formation's 11 slots by best-fit position (plan2.md F2.1) and
+   * makes it this sheet's formation. */
+  teamSheetFormationsSelect() {
+    const ts = this.state.ui.teamSheet;
+    const cell = gridCellAt(this.state.club.name, ts.formationsCursor);
+    if (!cell) return;
+    this.applyFormation(cell.name, cell.style);
+  }
+
+  /** Re-maps the XI onto `name`/`style`'s 11 slots and stores it as the
+   * active sheet's formation — also re-seeds every slot's Player Positioning
+   * baseline (config/formations.js's remapLineupToFormation doesn't carry
+   * position offsets across a formation change; a fresh shape needs a fresh
+   * baseline). Keeps `entry.name`/`entry.rating` intact (spread from the
+   * pre-remap entry) since ui/render.js's Squad-hub pitch preview reads
+   * those denormalized fields directly rather than looking the player up. */
+  applyFormation(name, style) {
+    const formation = formationByLabel(name, style);
+    if (!formation) return;
+    const squad = this.state.squad;
+    const newLineup = remapLineupToFormation(squad.lineup, formation.slots, this.state.playersById);
+    seedFormationBaseline(newLineup);
+    applyCaptainToLineup(newLineup, squad.captainId);
+    squad.lineup = newLineup;
+    squad.formationLabel = name;
+    squad.formationStyle = style;
+    const sheet = squad.sheets[squad.activeSheetIndex];
+    sheet.lineup = newLineup;
+    sheet.formationLabel = name;
+    sheet.formationStyle = style;
+    this.emit("teamsheet", null);
+  }
+
+  teamSheetOpenCustomise() {
+    const ts = this.state.ui.teamSheet;
+    ts.customiseMode = "menu";
+    ts.customiseMenuCursor = 0;
+    this.emit("teamsheet", null);
+  }
+
+  teamSheetCustomiseMenuFocus(index) {
+    const ts = this.state.ui.teamSheet;
+    ts.customiseMenuCursor = index;
+    this.emit("teamsheet", null);
+  }
+
+  teamSheetCustomiseMenuSelect() {
+    const ts = this.state.ui.teamSheet;
+    ts.customiseMode = ts.customiseMenuCursor === 0 ? "instructions" : "positioning";
+    ts.instrEditingIndex = null;
+    this.emit("teamsheet", null);
+  }
+
+  /* --- Player Instructions (FORMATIONS > EDIT > INSTRUCTIONS) --- */
+
+  teamSheetInstrFocus(index) {
+    const ts = this.state.ui.teamSheet;
+    if (ts.customiseMode !== "instructions" || ts.instrEditingIndex != null) return;
+    ts.instrFocusIndex = index;
+    this.emit("teamsheet", null);
+  }
+
+  /** (A)/click the focused player: opens their instruction category cards.
+   * [JUDGMENT CALL] (plan2-decisions.md F2): a no-op for a position with no
+   * instruction group (config/instructions.js's own "defensive positions get
+   * none — matches pics") rather than a screen with nothing to show. */
+  teamSheetInstrSelect() {
+    const ts = this.state.ui.teamSheet;
+    if (ts.customiseMode !== "instructions" || ts.instrEditingIndex != null) return;
+    const entry = this.state.squad.lineup[ts.instrFocusIndex];
+    if (!entry || entry.gk || !instructionGroupFor(entry.pos)) return;
+    ts.instrEditingIndex = ts.instrFocusIndex;
+    ts.instrCategoryIndex = 0;
+    this.emit("teamsheet", null);
+  }
+
+  teamSheetInstrCategoryFocus(index) {
+    const ts = this.state.ui.teamSheet;
+    if (ts.instrEditingIndex == null) return;
+    ts.instrCategoryIndex = index;
+    this.emit("teamsheet", null);
+  }
+
+  /** (R) on the active category card: cycles that category's option for the
+   * player currently being edited. */
+  teamSheetInstrCycleOption(dir = 1) {
+    const ts = this.state.ui.teamSheet;
+    if (ts.instrEditingIndex == null) return;
+    const entry = this.state.squad.lineup[ts.instrEditingIndex];
+    const group = entry && instructionGroupFor(entry.pos);
+    const cats = group && INSTRUCTION_GROUPS[group];
+    if (!cats || !cats.length) return;
+    const cat = cats[Math.min(ts.instrCategoryIndex, cats.length - 1)];
+    const squad = this.state.squad;
+    if (!squad.instructions[entry.playerId]) squad.instructions[entry.playerId] = defaultInstructionsFor(group);
+    const picks = squad.instructions[entry.playerId];
+    const cur = picks[cat.key] != null ? picks[cat.key] : cat.defaultIndex;
+    picks[cat.key] = (cur + dir + cat.options.length) % cat.options.length;
+    this.emit("teamsheet", null);
+  }
+
+  /** (X) Reset All Instructions: footer text is literal — clears every
+   * player's picks team-wide, not just the one being edited (plan2-
+   * decisions.md F2 [JUDGMENT CALL]: ms_..._INSTRUCTIONS pics' own label has
+   * no "for this player" qualifier). */
+  teamSheetInstrResetAll() {
+    this.state.squad.instructions = {};
+    this.state.squad.sheets[this.state.squad.activeSheetIndex].instructions = this.state.squad.instructions;
+    this.emit("teamsheet", null);
+  }
+
+  /* --- Player Positioning (FORMATIONS > EDIT > POSITIONING) --- */
+
+  teamSheetPosFocus(index) {
+    const ts = this.state.ui.teamSheet;
+    if (ts.customiseMode !== "positioning") return;
+    ts.posFocusIndex = index;
+    this.emit("teamsheet", null);
+  }
+
+  /** Arrow-nudge (or mouse-drag delta, both funnel through this) the focused
+   * player within a ±8% x/y clamp of their formation-assigned baseline
+   * (plan2.md F2.2 "Player Positioning ... ±8% x/y clamp"). */
+  teamSheetPosNudge(dx, dy) {
+    const ts = this.state.ui.teamSheet;
+    if (ts.customiseMode !== "positioning") return;
+    const entry = this.state.squad.lineup[ts.posFocusIndex];
+    if (!entry) return;
+    const baseX = entry.baseX != null ? entry.baseX : entry.x;
+    const baseY = entry.baseY != null ? entry.baseY : entry.y;
+    entry.x = Math.max(baseX - 8, Math.min(baseX + 8, Math.max(2, Math.min(98, entry.x + dx))));
+    entry.y = Math.max(baseY - 8, Math.min(baseY + 8, Math.max(4, Math.min(96, entry.y + dy))));
+    this.emit("teamsheet", null);
+  }
+
+  /** (X) Reset Changes: unlike Instructions' Reset All, this pic's footer
+   * label has no "All" — scoped to the focused player only. */
+  teamSheetPosReset() {
+    const ts = this.state.ui.teamSheet;
+    if (ts.customiseMode !== "positioning") return;
+    const entry = this.state.squad.lineup[ts.posFocusIndex];
+    if (!entry) return;
+    if (entry.baseX != null) entry.x = entry.baseX;
+    if (entry.baseY != null) entry.y = entry.baseY;
+    this.emit("teamsheet", null);
+  }
+
+  /* ----- F2: TACTICS tab ----- */
+
+  teamSheetTacticsFocus(index) {
+    const ts = this.state.ui.teamSheet;
+    ts.tacticsCursor = index;
+    this.emit("teamsheet", null);
+  }
+
+  /** (A)/click a D-pad tactic cell: makes it the active in-match tactic
+   * (reuses the existing M11 setTactic mutator/effect unchanged). */
+  teamSheetTacticsSelect() {
+    const ts = this.state.ui.teamSheet;
+    const t = TACTICS[ts.tacticsCursor];
+    if (t) this.setTactic(t.id);
+  }
+
+  /* ----- F2: ROLES tab ----- */
+
+  teamSheetRolesFocus(index) {
+    const ts = this.state.ui.teamSheet;
+    ts.rolesCursor = index;
+    this.emit("teamsheet", null);
+  }
+
+  teamSheetRolesOpenPicker() {
+    this.state.ui.teamSheet.rolesPickerOpen = true;
+    this.emit("teamsheet", null);
+  }
+
+  teamSheetRolesClosePicker() {
+    this.state.ui.teamSheet.rolesPickerOpen = false;
+    this.emit("teamsheet", null);
+  }
+
+  /** Assigns `playerId` to whichever of the 6 PLAYER ROLES grid cells is
+   * currently focused (order matches the pic's 3x2 reading order: Captain,
+   * Left Corner, Right Corner, Short Free Kick, Penalties, Long Free Kick). */
+  teamSheetRolesPick(playerId) {
+    const ts = this.state.ui.teamSheet;
+    const field = ROLE_FIELDS[ts.rolesCursor];
+    if (!field) return;
+    if (field === "captainId") this.setCaptain(playerId);
+    else if (field === "penaltyTakerId") this.setPenaltyTaker(playerId);
+    else this.state.squad[field] = playerId;
+    ts.rolesPickerOpen = false;
+    this.emit("teamsheet", null);
+  }
+
+  /** LS / key V: cycles the pitch's 3 jersey-caption modes (plan2.md F1.2).
+   * F2: also available on the FORMATIONS tab's own pitch preview in the two
+   * states that show an (LS) Change View footer prompt (Instructions'
+   * plain-browsing state and Positioning — ms_..._PLAYER_INSTRUCTIONS.png /
+   * ms_..._PLAYER_POSITIONING.png both list it; the FORMATIONS grid and
+   * Instructions' category-editing state don't). */
   teamSheetChangeView(dir = 1) {
     const ts = this.state.ui.teamSheet;
-    if (ts.tab !== "squad") return;
+    const eligible = ts.tab === "squad"
+      || (ts.tab === "formations" && ts.customiseMode === "instructions" && ts.instrEditingIndex == null)
+      || (ts.tab === "formations" && ts.customiseMode === "positioning");
+    if (!eligible) return;
     ts.changeView = (ts.changeView + dir + 3) % 3;
     this.emit("teamsheet", null);
   }
@@ -1779,11 +2095,33 @@ export class Store {
   }
 
   /** (B)/Esc — steps back through Team Sheet's own nested modes (suggested
-   * subs -> armed selection -> open drawer) before finally closing the
-   * overlay, same "cancel the innermost thing first" convention as
-   * negotiation/matchday's own closeX() overrides. */
+   * subs -> armed selection -> open drawer, or F2's FORMATIONS/ROLES
+   * breadcrumb depth) before finally closing the overlay, same "cancel the
+   * innermost thing first" convention as negotiation/matchday's own
+   * closeX() overrides. */
   teamSheetBack() {
     const ts = this.state.ui.teamSheet;
+    if (ts.tab === "formations") {
+      if (ts.instrEditingIndex != null) { ts.instrEditingIndex = null; this.emit("teamsheet", null); return; }
+      if (ts.customiseMode === "instructions" || ts.customiseMode === "positioning") {
+        ts.customiseMode = "menu";
+        this.emit("teamsheet", null);
+        return;
+      }
+      if (ts.customiseMode === "menu") {
+        ts.customiseMode = null;
+        this.emit("teamsheet", null);
+        return;
+      }
+      this.closeOverlay();
+      return;
+    }
+    if (ts.tab === "roles") {
+      if (ts.rolesPickerOpen) { ts.rolesPickerOpen = false; this.emit("teamsheet", null); return; }
+      this.closeOverlay();
+      return;
+    }
+    if (ts.tab === "tactics") { this.closeOverlay(); return; }
     ts.drawerMinimized = false; // every branch below is "reveal more", never less
     if (ts.drawer === "suggested") {
       ts.suggested = null;
@@ -1806,11 +2144,25 @@ export class Store {
   }
 
   /** (RS) attribute-panel page cycling — GK slots get a 5th "GK Attributes"
-   * page ahead of the other 4 (plan2.md §B4). */
+   * page ahead of the other 4 (plan2.md §B4). F2: reused (same ts.attrPage
+   * field) by the FORMATIONS tab's own single-player attribute panel
+   * (ui/formationsui.js's renderPlayerAttrPanel) in Instructions' plain-
+   * browsing state and Positioning — resolves whichever player is relevant
+   * to whichever tab/mode is currently showing. */
   teamSheetChangeAttrPage(dir = 1) {
     const ts = this.state.ui.teamSheet;
-    if (ts.tab !== "squad") return;
-    const player = teamSheetSlotPlayer(this.state, ts.focus);
+    let player = null;
+    if (ts.tab === "squad") {
+      player = teamSheetSlotPlayer(this.state, ts.focus);
+    } else if (ts.tab === "formations" && ts.customiseMode === "instructions" && ts.instrEditingIndex == null) {
+      const entry = this.state.squad.lineup[ts.instrFocusIndex];
+      player = entry ? this.state.playersById.get(entry.playerId) : null;
+    } else if (ts.tab === "formations" && ts.customiseMode === "positioning") {
+      const entry = this.state.squad.lineup[ts.posFocusIndex];
+      player = entry ? this.state.playersById.get(entry.playerId) : null;
+    } else {
+      return;
+    }
     const count = player && positionInfo(player.position).area === "GK" ? 5 : 4;
     ts.attrPage = (ts.attrPage + dir + count) % count;
     this.emit("teamsheet", null);

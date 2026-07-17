@@ -239,3 +239,172 @@ Testing: full 419/419 suite still green (no logic touched, CSS/markup-only), man
 hover sweep over every Squad-page tile (including the disabled NATL tiles, confirmed no ring) and
 both Team Sheet name-panel modes (single + compare, confirmed distinct flags per side), plus a
 repeat of the §A5.4-style regression — all clean, no console errors.
+
+## F2 — 2026-07-17
+Team Sheet FORMATIONS/TACTICS/ROLES tabs + Kit Numbers fidelity pass + new Injury List screen.
+New files: `js/config/formations.js`, `js/config/instructions.js`, `js/config/injuries.js`,
+`js/ui/formationsui.js`, `js/ui/rolestacticsui.js`, `js/ui/injurylistui.js`, `css/formations.css`.
+Retired: `js/ui/tacticsui.js`, `css/tactics.css` (standalone M11 tactics overlay — captain/
+penalty-taker pickers moved into the new ROLES tab; TACTICS/ROLES tabs deep-link from the Squad
+hub tile instead of opening a separate overlay).
+
+- [PLAN-TEXT CORRECTION] TACTICS tab: plan2.md's own summary guessed "Speed/Passing/Positioning
+  bars over the pitch with presets" — `ms_TEAM_SHEET_VIEW_TACTICS.png` actually shows a completely
+  different screen: a 2x2 D-pad-icon "ASSIGNED TACTICS" grid (Up/Right/Down/Left mapped to
+  config/tactics.js's 4 existing presets, in that exact array order) plus a static "Info" panel
+  explaining in-game D-pad tactic switching — no pitch, no bars at all. Pics win per §A1; built to
+  match the pic exactly (js/ui/rolestacticsui.js's `renderTacticsTab`), same resolution pattern F1
+  already established for plan-text-vs-pic conflicts.
+- [JUDGMENT CALL] TACTICS tab's "(A) Edit Tactics": since the pic's D-pad grid has exactly 4 cells
+  mapped 1:1 to config/tactics.js's 4 existing presets (no more, no less) and no pic shows a deeper
+  edit screen, (A)/click on a cell immediately applies that preset (reuses the unchanged M11
+  `setTactic` mutator) rather than opening a separate confirmation step.
+- [PIC-GUESS] Instruction category cards' small green checkmark badge: the 9 CUSTOMISE_FORMATIONS_
+  PLAYER_INSTRUCTIONS_* pics are inconsistent — the very first frame of each position group (before
+  any (R) cycling) shows no checkmarks, every subsequent frame shows one on all 3 cards regardless
+  of selection. Read as a render/capture-timing artifact of the *first* frame rather than a
+  deliberate state, matching F1's own precedent for a similar single-inconsistent-pic call — cards
+  always render the checkmark (`ui/formationsui.js`'s `renderInstructionsCategoryCards`).
+- [JUDGMENT CALL] Player Instructions position-group membership (`js/config/instructions.js`):
+  the 3 pics each sample exactly one player (Taylor/ST, Hollands/CM, Barcham/LM), never the full
+  roster, so the complete membership of FORWARDS/INSIDE_MID/OUTSIDE_MID isn't pic-evidenced.
+  Assigned FORWARDS = every ATT-area code (RF/CF/LF/RS/ST/LS/RW/LW), INSIDE_MID = the 6 central mid
+  codes (RCM/CM/LCM/RAM/CAM/LAM), OUTSIDE_MID = the 2 wide mid codes (RM/LM); every DEF-area code,
+  GK, and the 3 CDM codes ("Defensive Midfielder" in config/positions.js) get no instructions page
+  at all, matching the build note's "defensive positions get none — matches pics."
+- [JUDGMENT CALL] Selecting a no-instruction-group player (a defender/CDM/GK) in Instructions mode
+  is a no-op — (A) simply does nothing — rather than inventing a fallback "no instructions
+  available" screen with zero pic evidence for its wording.
+- [PIC-GUESS] FORMATIONS grid navigation: the 6 FORMATIONS_PAGE pics show a scrollbar thumb on the
+  grid's right edge and no LB/RB prompt in the footer, so this reads as a continuously-scrolling
+  3-column list (arrow keys walk cell-by-cell; `js/core/store.js`'s `teamSheetFormationsCursor` is
+  an absolute index 0-33, not a page pointer) rather than shoulder-button-paged pages — the visible
+  "page" is just whichever 6-cell window contains the cursor. `config/formations.js` still exposes
+  `gridPage`/`gridPageCount` (6 pages, last one 4 cells) for windowing math and tests.
+- [JUDGMENT CALL] The FORMATIONS grid's cell 0 ("`<Club>` / Default Formation", pic-verbatim label)
+  is a synthetic pseudo-entry that always points at "4-4-2"/"Flat" — matches gen/squad.js's
+  XI_TEMPLATE (the shape every generated squad's Default Team Sheet already uses); no per-club
+  default-formation data exists anywhere in this codebase to look up instead.
+- [TUNED] Formation pitch coordinates (`config/formations.js`): none of the 6 FORMATIONS_PAGE pics
+  actually show a non-4-4-2 XI on the pitch — the cursor browses the list while the pitch keeps
+  rendering Portsmouth's real "4-4-2 Flat" sheet in every capture. Coordinates for the other 32
+  formations are therefore a from-scratch generic per-shape layout generator (`baseSlots`), not
+  hand-placed: fixed x-bands per line-width (1/2/3/4/5-wide), y-bands per total line count (3 or
+  4), defensive/attacking/midfield position-code tables keyed by line width + depth bucket
+  (dm/cm/am), plus small cosmetic-only style nudges for Diamond (reshapes a flat 4-wide mid line
+  into an actual diamond — the one style with real shape semantics), Wide, Attack, Defend/Holding,
+  and False 9. `formationSlots()` output for "4-4-2"/"Flat" intentionally matches gen/squad.js's
+  existing XI_TEMPLATE coordinates so re-selecting the club's already-active default is a
+  no-visible-op — confirmed in the browser (re-picking the default cell doesn't visibly move any
+  jersey).
+- [TUNED] `remapLineupToFormation`'s best-fit scoring (plan2.md F2.1: "re-maps the XI by best-fit
+  position", no formula given): +4 for an exact position-area match, +1 for an adjacent area
+  (DEF↔MID, MID↔ATT), +2 for a side match (L/R/C), +0.5 if either side is center — slots filled
+  DEF-first (scarcest good fits) so a shape with fewer defenders than the current XI doesn't stand
+  a centre-back in an attacking slot purely by processing order. Re-seeds every slot's Player
+  Positioning baseline on every formation change (a fresh shape needs a fresh ±8% clamp anchor).
+- [TUNED] `ui/panelkit.js`'s `teamStars(rating)`: `reference/ini/teamutils.ini`'s `[IS_STAR_RATING]
+  RATING=82` is the only anchor point given anywhere (⇒ overall 82 = full 5★) — linear bands
+  stepping down every 6 rating points below it (`(rating-52)/6`, clamped 0-5, rounded to the
+  nearest half-star). First real consumer of this constant (F0 only defined the surrounding
+  `teamMedallion` component; F2's FORMATIONS/ROLES/TACTICS-adjacent medallion is the first place
+  it's actually computed from live data).
+- [TUNED] Team medallion ATT/MID/DEF inputs (`ui/formationsui.js`'s `sectionRatings`): mean overall
+  of the *current XI's* players in that slot's area (plan2.md §B5's own "section ratings = mean of
+  best XI per line" wording, implemented literally) — not a whole-squad-depth-weighted figure.
+  Browser-verified numbers (e.g. 63/61/62) don't chase pixel-exact matches against the captured
+  save's own 64/63/63, since no derivation formula exists to reverse-engineer against.
+- [TUNED] Player Instructions sim hooks (plan2.md F2.2: "±2-10% weighting tweaks inside sim/
+  events.js chance attribution"): this engine has no through-ball/cross/central "chance type"
+  taxonomy at all (sim/events.js just weight-picks a shooter/assister by attribute composite via
+  engine/sim/core.js's `pickWeighted`) — every per-instruction effect in `config/instructions.js`
+  is therefore a small SHOOTING_ATTRIBS/ASSIST_ATTRIBS weight multiplier (`pickWeighted`'s new
+  optional `multiplierFn` parameter) rather than a literal implementation of the plan's own
+  per-instruction wording. Scoped to the user's own club's *interactive* matches only
+  (`engine/sim/match.js`'s `buildInstructionMults`, threaded into `simulateSegment`), matching the
+  plan's explicit "inside sim/events.js" text — CPU-vs-CPU quick-sim and the user's own quick-simmed
+  cup/continental ties are untouched.
+- [TUNED] ROLES tab "corner takers weight assist attribution" (plan2.md F2.4): reuses the exact
+  same `pickWeighted` multiplier hook instructions use — a flat +0.10 assist-weight bonus
+  (`CORNER_TAKER_ASSIST_BONUS`) for whichever player(s) hold `leftCornerId`/`rightCornerId`, same
+  "no dedicated set-piece chance type to redirect into" limitation.
+- [DEFERRED, not dropped] "captain: +2 morale (0-100 scale) while captain" (plan2.md F2.4's own
+  ROLES sim-hooks line): `player.morale` doesn't exist as a mechanic anywhere yet — F6's own
+  engine/morale.js is where this field, its 0-100 scale, and its level bands get designed from the
+  INI. Implementing a parallel morale number now would risk conflicting with F6's real design, so
+  this hook is intentionally not wired — flagged here for F6 to pick up.
+- [JUDGMENT CALL] Free-kick takers (`shortFreeKickId`/`longFreeKickId`) are stored and displayed
+  (ROLES grid, assignable via the picker) but have no sim effect — same "no set-piece chance type"
+  limitation as the two hooks above, and free kicks specifically have no existing goal/chance
+  pathway at all to attach a taker bonus to (unlike corners, which piggyback on the existing
+  ASSIST_ATTRIBS pool).
+- [JUDGMENT CALL] Player Instructions are stored **per team sheet** (`squad.sheets[i].instructions`,
+  mirrored to `squad.instructions` the same way lineup/bench already are), not globally per player —
+  plan2.md only explicitly scopes Player *Positioning* to "persists to the active sheet"; Player
+  Instructions just says "store per-player" without specifying sheet-scope. Chose per-sheet for
+  consistency (a second sheet is a different tactical system, so different instructions make
+  sense) and because Positioning's own explicit scoping sets the nearby precedent. Roles (captain,
+  corners, free kicks, penalty taker) stay squad-level, unchanged — matches the existing M11
+  captainId/penaltyTakerId precedent, which was never per-sheet.
+- [JUDGMENT CALL] "(X) Reset All Instructions" footer prompt (Instructions editing state) is taken
+  literally — clears **every** player's instruction picks team-wide, not just the player currently
+  being edited. The pic's own label has no "for this player" qualifier, unlike Positioning's
+  differently-worded "(X) Reset Changes" (which *is* scoped to the focused player only, per its own
+  label).
+- [JUDGMENT CALL] Positioning's "(Y) Change Role" footer prompt is pic-exact
+  (ms_TEAM_SHEET_VIEW_FORMATIONS_CUSTOMISE_FORMATIONS_PLAYER_POSITIONING.png) and is shown for
+  fidelity, but wired as a documented no-op — no pic anywhere shows what pressing it opens, and
+  nothing in plan2.md describes a "player role" concept distinct from the ROLES tab's 6 set-piece
+  roles. Same footing as the permanently-locked Edit Player tile: visible for pixel fidelity,
+  intentionally non-functional rather than inventing a screen with no reference.
+- [PIC-GUESS] ROLES tab's thin decorative strip between the captain header card and the "PLAYER
+  ROLES" grid (`ms_TEAM_SHEET_VIEW_ROLES.png` shows two generic jersey icons on a green strip, no
+  legible labels at capture resolution) — rendered as pure decoration
+  (`ui/rolestacticsui.js`'s `renderRolesHeader`'s neighbour markup), no interaction implied or built.
+- [TUNED]/[JUDGMENT CALL] Injury List screen (`ui/injurylistui.js`): no reference pic exists for
+  this screen's actual content anywhere in `REFERENCE_PICS/` — only its Squad-hub tile hover
+  teaser is captured. Built per plan2.md F2.6's own instruction ("simple fx-panel table of current
+  injuries (player, injury name, days remaining)") using §B1's fx-panel template directly: title
+  "INJURY LIST", a Pos/Player/Injury/Days Remaining table, empty state "No Injuries" (no pic
+  evidence for this exact string either — chosen for readability, logged since every other
+  empty-state string in this codebase was pic-sourced and this one isn't).
+- [TUNED] 12-entry named injury subset (`config/injuries.js`, reference/ini/fitness.ini): the INI's
+  `INJURY_NAME=n` fields are localization-string indices with no string table in this repo, so
+  names are Title-Case renders of each `[FITNESS_<NAME>]` section's own key (e.g. `FITNESS_PULLED_
+  HAM` → "Pulled Hamstring"); `RECOVERY` day counts per light/medium/severe tier are ported
+  verbatim, cited section-by-section in the file header. `pickInjuryName` is flavour-only — the
+  actual `daysLeft` still comes from plan1 M5's own `SEVERITY_DAY_RANGE` roll in `engine/
+  fitness.js`, unchanged, so this doesn't quietly alter an already-tested, out-of-scope mechanic.
+- Kit Numbers (`ui/kitnumbersui.js`) rebuilt onto §B1's `fxPanel`/`fxIdentityHeader` per
+  `ms_EDIT_KIT_NUMBERS_PAGE(.._SELECTED_PLAYER).png` — this is the *first* real production
+  consumer of `fxIdentityHeader` (F0 only wired it into `dev/kit.html` for eyeballing). Title fixed
+  to the pic-exact singular "EDIT KIT NUMBER" (was never literally wrong before — the old markup
+  used a `news-crumb` breadcrumb instead of a title bar at all). Footer prompt is now genuinely
+  dynamic ("Select Player" ↔ "Edit Kit Number", matching the two pics) — was previously a static,
+  always-on "Select / Edit Number" label that never actually changed.
+- [ENGINE FIX] CSS specificity bug found during browser QA: `.fm-dpad__up`/`__down`/`__left`/
+  `__right`'s `border-*-color: currentColor` were silently losing to the base `.fm-dpad i { border:
+  8px solid transparent; }` rule — `.fm-dpad i` (class+type selector) has specificity (0,1,1),
+  beating the single-class `.fm-dpad__up` (0,1,0) regardless of source order, so every TACTICS
+  D-pad icon rendered fully invisible (all 4 borders transparent). Fixed by qualifying the
+  direction selectors as `i.fm-dpad__up` etc. (ties the base rule's specificity, wins on later
+  source order) — caught by a headless Playwright pass, not visible in a static code read.
+- [ENGINE FIX] `.fm-instcard__pager` (the selected instruction category's ‹ • • • › cycle control)
+  had no `display:flex`, so its three children (prev button / dots / next button) stacked
+  vertically instead of sitting in a row — fixed by adding the missing flex rule. Also caught only
+  by an actual rendered screenshot, not a code read (the SQUAD tab's own equivalent pager already
+  had `display:flex` via a *different*, unrelated §B4 class it happens to also carry).
+
+Testing: extended `dev/tests.js` with 42 new assertions (formations catalogue shape/bounds/remap,
+instructions groups/effects, `pickWeighted`'s new multiplier hook, the 12 named injuries,
+`teamStars`, and a live-Store walkthrough of applyFormation/Instructions/Positioning/Tactics/Roles)
+— 461/461 total, all green. Manual QA via a headless Playwright session (chromium, this
+environment has no interactive browser): new game as Portsmouth, full FORMATIONS grid scroll +
+formation select + Customise Formation menu + Player Instructions (browse → select → cycle
+options → change category → Reset All) + Player Positioning (drag via mousedown/mousemove,
+keyboard nudge confirmed clamped to baseline±8%, Reset Changes) + TACTICS tab (D-pad select) +
+ROLES tab (squad-list picker → assignment, confirmed on-screen) + Kit Numbers (select, edit,
+stepper, Kit Changes log) + new Injury List screen, then the §A5.4 regression (advance 12 days
+from July 1, all 5 hubs revisited) — zero console/page errors throughout the entire session. Two
+real CSS bugs (both logged above as [ENGINE FIX]) were caught and fixed during this pass and would
+not have been visible from a static code read.

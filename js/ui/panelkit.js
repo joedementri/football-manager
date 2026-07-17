@@ -268,6 +268,15 @@ export function starRating(value, max = 5) {
   return html + `</span>`;
 }
 
+// [TUNED] reference/ini/teamutils.ini [IS_STAR_RATING] RATING=82 is the only
+// data point given (⇒ overall 82 is a full 5★) — no lower anchor exists, so
+// bands step down linearly every 6 rating points below it (plan2-decisions.md
+// F2). Used by the Formations/Roles tabs' team medallion (§B5).
+export function teamStars(rating) {
+  const raw = Math.max(0, Math.min(5, (rating - 52) / 6));
+  return Math.round(raw * 2) / 2;
+}
+
 /** Circular team medallion (crest + stars + ATT/MID/DEF mini-table). */
 export function teamMedallion({ crestHref, stars, att, mid, def }) {
   return (

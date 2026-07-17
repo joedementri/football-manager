@@ -29,7 +29,7 @@ import { renderYouth } from "../ui/youthui.js";
 import { renderMyCareer } from "../ui/mycareerui.js";
 import { renderSquadReport, renderSquadRanking } from "../ui/squadreportui.js";
 import { renderKitNumbers } from "../ui/kitnumbersui.js";
-import { renderTactics } from "../ui/tacticsui.js";
+import { renderInjuryList } from "../ui/injurylistui.js";
 import { renderTeamSheet } from "../ui/teamsheetui.js";
 import { renderTeamStats, renderPlayerStats } from "../ui/statsui.js";
 import { renderSettings } from "../ui/settingsui.js";
@@ -97,10 +97,13 @@ export function initRouter(store) {
   const squadrankingOverlay = document.getElementById("squadranking-overlay");
   const footerKitnumbers = document.getElementById("footer-kitnumbers");
   const kitnumbersOverlay = document.getElementById("kitnumbers-overlay");
-  const knListEl = document.getElementById("kn-list");
-  const footerTactics = document.getElementById("footer-tactics");
-  const tacticsOverlay = document.getElementById("tactics-overlay");
-  const tacticsBodyEl = document.getElementById("tactics-body");
+  // F2: delegated on the stable kitnumbers-body wrapper, not #kn-list —
+  // ui/kitnumbersui.js now rebuilds that element (and everything else in the
+  // panel) from scratch every render, same "dynamic content needs a stable
+  // ancestor" reasoning as .sq-sheet's own delegation further down.
+  const knBodyEl = document.getElementById("kitnumbers-body");
+  const footerInjurylist = document.getElementById("footer-injurylist");
+  const injurylistOverlay = document.getElementById("injurylist-overlay");
   const footerTeamsheet = document.getElementById("footer-teamsheet");
   const teamsheetOverlay = document.getElementById("teamsheet-overlay");
   const sqtsTabbarEl = document.getElementById("sqts-tabbar");
@@ -210,21 +213,18 @@ export function initRouter(store) {
       kitnumbersOverlay.classList.toggle("is-active", open);
       footerKitnumbers.hidden = !open;
       if (open) renderKitNumbers(store.state);
-    } else if (name === "tactics") {
-      tacticsOverlay.classList.toggle("is-active", open);
-      footerTactics.hidden = !open;
-      if (open) renderTactics(store.state);
-      // Backing out: a captaincy change while this overlay was open needs
-      // the Squad screen's pitch to reflect the new "C" badge (same
-      // "refresh the screen underneath on close" precedent as natlsquad).
-      else renderSquad(store.state);
+    } else if (name === "injurylist") {
+      injurylistOverlay.classList.toggle("is-active", open);
+      footerInjurylist.hidden = !open;
+      if (open) renderInjuryList(store.state);
     } else if (name === "teamsheet") {
       teamsheetOverlay.classList.toggle("is-active", open);
       footerTeamsheet.hidden = !open;
       if (open) renderTeamSheet(store.state);
-      // Backing out: swaps made inside Team Sheet must show up on the Squad
-      // hub tile's own pitch preview (same "refresh the screen underneath on
-      // close" precedent as tactics/natlsquad above).
+      // Backing out: swaps (or F2's formation/captaincy changes) made inside
+      // Team Sheet must show up on the Squad hub tile's own pitch preview
+      // (same "refresh the screen underneath on close" precedent as
+      // natlsquad above).
       else renderSquad(store.state);
     } else if (name === "teamstats") {
       teamstatsOverlay.classList.toggle("is-active", open);
@@ -309,7 +309,6 @@ export function initRouter(store) {
   store.on("mycareer", () => renderMyCareer(store.state));
   store.on("squadreport", () => renderSquadReport(store.state));
   store.on("kitnumbers", () => renderKitNumbers(store.state));
-  store.on("tactics", () => renderTactics(store.state));
   store.on("teamsheet", () => renderTeamSheet(store.state));
   store.on("teamstats", () => renderTeamStats(store.state));
   store.on("playerstats", () => renderPlayerStats(store.state));
@@ -410,7 +409,11 @@ export function initRouter(store) {
       else if (tile.dataset.open === "squadreport") store.openSquadReport();
       else if (tile.dataset.open === "squadranking") store.openSquadRanking();
       else if (tile.dataset.open === "kitnumbers") store.openKitNumbers();
-      else if (tile.dataset.open === "tactics") store.openTactics(tile.dataset.tacticsPage || "tactics");
+      // F2: Squad hub's Formations/Tactics/Player Roles carousel tile — each
+      // page deep-links straight into that Team Sheet sub-tab (the standalone
+      // M11 tactics overlay is retired, plan2-decisions.md F2) using
+      // whichever sheet is already active (sheetIndex null = don't switch).
+      else if (tile.dataset.open === "teamsheet") store.openTeamSheet(null, tile.dataset.teamsheetTab || "squad");
       else if (tile.dataset.open === "teamstats") store.openTeamStats();
       else if (tile.dataset.open === "playerstats") store.openPlayerStats();
       else if (tile.dataset.open === "settings") store.openSettings();
@@ -506,7 +509,7 @@ export function initRouter(store) {
   // Kit Numbers (M11): click an unselected row to select it, click the
   // already-selected row again to enter edit mode (reveals ◄/► steppers);
   // stepper clicks are checked first since they're nested inside a row.
-  knListEl.addEventListener("click", (e) => {
+  knBodyEl.addEventListener("click", (e) => {
     const stepper = e.target.closest(".kn-stepper");
     if (stepper) { store.adjustKitNumber(stepper.dataset.action === "inc" ? 1 : -1); return; }
     const row = e.target.closest(".sl-row");
@@ -521,22 +524,9 @@ export function initRouter(store) {
     } else if (el.dataset.action === "back") store.closeOverlay();
   });
 
-  // Tactics / Player Roles (M11): tactic cards + captain/penalty-taker rows
-  // are both fully delegated (one body element re-rendered per page, same
-  // pattern as GTN/Youth above).
-  tacticsBodyEl.addEventListener("click", (e) => {
-    const el = e.target.closest("[data-action]");
-    if (!el) return;
-    if (el.dataset.action === "set-tactic") store.setTactic(el.dataset.value);
-    else if (el.dataset.action === "set-captain") store.setCaptain(Number(el.dataset.value));
-    else if (el.dataset.action === "set-penalty") store.setPenaltyTaker(Number(el.dataset.value));
-  });
-  footerTactics.addEventListener("click", (e) => {
-    const el = e.target.closest("[data-action]");
-    if (!el) return;
-    if (el.dataset.action === "prev-page") store.tacticsChangePage(-1);
-    else if (el.dataset.action === "next-page") store.tacticsChangePage(1);
-    else if (el.dataset.action === "back") store.closeOverlay();
+  // Injury List (F2, plan2.md): read-only fx-panel table, footer is just Back.
+  footerInjurylist.addEventListener("click", (e) => {
+    if (e.target.closest("[data-action='back']")) store.closeOverlay();
   });
 
   // F1 (fable-plans/plan2.md): Squad hub's team-sheet tile — delegated
@@ -551,8 +541,7 @@ export function initRouter(store) {
     if (pageEl) store.openTeamSheet(Number(pageEl.dataset.sheetIndex));
   });
 
-  // F1: SQUAD/FORMATIONS/TACTICS/ROLES sub-tab bar — only SQUAD renders a
-  // body this milestone (ui/teamsheetui.js's own header explains why).
+  // F1/F2: SQUAD/FORMATIONS/TACTICS/ROLES sub-tab bar.
   sqtsTabbarEl.addEventListener("click", (e) => {
     const el = e.target.closest("[data-tab]");
     if (el) store.teamSheetSetTab(el.dataset.tab);
@@ -576,33 +565,120 @@ export function initRouter(store) {
   // movement, never synthesized by a layout change — so it can't be spoofed
   // by our own re-render. teamSheetFocus's existing sameSlot no-op guard
   // keeps this just as cheap under real, continuous mouse movement.
+  //
+  // F2: the same pitch preview shows on FORMATIONS' Instructions (browsing)
+  // and Positioning states — mousemove there moves instrFocusIndex/
+  // posFocusIndex instead of the SQUAD tab's own ts.focus.
   sqtsBodyEl.addEventListener("mousemove", (e) => {
     const el = e.target.closest("[data-zone]");
-    if (el) store.teamSheetFocus(el.dataset.zone, Number(el.dataset.index));
+    if (!el) return;
+    const ts = store.state.ui.teamSheet;
+    if (ts.tab === "squad") { store.teamSheetFocus(el.dataset.zone, Number(el.dataset.index)); return; }
+    if (ts.tab === "formations" && ts.customiseMode === "instructions" && ts.instrEditingIndex == null) {
+      store.teamSheetInstrFocus(Number(el.dataset.index));
+    } else if (ts.tab === "formations" && ts.customiseMode === "positioning" && !posDrag) {
+      store.teamSheetPosFocus(Number(el.dataset.index));
+    }
   });
   sqtsBodyEl.addEventListener("click", (e) => {
+    const ts = store.state.ui.teamSheet;
     const slotEl = e.target.closest("[data-zone]");
-    if (slotEl) { store.teamSheetActivateSlot(slotEl.dataset.zone, Number(slotEl.dataset.index)); return; }
+    if (slotEl) {
+      if (ts.tab === "squad") { store.teamSheetActivateSlot(slotEl.dataset.zone, Number(slotEl.dataset.index)); return; }
+      if (ts.tab === "formations" && ts.customiseMode === "instructions" && ts.instrEditingIndex == null) {
+        store.teamSheetInstrFocus(Number(slotEl.dataset.index));
+        store.teamSheetInstrSelect();
+      }
+      return;
+    }
     const drawerEl = e.target.closest('[data-action="toggle-drawer"]');
     if (drawerEl) { store.teamSheetToggleDrawer(); return; }
     // F1-fixes: the (RS) glyph pill was replaced with prev/next chevron
     // buttons (matching js/carousel.js's main-menu tile carousels) — each
     // gets its own data-action; clicking a dot directly still just advances
-    // one page, same as before.
-    const prevEl = e.target.closest('[data-action="attrpage-prev"]');
-    if (prevEl) { store.teamSheetChangeAttrPage(-1); return; }
-    const nextEl = e.target.closest('[data-action="attrpage-next"]');
-    if (nextEl) { store.teamSheetChangeAttrPage(1); return; }
-    if (e.target.closest(".fx-attrpanel__pagedots .dots")) store.teamSheetChangeAttrPage(1);
+    // one page, same as before. F2's own single-player attribute panel
+    // (Instructions browsing / Positioning) reuses the exact same markup.
+    if (e.target.closest('[data-action="attrpage-prev"]')) { store.teamSheetChangeAttrPage(-1); return; }
+    if (e.target.closest('[data-action="attrpage-next"]')) { store.teamSheetChangeAttrPage(1); return; }
+    if (e.target.closest(".fx-attrpanel__pagedots .dots")) { store.teamSheetChangeAttrPage(1); return; }
+
+    // F2: FORMATIONS tab.
+    const fmCell = e.target.closest('[data-action="formations-cell"]');
+    if (fmCell) { store.teamSheetFormationsFocus(Number(fmCell.dataset.index)); store.teamSheetFormationsSelect(); return; }
+    if (e.target.closest('[data-action="customise-formation"]')) { store.teamSheetOpenCustomise(); return; }
+    const menuCell = e.target.closest('[data-action="customise-menu-cell"]');
+    if (menuCell) { store.teamSheetCustomiseMenuFocus(Number(menuCell.dataset.index)); store.teamSheetCustomiseMenuSelect(); return; }
+    const catCell = e.target.closest('[data-action="instr-cat"]');
+    if (catCell) { store.teamSheetInstrCategoryFocus(Number(catCell.dataset.index)); return; }
+    if (e.target.closest('[data-action="instr-cycle-prev"]')) { store.teamSheetInstrCycleOption(-1); return; }
+    if (e.target.closest('[data-action="instr-cycle-next"]')) { store.teamSheetInstrCycleOption(1); return; }
+    if (e.target.closest('[data-action="instr-reset-all"]')) { store.teamSheetInstrResetAll(); return; }
+    if (e.target.closest('[data-action="pos-reset"]')) { store.teamSheetPosReset(); return; }
+    // "(Y) Change Role" (Positioning footer): pic-exact prompt, no pic shows
+    // its target screen — intentional no-op (plan2-decisions.md F2), same
+    // footing as the permanently-locked Edit Player tile.
+    if (e.target.closest('[data-action="pos-change-role"]')) return;
+
+    // F2: TACTICS tab.
+    const tacCell = e.target.closest('[data-action="tactics-cell"]');
+    if (tacCell) { store.teamSheetTacticsFocus(Number(tacCell.dataset.index)); store.teamSheetTacticsSelect(); return; }
+
+    // F2: ROLES tab.
+    const roleCell = e.target.closest('[data-action="roles-cell"]');
+    if (roleCell) { store.teamSheetRolesFocus(Number(roleCell.dataset.index)); store.teamSheetRolesOpenPicker(); return; }
+    const pickRow = ts.tab === "roles" && ts.rolesPickerOpen ? e.target.closest("[data-row-id]") : null;
+    if (pickRow) store.teamSheetRolesPick(Number(pickRow.dataset.rowId));
   });
+
+  // F2: Positioning's mouse-drag (plan2.md F2.2: "drag (mouse) / arrow-nudge
+  // ... within a bounded zone ... ±8% x/y clamp"). mousedown on a jersey
+  // starts tracking; document-level mousemove/mouseup (not scoped to
+  // sqts-body) so a fast drag that briefly leaves the pitch under the cursor
+  // doesn't drop the gesture. Deltas are converted to percentage-of-pitch
+  // (matching the jerseys' own left/top:%) via the pitch element's own
+  // bounding rect (data-role="pos-pitch" — ui/formationsui.js's own marker).
+  let posDrag = null;
+  sqtsBodyEl.addEventListener("mousedown", (e) => {
+    const ts = store.state.ui.teamSheet;
+    if (ts.tab !== "formations" || ts.customiseMode !== "positioning") return;
+    const jerseyEl = e.target.closest('[data-zone="xi"]');
+    if (!jerseyEl) return;
+    const pitchEl = document.querySelector('[data-role="pos-pitch"] .sqts-pitch');
+    if (!pitchEl) return;
+    const rect = pitchEl.getBoundingClientRect();
+    posDrag = { lastX: e.clientX, lastY: e.clientY, rectW: rect.width, rectH: rect.height };
+    store.teamSheetPosFocus(Number(jerseyEl.dataset.index));
+  });
+  document.addEventListener("mousemove", (e) => {
+    if (!posDrag) return;
+    const dxPct = ((e.clientX - posDrag.lastX) / posDrag.rectW) * 100;
+    const dyPct = ((e.clientY - posDrag.lastY) / posDrag.rectH) * 100;
+    posDrag.lastX = e.clientX;
+    posDrag.lastY = e.clientY;
+    if (dxPct || dyPct) store.teamSheetPosNudge(dxPct, dyPct);
+  });
+  document.addEventListener("mouseup", () => { posDrag = null; });
+
   footerTeamsheet.addEventListener("click", (e) => {
     const el = e.target.closest("[data-action]");
     if (!el) return;
+    const ts = store.state.ui.teamSheet;
     switch (el.dataset.action) {
       case "back": store.teamSheetBack(); break;
       case "suggested-subs": store.teamSheetSuggestedSubs(); break;
-      case "select-player": store.teamSheetSelectPlayer(); break;
       case "change-view": store.teamSheetChangeView(1); break;
+      case "customise-formation": store.teamSheetOpenCustomise(); break;
+      case "instr-reset-all": store.teamSheetInstrResetAll(); break;
+      case "pos-reset": store.teamSheetPosReset(); break;
+      case "pos-change-role": break; // see the sqtsBodyEl click handler's own note above
+      case "select-player":
+        if (ts.tab === "squad") store.teamSheetSelectPlayer();
+        else if (ts.tab === "formations" && !ts.customiseMode) store.teamSheetFormationsSelect();
+        else if (ts.tab === "formations" && ts.customiseMode === "menu") store.teamSheetCustomiseMenuSelect();
+        else if (ts.tab === "formations" && ts.customiseMode === "instructions" && ts.instrEditingIndex == null) store.teamSheetInstrSelect();
+        else if (ts.tab === "tactics") store.teamSheetTacticsSelect();
+        else if (ts.tab === "roles" && !ts.rolesPickerOpen) store.teamSheetRolesOpenPicker();
+        break;
     }
   });
 
@@ -1044,6 +1120,62 @@ export function initRouter(store) {
         if (next) store.teamSheetFocus(next.zone, next.index);
         return;
       }
+    }
+    // F2 (plan2.md): FORMATIONS/TACTICS/ROLES tabs — same "keyboard support
+    // exists, full mouse support covers pixel-precise 2D nav" footing as the
+    // SQUAD tab block above. V/R keep their established meanings (Change
+    // View / attribute-panel pager) wherever those prompts actually appear.
+    if (store.state.ui.overlay === "teamsheet" && store.state.ui.teamSheet.tab === "formations") {
+      const ts = store.state.ui.teamSheet;
+      const key = e.key;
+      if (ts.customiseMode === "menu") {
+        if (key === "ArrowLeft") { store.teamSheetCustomiseMenuFocus(0); return; }
+        if (key === "ArrowRight") { store.teamSheetCustomiseMenuFocus(1); return; }
+        if (key === "Enter" || key === "a" || key === "A") { store.teamSheetCustomiseMenuSelect(); return; }
+      } else if (ts.customiseMode === "instructions" && ts.instrEditingIndex != null) {
+        if (key === "ArrowLeft") { store.teamSheetInstrCategoryFocus(Math.max(0, ts.instrCategoryIndex - 1)); return; }
+        if (key === "ArrowRight") { store.teamSheetInstrCategoryFocus(ts.instrCategoryIndex + 1); return; }
+        if (key === "r" || key === "R") { store.teamSheetInstrCycleOption(1); return; }
+        if (key === "x" || key === "X") { store.teamSheetInstrResetAll(); return; }
+      } else if (ts.customiseMode === "instructions") {
+        if (key === "v" || key === "V") { store.teamSheetChangeView(1); return; }
+        if (key === "r" || key === "R") { store.teamSheetChangeAttrPage(1); return; }
+        if (key === "Enter" || key === "a" || key === "A") { store.teamSheetInstrSelect(); return; }
+        if (key === "ArrowUp" || key === "ArrowDown" || key === "ArrowLeft" || key === "ArrowRight") {
+          const dir = (key === "ArrowUp" || key === "ArrowLeft") ? -1 : 1;
+          store.teamSheetInstrFocus((ts.instrFocusIndex + dir + 11) % 11);
+          return;
+        }
+      } else if (ts.customiseMode === "positioning") {
+        if (key === "v" || key === "V") { store.teamSheetChangeView(1); return; }
+        if (key === "r" || key === "R") { store.teamSheetChangeAttrPage(1); return; }
+        if (key === "x" || key === "X") { store.teamSheetPosReset(); return; }
+        if (key === "Tab") { e.preventDefault(); store.teamSheetPosFocus((ts.posFocusIndex + (e.shiftKey ? -1 : 1) + 11) % 11); return; }
+        if (key === "ArrowUp") { store.teamSheetPosNudge(0, -2); return; }
+        if (key === "ArrowDown") { store.teamSheetPosNudge(0, 2); return; }
+        if (key === "ArrowLeft") { store.teamSheetPosNudge(-2, 0); return; }
+        if (key === "ArrowRight") { store.teamSheetPosNudge(2, 0); return; }
+      } else {
+        if (key === "Enter" || key === "a" || key === "A") { store.teamSheetFormationsSelect(); return; }
+        if (key === "x" || key === "X") { store.teamSheetOpenCustomise(); return; }
+        if (key === "ArrowUp") { store.teamSheetFormationsMove(-3); return; }
+        if (key === "ArrowDown") { store.teamSheetFormationsMove(3); return; }
+        if (key === "ArrowLeft") { store.teamSheetFormationsMove(-1); return; }
+        if (key === "ArrowRight") { store.teamSheetFormationsMove(1); return; }
+      }
+    }
+    if (store.state.ui.overlay === "teamsheet" && store.state.ui.teamSheet.tab === "tactics") {
+      const ts = store.state.ui.teamSheet;
+      if (e.key === "ArrowLeft") { store.teamSheetTacticsFocus((ts.tacticsCursor + 3) % 4); return; }
+      if (e.key === "ArrowRight") { store.teamSheetTacticsFocus((ts.tacticsCursor + 1) % 4); return; }
+      if (e.key === "Enter" || e.key === "a" || e.key === "A") { store.teamSheetTacticsSelect(); return; }
+    }
+    if (store.state.ui.overlay === "teamsheet" && store.state.ui.teamSheet.tab === "roles" && !store.state.ui.teamSheet.rolesPickerOpen) {
+      const ts = store.state.ui.teamSheet;
+      if (e.key === "ArrowLeft") { store.teamSheetRolesFocus((ts.rolesCursor + 5) % 6); return; }
+      if (e.key === "ArrowRight") { store.teamSheetRolesFocus((ts.rolesCursor + 1) % 6); return; }
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") { store.teamSheetRolesFocus((ts.rolesCursor + 3) % 6); return; }
+      if (e.key === "Enter" || e.key === "a" || e.key === "A") { store.teamSheetRolesOpenPicker(); return; }
     }
     switch (e.key) {
       case "ArrowLeft": store.page(-1); break;

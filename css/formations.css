@@ -1,0 +1,197 @@
+/* ===========================================================================
+   formations.css — fable-plans/plan2.md F2: Team Sheet ▸ FORMATIONS /
+   TACTICS / ROLES tabs (js/ui/formationsui.js, js/ui/rolestacticsui.js) +
+   the Squad hub's new Injury List overlay (js/ui/injurylistui.js). Extends
+   css/teamsheet.css's .sqts-left/.sqts-right/.sqts-pitchpanel scaffold and
+   css/panels.css's §B4/§B5 primitives — new "fm-" prefixed classes only.
+   =========================================================================== */
+
+/* ---------------------------- breadcrumb (replaces tab bar) --------------- */
+.sqts-crumb {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-cond); font-size: 22px; font-weight: 600;
+  letter-spacing: 1px; text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.sqts-crumb__seg.is-cur { color: var(--gold); text-shadow: 0 0 14px rgba(242, 193, 78, 0.5); }
+.sqts-crumb__sep { color: var(--ink-faint); font-size: 18px; }
+
+/* ---------------------------- left stack: pitch + panel ------------------- */
+.sqts-left { flex-direction: column; }
+.fm-pitchpanel { flex: 1 1 55%; min-height: 0; }
+.fm-pitchpanel--tall { flex: 1 1 70%; }
+.fm-gridpanel {
+  flex: 1 1 45%; min-height: 0;
+  display: flex; flex-direction: column;
+  border-radius: 7px; overflow: hidden; margin-top: 12px;
+  background: rgba(17, 20, 24, 0.97);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 16px rgba(0,0,0,0.35);
+}
+.fm-gridpanel__title {
+  flex: 0 0 auto; text-align: center;
+  padding: 10px 0; background: rgba(0,0,0,0.28);
+  color: var(--gold); font-weight: 700; font-size: 20px; letter-spacing: 0.5px; text-transform: uppercase;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+/* ---------------------------- FORMATIONS grid ------------------------------ */
+.fm-grid {
+  flex: 1 1 auto; min-height: 0;
+  display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr);
+}
+.fm-cell {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  border: 1px solid rgba(255,255,255,0.05);
+  cursor: pointer;
+  color: var(--ink);
+  text-align: center;
+}
+.fm-cell:hover { background: rgba(255,255,255,0.05); }
+.fm-cell.is-cursor { background: var(--gold); color: #1a1400; box-shadow: inset 0 0 0 2px rgba(0,0,0,0.15); }
+.fm-cell__l1 { font-family: var(--font-cond); font-weight: 700; font-size: 22px; }
+.fm-cell__l2 { font-family: var(--font-cond); font-weight: 500; font-size: 14px; opacity: 0.85; }
+.fm-cell__check { position: absolute; top: 6px; right: 8px; color: #39b54a; font-size: 14px; font-weight: 700; }
+.fm-cell.is-cursor .fm-cell__check { color: #1f6b2c; }
+
+/* ---------------------------- EDIT FORMATION menu -------------------------- */
+.fm-menu { flex: 1 1 auto; display: flex; gap: 2px; }
+.fm-menucard {
+  flex: 1 1 50%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  cursor: pointer; color: var(--ink);
+}
+.fm-menucard:hover { background: rgba(255,255,255,0.05); }
+.fm-menucard.is-sel { background: var(--gold); color: #1a1400; }
+.fm-menucard__icon { width: 44px; height: 44px; fill: currentColor; }
+.fm-menucard__label { font-family: var(--font-cond); font-weight: 600; font-size: 18px; }
+
+/* ---------------------------- Player Instructions --------------------------- */
+.fm-blurb {
+  flex: 1 1 auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  padding: 12px 30px; text-align: center;
+}
+.fm-blurb p { margin: 0; font-family: var(--font-ui); font-size: 14px; color: var(--ink-dim); max-width: 420px; }
+
+.fm-instcards { flex: 1 1 auto; display: flex; gap: 2px; }
+.fm-instcard {
+  flex: 1 1 33.3%; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px;
+  position: relative; padding: 10px 6px 12px;
+  cursor: pointer; color: var(--ink); text-align: center;
+}
+.fm-instcard:hover { background: rgba(255,255,255,0.05); }
+.fm-instcard.is-sel { background: var(--gold); color: #1a1400; }
+.fm-instcard__check { position: absolute; top: 8px; left: 10px; color: #39b54a; font-size: 13px; }
+.fm-instcard.is-sel .fm-instcard__check { color: #1f6b2c; }
+.fm-instcard__title { font-family: var(--font-cond); font-weight: 700; font-size: 15px; letter-spacing: 0.5px; text-transform: uppercase; }
+.fm-instcard__value { font-family: var(--font-cond); font-weight: 500; font-size: 14px; opacity: 0.9; min-height: 1.2em; }
+.fm-instcard__pager { display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 2px; }
+.fm-instcard__pager .dots { display: flex; align-items: center; gap: 4px; }
+.fm-instcard__pager .cnav { position: static; opacity: 0.7; width: 16px; height: 16px; font-size: 12px; }
+.fm-instcard__pager .cnav:hover { opacity: 1; }
+.fm-instcard__dots { display: inline-flex; gap: 4px; margin-top: 2px; }
+.fm-instcard__dots i, .fm-instcard__pager .dots i {
+  width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.3); display: inline-block;
+}
+.fm-instcard.is-sel .fm-instcard__dots i { background: rgba(26,20,0,0.35); }
+.fm-instcard__dots i.on, .fm-instcard__pager .dots i.on { background: var(--gold); }
+.fm-instcard.is-sel .fm-instcard__dots i.on, .fm-instcard.is-sel .fm-instcard__pager .dots i.on { background: #1a1400; }
+
+/* Info panel (right side, TACTICS tab + Instructions editing) */
+.fm-info__title { color: var(--gold); font-family: var(--font-cond); font-weight: 700; font-size: 24px; margin-bottom: 14px; }
+.fm-info__opt { margin-bottom: 16px; }
+.fm-info__opt-title { font-family: var(--font-cond); font-weight: 600; font-size: 17px; color: var(--gold); margin-bottom: 2px; }
+.fm-info__opt-desc { font-family: var(--font-ui); font-size: 14px; color: var(--ink-dim); line-height: 1.4; }
+.fm-info__opt.is-cur .fm-info__opt-title { text-decoration: underline; }
+
+/* ---------------------------- Positioning ----------------------------------- */
+.fm-pitchpanel[data-role="pos-pitch"] .jersey { cursor: grab; }
+.fm-pitchpanel[data-role="pos-pitch"] .jersey:active { cursor: grabbing; }
+
+/* ---------------------------- team medallion (right panel) ------------------ */
+.sqts-right .fx-medallion { margin: auto 0; width: 100%; }
+
+/* ---------------------------- TACTICS tab ------------------------------------ */
+.fm-tacpanel {
+  flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+  border-radius: 7px; overflow: hidden;
+  background: rgba(17, 20, 24, 0.97);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 30px rgba(0,0,0,0.5);
+}
+.fm-tacpanel__current { flex: 0 0 auto; padding: 18px 22px; }
+.fm-tacpanel__name { color: var(--gold); font-family: var(--font-cond); font-weight: 700; font-size: 24px; }
+.fm-tacpanel__desc { font-family: var(--font-ui); font-size: 14px; color: var(--ink-dim); margin-top: 4px; }
+.fm-tagrid { flex: 1 1 auto; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.fm-tacard {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  border: 1px solid rgba(255,255,255,0.05);
+  cursor: pointer; color: var(--ink);
+}
+.fm-tacard:hover { background: rgba(255,255,255,0.05); }
+.fm-tacard.is-sel { background: var(--gold); color: #1a1400; }
+.fm-tacard__label { font-family: var(--font-cond); font-weight: 600; font-size: 18px; }
+
+.fm-dpad { position: relative; width: 46px; height: 46px; }
+.fm-dpad i {
+  position: absolute; width: 0; height: 0;
+  border: 8px solid transparent; opacity: 0.35;
+}
+.fm-tacard.is-sel .fm-dpad i { opacity: 0.5; }
+/* `i.fm-dpad__*` (not just `.fm-dpad__*`) so these tie .fm-dpad i's own
+   specificity (0,1,1) instead of losing to it at (0,1,0) — a bare class
+   selector here would have its border-*-color silently overridden back to
+   transparent by the base rule's border shorthand. */
+i.fm-dpad__up { top: 0; left: 15px; border-bottom-color: currentColor; }
+i.fm-dpad__down { bottom: 0; left: 15px; border-top-color: currentColor; }
+i.fm-dpad__left { left: 0; top: 15px; border-right-color: currentColor; }
+i.fm-dpad__right { right: 0; top: 15px; border-left-color: currentColor; }
+.fm-dpad i.is-on { opacity: 1; }
+.fm-tacard.is-sel .fm-dpad i.is-on { opacity: 1; }
+
+/* ---------------------------- ROLES tab -------------------------------------- */
+.fm-roleshead {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 4px;
+}
+.fm-roleshead--empty { color: var(--ink-dim); font-family: var(--font-ui); font-size: 14px; justify-content: center; }
+.fm-roleshead__portrait {
+  width: 48px; height: 48px; border-radius: 50%;
+  background: linear-gradient(160deg, #3a4148, #23282d);
+  position: relative; flex: 0 0 auto;
+}
+.fm-roleshead__cap {
+  position: absolute; top: -4px; left: -4px;
+  background: #111; border-radius: 3px; padding: 1px 4px; font-size: 10px;
+}
+.fm-roleshead__ovr { color: var(--gold); font-weight: 700; margin-left: 4px; }
+.fm-roleshead__name { color: var(--gold); font-family: var(--font-cond); font-weight: 700; font-size: 18px; display: flex; align-items: center; gap: 6px; }
+
+.fm-rolesstrip {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between;
+  height: 40px; margin: 0 4px 10px; padding: 0 24px;
+  background: linear-gradient(180deg, #244a2a, #1a3320);
+  border-radius: 4px;
+}
+.fm-rolesstrip__kit { width: 20px; height: 20px; border-radius: 3px; background: rgba(255,255,255,0.25); }
+
+.fm-rolesgrid { flex: 1 1 auto; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); }
+.fm-rolecell {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid rgba(255,255,255,0.05);
+  cursor: pointer; color: var(--ink); text-align: center; padding: 6px;
+}
+.fm-rolecell:hover { background: rgba(255,255,255,0.05); }
+.fm-rolecell.is-sel { background: var(--gold); color: #1a1400; }
+.fm-rolecell__icon { width: 26px; height: 26px; fill: currentColor; }
+.fm-rolecell__icon.is-mirror { transform: scaleX(-1); }
+.fm-rolecell__label { font-family: var(--font-cond); font-weight: 700; font-size: 13px; letter-spacing: 0.5px; text-transform: uppercase; }
+.fm-rolecell__name { font-family: var(--font-ui); font-size: 13px; opacity: 0.85; }
+
+.fm-pickerbody { flex: 1 1 auto; overflow-y: auto; padding: 8px 14px; }
+.fm-pickerbody .fx-table { width: 100%; }
+
+.fm-empty { color: var(--ink-dim); font-family: var(--font-ui); font-size: 15px; text-align: center; padding: 40px 0; }

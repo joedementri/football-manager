@@ -1,21 +1,27 @@
-// ui/teamsheetui.js — fable-plans/plan2.md F1: the Team Sheet view's SQUAD
-// tab (own sub-tab bar SQUAD/FORMATIONS/TACTICS/ROLES — only SQUAD has real
-// content this milestone; FORMATIONS/TACTICS/ROLES render the bar entry but
-// no body until F2). Pure render-from-state, same contract as every other
-// ui/*.js module: reads `state`, writes DOM, never mutates state or calls
-// engine code directly — all interaction goes through core/store.js's
-// teamSheet* mutators (core/router.js wires the DOM events).
+// ui/teamsheetui.js — fable-plans/plan2.md F1/F2: the Team Sheet view's own
+// sub-tab bar + SQUAD tab content. Pure render-from-state, same contract as
+// every other ui/*.js module: reads `state`, writes DOM, never mutates state
+// or calls engine code directly — all interaction goes through
+// core/store.js's teamSheet* mutators (core/router.js wires the DOM events).
+// FORMATIONS/TACTICS/ROLES tabs' own content (F2) lives in ui/formationsui.js
+// / ui/rolestacticsui.js — this file's renderTeamSheet dispatches to them;
+// those two files import renderPitchPanel/renderPlayerAttrPanel back from
+// here (both directions only ever called from inside a function body, never
+// at module-evaluation time, so the circular import is safe — standard ESM
+// pattern for a "top-level dispatcher + per-tab modules" split).
 //
-// Left pitch panel + bottom drawer (Substitutes/Reserves/Suggested Subs) +
-// right §B4 attribute panel (single or compare mode). Slot addressing
-// (`{zone:'xi'|'bench'|'reserve', index}`) and swap semantics live in
-// core/store.js; this file only ever *reads* a slot via the exported
+// SQUAD tab: left pitch panel + bottom drawer (Substitutes/Reserves/
+// Suggested Subs) + right §B4 attribute panel (single or compare mode). Slot
+// addressing (`{zone:'xi'|'bench'|'reserve', index}`) and swap semantics
+// live in core/store.js; this file only ever *reads* a slot via the exported
 // teamSheetSlotPlayer/teamSheetSlotPlayerId/teamSheetReserves helpers.
 
 import { teamSheetReserves, teamSheetSlotPlayer } from "../core/store.js";
 import { positionInfo } from "../config/positions.js";
 import { attrChip, posDot, positionColorFor, glyphPill } from "./panelkit.js";
 import { stars, cmToFtIn } from "./playerbio.js";
+import { renderFormationsTab } from "./formationsui.js";
+import { renderTacticsTab, renderRolesTab } from "./rolestacticsui.js";
 
 /* ============================== attribute pages ========================= */
 // Verbatim field/label pairs transcribed from ms_TEAM_SHEET_VIEW_PHYSICAL_
@@ -154,11 +160,18 @@ function jerseyCaption(state, ts, entry, player) {
   };
 }
 
-function renderJersey(state, ts, entry, index) {
+function renderJersey(state, ts, entry, index, forceRing = null) {
   const player = state.playersById.get(entry.playerId);
   if (!player) return "";
   const cap = entry.captain ? `<span class="jersey__cap">C</span>` : "";
-  const cls = ringClass(ts, "xi", index);
+  // F2: forceRing (ui/formationsui.js) overrides the SQUAD tab's own
+  // armed/focus ring for the FORMATIONS tab's pitch preview — "focus" (gold)
+  // while just browsing a player (Instructions before selecting them,
+  // Positioning), "armed" (teal) once Instructions is actually editing that
+  // player's categories — same gold/teal semantics ms_TEAM_SHEET_VIEW_
+  // SELECT_PLAYER.png established for the SQUAD tab, reused per plan2-
+  // decisions.md F2's own [PIC-GUESS] note on this exact distinction.
+  const cls = forceRing != null ? ` is-${forceRing}` : ringClass(ts, "xi", index);
   const swap = showSwapIcon(ts, "xi", index) ? SWAP_ICON : "";
   const cap3 = jerseyCaption(state, ts, entry, player);
   const dotHtml = ts.changeView === 1 ? "" : (cap3.dot || "");
@@ -173,8 +186,16 @@ function renderJersey(state, ts, entry, index) {
   );
 }
 
-function renderPitchPanel(state, ts) {
-  const jerseys = state.squad.lineup.map((entry, i) => renderJersey(state, ts, entry, i)).join("");
+// Exported for F2's FORMATIONS/ROLES/TACTICS tabs (ui/formationsui.js,
+// ui/rolestacticsui.js) — all show the same read-only pitch preview of the
+// active sheet's current XI. `highlight` ({index, kind:'focus'|'armed'} or
+// null) lets Formations > Edit force one jersey's ring independent of the
+// SQUAD tab's own armed/focus state (which stays whatever it last was,
+// unused here).
+export function renderPitchPanel(state, ts, highlight = null) {
+  const jerseys = state.squad.lineup.map((entry, i) => (
+    renderJersey(state, ts, entry, i, highlight && highlight.index === i ? highlight.kind : null)
+  )).join("");
   return (
     `<div class="sqts-crestbanner"><svg class="crest"><use href="#crest-${state.club.id}"></use></svg></div>` +
     `<div class="pitch sqts-pitch">` +
@@ -407,6 +428,28 @@ function renderRightPanel(state, ts) {
   );
 }
 
+/** F2 (ui/formationsui.js): the same single-player §B4 attribute panel as
+ * above, without SQUAD tab's compare-mode/arm wiring — reused by Formations
+ * > Edit > Instructions' plain-browsing state and > Positioning (both pics
+ * show this exact component). `pageIndex` is the caller's own page cursor
+ * (formations tab reuses ts.attrPage, same field the SQUAD tab uses — see
+ * core/store.js's teamSheetChangeAttrPage). */
+export function renderPlayerAttrPanel(state, player, pageIndex) {
+  const pages = attrPageDefs(player);
+  const idx = Math.min(pageIndex, pages.length - 1);
+  const page = pages[idx];
+  const header = miniHeader(player, "", player.kitNumber);
+  const body = pageBodySingle(state, player, page);
+  const dots = pages.map((p, i) => `<i class="${i === idx ? "on" : ""}"></i>`).join("");
+  const pager =
+    `<div class="fx-attrpanel__pagedots sqts-pagernav">` +
+      `<button type="button" class="cnav prev" data-action="attrpage-prev" aria-label="Previous">&lsaquo;</button>` +
+      `<div class="dots">${dots}</div>` +
+      `<button type="button" class="cnav next" data-action="attrpage-next" aria-label="Next">&rsaquo;</button>` +
+    `</div>`;
+  return header + `<div class="fx-panel__title sqts-pagetitle">${page.title}</div>` + `<div class="sqts-panelbody">${body}</div>` + pager;
+}
+
 /* ============================== tabs + footer ============================ */
 
 const TABS = [
@@ -416,38 +459,102 @@ const TABS = [
   { key: "roles", label: "ROLES" },
 ];
 
+// F2: FORMATIONS > EDIT[...] replaces the tab bar with a breadcrumb
+// (ms_TEAM_SHEET_VIEW_FORMATIONS_CUSTOMISE_FORMATIONS*.png all show
+// "FORMATIONS > EDIT[ > INSTRUCTIONS|POSITIONING]" where the tab bar
+// normally sits, not the SQUAD/FORMATIONS/TACTICS/ROLES tabs themselves).
 function renderTabs(state) {
   const el = document.getElementById("sqts-tabbar");
   if (!el) return;
+  const ts = state.ui.teamSheet;
+  if (ts.tab === "formations" && ts.customiseMode) {
+    const segs = ["FORMATIONS", "EDIT"];
+    if (ts.customiseMode === "instructions") segs.push("INSTRUCTIONS");
+    else if (ts.customiseMode === "positioning") segs.push("POSITIONING");
+    el.innerHTML = `<div class="sqts-crumb">` + segs.map((s, i) => (
+      `<span class="sqts-crumb__seg${i === segs.length - 1 ? " is-cur" : ""}">${s}</span>` +
+      (i < segs.length - 1 ? `<span class="sqts-crumb__sep">&rsaquo;</span>` : "")
+    )).join("") + `</div>`;
+    return;
+  }
   el.innerHTML = TABS.map((t) => (
-    `<button type="button" class="sqts-tab${t.key === state.ui.teamSheet.tab ? " is-active" : ""}" data-tab="${t.key}">${t.label}</button>`
+    `<button type="button" class="sqts-tab${t.key === ts.tab ? " is-active" : ""}" data-tab="${t.key}">${t.label}</button>`
   )).join("");
 }
 
-function renderFooter(state) {
-  const footer = document.getElementById("footer-teamsheet");
-  if (!footer) return;
-  const ts = state.ui.teamSheet;
-  if (ts.tab !== "squad") {
-    footer.innerHTML = `<span class="prompt" data-action="back">${glyphPill("b")} Back</span>`;
-    return;
-  }
+function renderSquadFooter(ts) {
   // F1-fixes: (A) is the global "interact with whatever's highlighted"
   // button everywhere else in this game (footer-main's static "(A) Select"
   // prompt, every other overlay's own primary action) — it must not double
   // as a day-advance shortcut here. Select Player (the highlighted slot's
   // own action) now owns the (A) glyph; the old "(A) Advance" prompt is
   // gone (Central's own Advance tile is still the one place that advances
-  // the day).
-  const prompts = [
-    `<span class="prompt" data-action="select-player">${glyphPill("a")} Select Player</span>`,
-  ];
-  if (ts.focus.zone === "xi") {
-    prompts.push(`<span class="prompt" data-action="suggested-subs">${glyphPill("y")} Suggested Subs</span>`);
-  }
+  // the day). Every other F2 footer below applies the same correction.
+  const prompts = [`<span class="prompt" data-action="select-player">${glyphPill("a")} Select Player</span>`];
+  if (ts.focus.zone === "xi") prompts.push(`<span class="prompt" data-action="suggested-subs">${glyphPill("y")} Suggested Subs</span>`);
   prompts.push(`<span class="prompt" data-action="change-view">${glyphPill("ls")} Change View</span>`);
   prompts.push(`<span class="prompt" data-action="back">${glyphPill("b")} Back</span>`);
-  footer.innerHTML = prompts.join("");
+  return prompts.join("");
+}
+
+function renderFormationsFooter(ts) {
+  const back = `<span class="prompt" data-action="back">${glyphPill("b")} Back</span>`;
+  if (ts.customiseMode === "instructions") {
+    if (ts.instrEditingIndex != null) {
+      return (
+        `<span class="prompt" data-action="select-player">${glyphPill("a")} Select</span>` +
+        `<span class="prompt" data-action="instr-reset-all">${glyphPill("x")} Reset All Instructions</span>` +
+        back
+      );
+    }
+    return (
+      `<span class="prompt" data-action="select-player">${glyphPill("a")} Select</span>` +
+      `<span class="prompt" data-action="change-view">${glyphPill("ls")} Change View</span>` +
+      back
+    );
+  }
+  if (ts.customiseMode === "positioning") {
+    // "(Y) Change Role" is pic-exact (ms_..._PLAYER_POSITIONING.png) but no
+    // pic anywhere shows what it opens — shown for fidelity, wired as a
+    // documented no-op (plan2-decisions.md F2), same footing as the
+    // permanently-locked Edit Player tile.
+    return (
+      `<span class="prompt" data-action="select-player">${glyphPill("a")} Select</span>` +
+      `<span class="prompt" data-action="pos-change-role">${glyphPill("y")} Change Role</span>` +
+      `<span class="prompt" data-action="pos-reset">${glyphPill("x")} Reset Changes</span>` +
+      `<span class="prompt" data-action="change-view">${glyphPill("ls")} Change View</span>` +
+      back
+    );
+  }
+  if (ts.customiseMode === "menu") {
+    return `<span class="prompt" data-action="select-player">${glyphPill("a")} Select</span>` + back;
+  }
+  return (
+    `<span class="prompt" data-action="select-player">${glyphPill("a")} Select</span>` +
+    `<span class="prompt" data-action="customise-formation">${glyphPill("x")} Customise Formation</span>` +
+    back
+  );
+}
+
+function renderTacticsFooter() {
+  return `<span class="prompt" data-action="select-player">${glyphPill("a")} Edit Tactics</span><span class="prompt" data-action="back">${glyphPill("b")} Back</span>`;
+}
+
+function renderRolesFooter(ts) {
+  const back = `<span class="prompt" data-action="back">${glyphPill("b")} Back</span>`;
+  if (ts.rolesPickerOpen) return `<span class="prompt" data-action="select-player">${glyphPill("a")} Select</span>` + back;
+  return `<span class="prompt" data-action="select-player">${glyphPill("a")} Change Player</span>` + back;
+}
+
+function renderFooter(state) {
+  const footer = document.getElementById("footer-teamsheet");
+  if (!footer) return;
+  const ts = state.ui.teamSheet;
+  if (ts.tab === "squad") footer.innerHTML = renderSquadFooter(ts);
+  else if (ts.tab === "formations") footer.innerHTML = renderFormationsFooter(ts);
+  else if (ts.tab === "tactics") footer.innerHTML = renderTacticsFooter();
+  else if (ts.tab === "roles") footer.innerHTML = renderRolesFooter(ts);
+  else footer.innerHTML = `<span class="prompt" data-action="back">${glyphPill("b")} Back</span>`;
 }
 
 /* ============================== top-level render ========================== */
@@ -458,17 +565,20 @@ export function renderTeamSheet(state) {
   if (!body) return;
   const ts = state.ui.teamSheet;
 
-  if (ts.tab !== "squad") {
-    body.innerHTML = "";
-    renderFooter(state);
-    return;
+  if (ts.tab === "squad") {
+    body.innerHTML =
+      `<div class="sqts-left">` +
+        `<div class="sqts-pitchpanel">${renderPitchPanel(state, ts)}${renderDrawer(state, ts)}</div>` +
+      `</div>` +
+      `<div class="sqts-right">${renderRightPanel(state, ts)}</div>`;
+  } else {
+    let panes;
+    if (ts.tab === "formations") panes = renderFormationsTab(state);
+    else if (ts.tab === "tactics") panes = renderTacticsTab(state);
+    else if (ts.tab === "roles") panes = renderRolesTab(state);
+    else panes = { left: "", right: "" };
+    body.innerHTML = `<div class="sqts-left">${panes.left}</div><div class="sqts-right">${panes.right}</div>`;
   }
-
-  body.innerHTML =
-    `<div class="sqts-left">` +
-      `<div class="sqts-pitchpanel">${renderPitchPanel(state, ts)}${renderDrawer(state, ts)}</div>` +
-    `</div>` +
-    `<div class="sqts-right">${renderRightPanel(state, ts)}</div>`;
 
   renderFooter(state);
 }

@@ -24,7 +24,7 @@ import { simulateQuickMatch } from "../js/engine/sim/quick.js";
 import { applyMatchResult } from "../js/engine/sim/results.js";
 import { simulateWorldDay } from "../js/engine/sim/worldsim.js";
 import { pickBestAvailableXI } from "../js/engine/sim/lineup.js";
-import { xiStrength, teamStrength, expectedGoals, poissonSample } from "../js/engine/sim/core.js";
+import { xiStrength, teamStrength, expectedGoals, poissonSample, pickWeighted } from "../js/engine/sim/core.js";
 import { recordMatchRating, computeForm } from "../js/engine/form.js";
 import { retirementChance, MIN_RETIREMENT_AGE, MIN_GK_RETIREMENT_AGE } from "../js/config/retirement.js";
 import { applyGrowthToWorld } from "../js/engine/growth.js";
@@ -81,11 +81,19 @@ import {
 import { nationSquadRoster, createInitialIntlState } from "../js/engine/comps/intl.js";
 import { roundLabel, resolvePenaltyShootout } from "../js/engine/comps/knockoututil.js";
 import { NT_JOB_REP_THRESHOLD, refreshNtJobMarket, acceptNtJob } from "../js/engine/ntjobs.js";
-import { attrBand } from "../js/ui/panelkit.js";
+import { attrBand, teamStars } from "../js/ui/panelkit.js";
 import { isTransferWindowOpen } from "../js/config/calendar.js";
 import { attrPageDefs, formArrow, fitnessBand } from "../js/ui/teamsheetui.js";
 import { isSimilarPosition, suggestedSubScore, positionFitScore } from "../js/config/managerai.js";
 import { pickDefaultBench, reservesOf } from "../js/gen/squad.js";
+import {
+  FORMATIONS, gridCells, gridPageCount, formationByLabel, remapLineupToFormation,
+  DEFAULT_FORMATION_NAME, DEFAULT_FORMATION_STYLE,
+} from "../js/config/formations.js";
+import {
+  INSTRUCTION_GROUPS, instructionGroupFor, resolveInstructionEffects, defaultInstructionsFor,
+} from "../js/config/instructions.js";
+import { INJURIES, pickInjuryName } from "../js/config/injuries.js";
 
 const groups = []; // [{ title, results: [{name, pass, detail}] }]
 let current = null;
@@ -1849,6 +1857,187 @@ async function run() {
     assert("arming an XI slot while the drawer is open leaves it expanded, not minimized",
       ts.armed && ts.armed.zone === "xi" && ts.drawerMinimized === false);
     tsStore.teamSheetSelectPlayer(); // cancel (same slot) — leave state clean
+  }
+
+  group("config/formations.js — catalogue + coordinate generator (F2)");
+  {
+    assert("catalogue has >= 28 entries (plan2.md F2 test spec)", FORMATIONS.length >= 28);
+    assert("catalogue has exactly the 33 pic-transcribed entries", FORMATIONS.length === 33);
+    const allInBounds = FORMATIONS.every((f) => f.slots.length === 11 &&
+      f.slots.every((s) => s.x >= 0 && s.x <= 100 && s.y >= 0 && s.y <= 100));
+    assert("every formation has 11 slots, all x/y within [0,100]", allInBounds);
+    const everyHasOneGk = FORMATIONS.every((f) => f.slots.filter((s) => s.gk).length === 1 && f.slots.find((s) => s.gk).pos === "GK");
+    assert("every formation has exactly one GK slot at pos 'GK'", everyHasOneGk);
+    const noDupCodesAnywhere = FORMATIONS.every((f) => new Set(f.slots.map((s) => s.pos)).size === 11);
+    assert("no formation repeats a position code across its 11 slots", noDupCodesAnywhere);
+
+    const cells = gridCells("Portsmouth");
+    assert("gridCells = 1 default pseudo-cell + all 33 catalogue formations", cells.length === 34);
+    assert("gridPageCount windows 34 cells into 6 pages (6/6/6/6/6/4)", gridPageCount("Portsmouth") === 6);
+    assert("cell 0 is the '<Club>/Default Formation' pseudo-cell", cells[0].kind === "default" && cells[0].label1 === "Portsmouth");
+    const defaultLookup = formationByLabel(DEFAULT_FORMATION_NAME, DEFAULT_FORMATION_STYLE);
+    assert("the default pseudo-cell's name/style resolves to a real catalogue entry (4-4-2 Flat)", !!defaultLookup);
+  }
+
+  group("config/formations.js — remapLineupToFormation (best-fit XI remap)");
+  {
+    const rmClub = world.clubs[2];
+    const rmSquad = world.squadsByClub.get(rmClub.id);
+    const rmPlayersById = new Map(rmSquad.map((p) => [p.id, p]));
+    const rmLineup = pickBestAvailableXI(rmSquad).map((p) => ({
+      playerId: p.id, pos: p.position, x: 50, y: 50, gk: positionInfo(p.position).area === "GK", captain: false,
+    }));
+    const targetFormation = formationByLabel("4-3-3", "Attack");
+    const remapped = remapLineupToFormation(rmLineup, targetFormation.slots, rmPlayersById);
+    assert("remap returns exactly 11 entries", remapped.length === 11);
+    const remappedIds = remapped.map((e) => e.playerId);
+    assert("remap keeps the same 11 players (no dupes, no drops)",
+      new Set(remappedIds).size === 11 && rmLineup.every((e) => remappedIds.includes(e.playerId)));
+    const gkEntry = remapped.find((e) => e.gk);
+    const origGkId = rmLineup.find((e) => e.gk).playerId;
+    assert("the goalkeeper stays the goalkeeper (pos GK, same player) after a remap", gkEntry && gkEntry.pos === "GK" && gkEntry.playerId === origGkId);
+    assert("remapped slots' position codes exactly match the target formation's (no dupes)",
+      new Set(remapped.map((e) => e.pos)).size === 11 &&
+      remapped.every((e) => targetFormation.slots.some((s) => s.pos === e.pos)));
+  }
+
+  group("config/instructions.js — position groups + effect resolution (F2)");
+  {
+    assert("FORWARDS/INSIDE_MID/OUTSIDE_MID groups all defined with >=1 category each",
+      ["FORWARDS", "INSIDE_MID", "OUTSIDE_MID"].every((g) => INSTRUCTION_GROUPS[g] && INSTRUCTION_GROUPS[g].length >= 1));
+    assert("instructionGroupFor: ST -> FORWARDS, CM -> INSIDE_MID, RM -> OUTSIDE_MID",
+      instructionGroupFor("ST") === "FORWARDS" && instructionGroupFor("CM") === "INSIDE_MID" && instructionGroupFor("RM") === "OUTSIDE_MID");
+    assert("instructionGroupFor: defensive positions (CB, CDM, GK) get no group",
+      instructionGroupFor("CB") === null && instructionGroupFor("CDM") === null && instructionGroupFor("GK") === null);
+
+    const defaults = defaultInstructionsFor("FORWARDS");
+    const fwdCats = INSTRUCTION_GROUPS.FORWARDS;
+    assert("defaultInstructionsFor seeds every category at its own defaultIndex",
+      fwdCats.every((c) => defaults[c.key] === c.defaultIndex));
+
+    const getInBehindPicks = { attackingRuns: 0 }; // index 0 = "Get in Behind"
+    const effects = resolveInstructionEffects("FORWARDS", getInBehindPicks);
+    assert("'Get in Behind' resolves to the documented +0.10 shooting-weight bump", Math.abs(effects.shootingMult - 0.10) < 1e-9);
+    const defaultPicks = defaultInstructionsFor("FORWARDS");
+    const noEffect = resolveInstructionEffects("FORWARDS", defaultPicks);
+    assert("every category left at its default (Mixed ...) contributes no effect",
+      noEffect.shootingMult === 0 && noEffect.assistMult === 0);
+  }
+
+  group("engine/sim/core.js — pickWeighted's F2 multiplierFn hook");
+  {
+    const rng = new RngStream(deriveSeed(777, "pickWeighted-multiplier-test"));
+    const candA = { player: { attrs: { finishing: 60 }, form: 5, id: 1 }, area: "ATT" };
+    const candB = { player: { attrs: { finishing: 60 }, form: 5, id: 2 }, area: "ATT" };
+    const config = { terms: [{ attr: "finishing", value: 1 }], posBias: { pos: 0, POS_1: 0, POS_2: 0, POS_3: 0, POS_4: 0 }, weightCurve: Array(11).fill(50) };
+    let bWins = 0;
+    const trials = 400;
+    for (let i = 0; i < trials; i++) {
+      const pick = pickWeighted(rng, [candA, candB], config, (c) => (c.player.id === 2 ? 1.0 : 0));
+      if (pick.player.id === 2) bWins++;
+    }
+    assert("a +100% multiplier on one identical-weight candidate makes it win clearly more than half the time",
+      bWins > trials * 0.6);
+    const unmodified = pickWeighted(rng, [candA, candB], config); // no multiplierFn -> unchanged behaviour
+    assert("omitting multiplierFn still returns a valid candidate (backward compatible default)",
+      unmodified === candA || unmodified === candB);
+  }
+
+  group("config/injuries.js — named injury subset (fitness.ini)");
+  {
+    assert("12-entry subset per plan2.md F2.6", INJURIES.length === 12);
+    assert("every entry has light/medium/severe day counts, ascending in severity",
+      INJURIES.every((inj) => inj.days.light <= inj.days.medium && inj.days.medium <= inj.days.severe));
+    const rng = new RngStream(deriveSeed(88, "injury-name-test"));
+    const picked = pickInjuryName(rng);
+    assert("pickInjuryName returns one of the 12 named injuries", INJURIES.some((inj) => inj.name === picked));
+  }
+
+  group("ui/panelkit.js — teamStars (§B5, teamutils.ini [IS_STAR_RATING] RATING=82)");
+  {
+    assert("rating 82 -> full 5 stars (the one INI anchor point)", teamStars(82) === 5);
+    assert("teamStars clamps at 0 and 5", teamStars(0) === 0 && teamStars(200) === 5);
+    assert("teamStars is monotonically non-decreasing with rating",
+      teamStars(40) <= teamStars(60) && teamStars(60) <= teamStars(82));
+  }
+
+  group("core/store.js — F2 Team Sheet FORMATIONS/TACTICS/ROLES (live Store)");
+  {
+    const fmClub = world.clubs.find((c) => c.id !== "manchester-united") || world.clubs[3];
+    const fmLeague = world.leagues.find((l) => l.id === fmClub.leagueId);
+    const fmState = createCareerState({ managerName: "Test Manager", club: fmClub, league: fmLeague, world, seasonStartYear: 2014 });
+    const fmStore = new Store(fmState);
+
+    // applyFormation re-maps the XI and updates both the squad mirror and
+    // the active sheet (F1's own "same array reference" invariant).
+    const beforeIds = new Set(fmStore.state.squad.lineup.map((l) => l.playerId));
+    fmStore.applyFormation("4-3-3", "Holding");
+    assert("applyFormation updates squad.formationLabel/Style", fmStore.state.squad.formationLabel === "4-3-3" && fmStore.state.squad.formationStyle === "Holding");
+    const activeSheet = fmStore.state.squad.sheets[fmStore.state.squad.activeSheetIndex];
+    assert("applyFormation also updates the active sheet's own formationLabel/Style", activeSheet.formationLabel === "4-3-3" && activeSheet.formationStyle === "Holding");
+    assert("applyFormation is the same 11 players, just remapped", fmStore.state.squad.lineup.length === 11 &&
+      fmStore.state.squad.lineup.every((l) => beforeIds.has(l.playerId)));
+    assert("applyFormation re-seeds every slot's Player Positioning baseline", fmStore.state.squad.lineup.every((l) => l.baseX === l.x && l.baseY === l.y));
+
+    // Player Instructions: cycling wraps back to the start after a full loop.
+    fmStore.teamSheetSetTab("formations");
+    fmStore.teamSheetOpenCustomise();
+    fmStore.teamSheetCustomiseMenuFocus(0);
+    fmStore.teamSheetCustomiseMenuSelect(); // -> "instructions"
+    const fwdIndex = fmStore.state.squad.lineup.findIndex((l) => !l.gk && instructionGroupFor(l.pos) === "FORWARDS");
+    assert("this club's default XI has at least one FORWARDS-group player to test with", fwdIndex !== -1);
+    if (fwdIndex !== -1) {
+      fmStore.teamSheetInstrFocus(fwdIndex);
+      fmStore.teamSheetInstrSelect();
+      assert("selecting a FORWARDS player opens category-card editing", fmStore.state.ui.teamSheet.instrEditingIndex === fwdIndex);
+      const playerId = fmStore.state.squad.lineup[fwdIndex].playerId;
+      const catKey = INSTRUCTION_GROUPS.FORWARDS[0].key;
+      const optionCount = INSTRUCTION_GROUPS.FORWARDS[0].options.length;
+      for (let i = 0; i < optionCount; i++) fmStore.teamSheetInstrCycleOption(1);
+      assert("cycling a category's option N times (N = its option count) round-trips to the default",
+        fmStore.state.squad.instructions[playerId][catKey] === INSTRUCTION_GROUPS.FORWARDS[0].defaultIndex);
+      fmStore.teamSheetInstrResetAll();
+      assert("Reset All Instructions clears every player's picks team-wide", Object.keys(fmStore.state.squad.instructions).length === 0);
+    }
+
+    // Player Positioning: nudge clamps to +-8% of the formation baseline.
+    // teamSheetOpenCustomise() re-enters the EDIT menu cleanly (rather than
+    // relying on the exact number of teamSheetBack() presses needed from
+    // wherever Instructions left off — that count depends on whether a
+    // player was still being edited, which is exactly what the block above
+    // just changed).
+    fmStore.teamSheetOpenCustomise();
+    fmStore.teamSheetCustomiseMenuFocus(1);
+    fmStore.teamSheetCustomiseMenuSelect(); // -> "positioning"
+    fmStore.teamSheetPosFocus(1);
+    const baseX = fmStore.state.squad.lineup[1].baseX;
+    for (let i = 0; i < 20; i++) fmStore.teamSheetPosNudge(2, 0); // way more than the clamp allows
+    assert("Player Positioning's x nudge clamps at baseline+8%", fmStore.state.squad.lineup[1].x <= baseX + 8 + 1e-9);
+    fmStore.teamSheetPosReset();
+    assert("Reset Changes restores the focused player's baseline x/y", fmStore.state.squad.lineup[1].x === baseX);
+
+    // TACTICS tab: selecting a D-pad cell applies that preset (existing M11 setTactic, just re-skinned).
+    fmStore.teamSheetSetTab("tactics");
+    fmStore.teamSheetTacticsFocus(1); // "Possession"
+    fmStore.teamSheetTacticsSelect();
+    assert("selecting a TACTICS grid cell sets squad.tacticId to that preset", fmStore.state.squad.tacticId === "possession");
+
+    // ROLES tab: picking a player assigns the correct squad field per the
+    // pic's 3x2 reading order (core/store.js's own ROLE_FIELDS table).
+    fmStore.teamSheetSetTab("roles");
+    const someOutfielder = fmStore.state.squad.roster.find((p) => positionInfo(p.position).area !== "GK");
+    fmStore.teamSheetRolesFocus(1); // Left Corner
+    fmStore.teamSheetRolesOpenPicker();
+    fmStore.teamSheetRolesPick(someOutfielder.id);
+    assert("ROLES grid cell 1 (Left Corner) assigns squad.leftCornerId", fmStore.state.squad.leftCornerId === someOutfielder.id);
+    assert("picking a role closes the picker", fmStore.state.ui.teamSheet.rolesPickerOpen === false);
+    fmStore.teamSheetRolesFocus(0); // Captain
+    fmStore.teamSheetRolesOpenPicker();
+    fmStore.teamSheetRolesPick(someOutfielder.id);
+    assert("ROLES grid cell 0 (Captain) assigns squad.captainId (via the existing setCaptain mutator)", fmStore.state.squad.captainId === someOutfielder.id);
+    assert("setCaptain still re-marks the lineup's 'C' badge when the captain is in the XI",
+      !fmStore.state.squad.lineup.some((l) => l.playerId === someOutfielder.id) ||
+      fmStore.state.squad.lineup.find((l) => l.playerId === someOutfielder.id).captain === true);
   }
 
   render();

@@ -57,7 +57,7 @@ function rollMatchInjuries(rng, homeXI, awayXI) {
  * chance ([CHANCE_OF_ASSIST]) of an assister from the same XI — or, per
  * [PENALTY_CHANCE_OF_GOAL], a penalty instead: taker picked by
  * [PENALTY_ATTRIBS] rather than [SHOOTING_ATTRIBS], no assist — unless
- * `penaltyTakerId` (M11 Player Roles, ui/tacticsui.js) names the user's own
+ * `penaltyTakerId` (M11 Player Roles, ui/rolestacticsui.js) names the user's own
  * designated taker and they're actually on the pitch, in which case they
  * always step up instead of a fresh weighted roll. */
 function rollGoals(rng, goalCount, scoringXI, penaltyTakerId = null) {

@@ -1,19 +1,38 @@
 /* ===========================================================================
-   kitnumbers.css — Squad ▸ Kit Numbers overlay (fable-plans/plan1.md M11).
-   Reuses .news-crumb for the breadcrumb and tables.css's .sl-table/.sl-row
-   row styling verbatim, per ground rule #1 (extend, don't rewrite).
+   kitnumbers.css — Squad ▸ Kit Numbers overlay (fable-plans/plan1.md M11;
+   fable-plans/plan2.md F2.5 fx-panel fidelity pass against ms_EDIT_KIT_
+   NUMBERS_PAGE(.._SELECTED_PLAYER).png). Built on css/panels.css's §B1
+   fx-panel + identity-header primitives; only kit-numbers-specific layout
+   (two-pane Squad/Kit Changes body, steppers) lives here. Reuses
+   tables.css's .sl-table/.sl-row row styling verbatim.
    =========================================================================== */
 
 #kitnumbers-overlay { display: none; }
 #kitnumbers-overlay.is-active { display: block; }
 
-.kn-body {
-  position: absolute;
-  top: 160px; left: 36px; right: 36px; bottom: 56px;
-  display: grid; grid-template-columns: 56% 1fr; gap: 0 18px;
-  z-index: 7;
+/* kitnumbersui.js's own render puts fxIdentityHeader() first inside
+   fxPanel's bodyHtml (this screen is the first real fxIdentityHeader
+   consumer — F0 only built it for dev/kit.html) — bleed it back out to the
+   panel's own edges so it doesn't get .fx-panel__body's content padding too. */
+.fx-panel__body > .fx-identity:first-child {
+  margin: -18px -22px 14px;
 }
-#kn-list { overflow-y: auto; }
+
+.kn-body {
+  display: grid;
+  grid-template-columns: 56% 1fr;
+  gap: 0 18px;
+  height: 100%;
+}
+.kn-pane { min-height: 0; display: flex; flex-direction: column; }
+.kn-pane__title {
+  flex: 0 0 auto;
+  font-family: var(--font-ui); font-size: 13px; font-weight: 600;
+  color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.5px;
+  padding-bottom: 6px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 6px;
+}
+#kn-list { overflow-y: auto; flex: 1 1 auto; }
 #kn-list::-webkit-scrollbar { width: 8px; }
 #kn-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
 
@@ -30,6 +49,7 @@
 .kn-num { font-family: var(--font-cond); font-weight: 700; font-size: 17px; min-width: 22px; text-align: center; display: inline-block; }
 
 #kn-changes {
+  flex: 1 1 auto;
   background: linear-gradient(160deg, rgba(30, 36, 43, 0.92), rgba(18, 22, 27, 0.92));
   border-radius: 8px; padding: 16px 18px; overflow-y: auto;
 }

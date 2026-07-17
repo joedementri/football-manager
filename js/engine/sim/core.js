@@ -153,9 +153,13 @@ function selectionWeight(config, player, area) {
 /** Weighted-random pick among candidates (each `{player, area}`); falls back
  * to a uniform pick if every candidate rolled a zero weight (e.g. an entire
  * back line with terrible finishing composites still needs *someone* picked
- * as the nominal scorer of a converted chance). */
-export function pickWeighted(rng, candidates, config) {
-  const weights = candidates.map((c) => selectionWeight(config, c.player, c.area));
+ * as the nominal scorer of a converted chance). `multiplierFn` (F2, plan2.md
+ * "Player Instructions" sim hooks — engine/sim/events.js's own header
+ * explains why this is a weight multiplier rather than a new chance-type
+ * system) optionally rescales one candidate's weight post-hoc; defaults to
+ * an unchanged 1x for every existing call site. */
+export function pickWeighted(rng, candidates, config, multiplierFn = null) {
+  const weights = candidates.map((c) => selectionWeight(config, c.player, c.area) * (multiplierFn ? Math.max(0, 1 + multiplierFn(c)) : 1));
   const total = weights.reduce((a, b) => a + b, 0);
   if (total <= 0) return rng.pick(candidates);
   let roll = rng.next() * total;

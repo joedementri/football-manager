@@ -6,6 +6,7 @@
 // verbatim by the plan text, so it's ported from there instead.
 
 import { FATIGUE, INJURY } from "../config/sim.js";
+import { pickInjuryName } from "../config/injuries.js";
 
 /**
  * Energy lost from playing `minutesPlayed` of a match (plan1.md: "per match
@@ -63,6 +64,10 @@ export function rollInjury(rng, priorInjuriesThisMatch, scale = 1) {
   const [engLo, engHi] = SEVERITY_ENERGY_RANGE[severity];
   return {
     type: severity,
+    // F2 (plan2.md's Injury List page): a flavour name from fitness.ini's
+    // section list — cosmetic only, doesn't affect daysLeft/energyDrop
+    // (config/injuries.js's own header explains why).
+    name: pickInjuryName(rng),
     daysLeft: rng.int(dayLo, dayHi),
     energyDrop: rng.int(engLo, engHi),
   };

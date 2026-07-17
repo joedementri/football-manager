@@ -161,7 +161,7 @@ export function reservesOf(players, lineup, bench) {
   return players.filter((p) => !takenIds.has(p.id));
 }
 
-/** M11 Player Roles (ui/tacticsui.js): re-marks which lineup entry carries
+/** M11 Player Roles (ui/rolestacticsui.js): re-marks which lineup entry carries
  * the captain's armband — called by core/store.js's setCaptain whenever the
  * user changes captaincy. A captain who isn't currently in the starting XI
  * keeps the armband nominally (state.squad.captainId is the source of

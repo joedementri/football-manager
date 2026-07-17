@@ -25,8 +25,8 @@
   <link rel="stylesheet" href="css/mycareer.css" />
   <link rel="stylesheet" href="css/squadreport.css" />
   <link rel="stylesheet" href="css/kitnumbers.css" />
-  <link rel="stylesheet" href="css/tactics.css" />
   <link rel="stylesheet" href="css/teamsheet.css" />
+  <link rel="stylesheet" href="css/formations.css" />
   <link rel="stylesheet" href="css/stats.css" />
   <link rel="stylesheet" href="css/settings.css" />
   <link rel="stylesheet" href="css/saves.css" />
@@ -71,6 +71,30 @@
     </symbol>
     <symbol id="ic-plus" viewBox="0 0 24 24">
       <path d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7V4z"/>
+    </symbol>
+    <!-- F2 (plan2.md): Formations > Edit menu + Player Roles icons — simplified
+         geometric glyphs, not raster-traced (the reference pics are the only
+         source and have no vector art to trace) — plan2-decisions.md F2. -->
+    <symbol id="ic-move" viewBox="0 0 24 24">
+      <path d="M12 1l3 3h-2v5h5V7l3 3-3 3v-2h-5v5h2l-3 3-3-3h2v-5H6v2l-3-3 3-3v2h5V4H9l3-3z"/>
+    </symbol>
+    <symbol id="ic-tactics" viewBox="0 0 24 24">
+      <path d="M4 3h16v18H4V3zm2 2v14h12V5H6zm2 3h3v2H8V8zm5 0h3v2h-3V8zm-5 5h8v2H8v-2z"/>
+    </symbol>
+    <symbol id="ic-armband" viewBox="0 0 24 24">
+      <path d="M3 9h18v6H3V9zm3 2v2h4v-2H6zm6 0v2h2v-2h-2zm4 0v2h2v-2h-2z"/>
+    </symbol>
+    <symbol id="ic-corner-l" viewBox="0 0 24 24">
+      <path d="M5 2v20h2V14l10-3-10-3V2H5z"/>
+    </symbol>
+    <symbol id="ic-corner-r" viewBox="0 0 24 24">
+      <path d="M19 2v20h-2V14L7 11l10-3V2h2z"/>
+    </symbol>
+    <symbol id="ic-goal-ball" viewBox="0 0 24 24">
+      <path d="M3 5h14v2H5v12h12V9h2v10H3V5zm15 6a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/>
+    </symbol>
+    <symbol id="ic-goal-wall" viewBox="0 0 24 24">
+      <path d="M2 5h16v2H4v12h14V9h2v10H2V5zm4 8a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm4 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm4 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/>
     </symbol>
     <!-- crests (multi-colour) -->
     <symbol id="crest-pompey" viewBox="0 0 48 56">
@@ -358,18 +382,20 @@
             <div class="tile__desc">Only available for NATL Teams</div>
           </div>
 
-          <!-- Formations / Tactics / Player Roles (carousel) -->
+          <!-- Formations / Tactics / Player Roles (carousel) — F2: each page
+               deep-links into the Team Sheet's own sub-tab (the standalone
+               M11 tactics overlay is retired, plan2-decisions.md F2). -->
           <div class="tile has-photo" data-carousel>
             <div class="cpages">
-              <div class="cpage is-active">
+              <div class="cpage is-active is-link" data-open="teamsheet" data-teamsheet-tab="formations">
                 <div class="tile__title">Formations</div>
                 <div class="tile__desc">Change your team's formation and player positions</div>
               </div>
-              <div class="cpage is-link" data-open="tactics">
+              <div class="cpage is-link" data-open="teamsheet" data-teamsheet-tab="tactics">
                 <div class="tile__title">Tactics</div>
                 <div class="tile__desc">Set your team's tactical approach for matches</div>
               </div>
-              <div class="cpage is-link" data-open="tactics" data-tactics-page="roles">
+              <div class="cpage is-link" data-open="teamsheet" data-teamsheet-tab="roles">
                 <div class="tile__title">Player<br>Roles</div>
                 <div class="tile__desc">Assign specific roles to your players</div>
               </div>
@@ -383,7 +409,7 @@
                 <div class="tile__title">Kit<br>Numbers</div>
                 <div class="tile__desc">Assign your players' kit numbers</div>
               </div>
-              <div class="cpage">
+              <div class="cpage is-link" data-open="injurylist">
                 <div class="tile__title">Injury<br>List</div>
                 <div class="tile__desc">View your squad's current injuries</div>
               </div>
@@ -838,14 +864,13 @@
         <div id="ps-body"><!-- built by ui/statsui.js --></div>
       </div>
 
-      <!-- =====================  TACTICS / PLAYER ROLES OVERLAY (M11)  ==== -->
-      <div id="tactics-overlay">
-        <div class="news-crumb">
-          <span class="crumb-prev">SQUAD</span>
-          <span class="crumb-sep">&rsaquo;</span>
-          <span class="crumb-cur">TACTICS</span>
-        </div>
-        <div class="tac-body" id="tactics-body"><!-- built by ui/tacticsui.js --></div>
+      <!-- =====================  INJURY LIST OVERLAY (F2)  ================ -->
+      <!-- plan2.md F2.6: "simple fx-panel table of current injuries" — no
+           reference pic exists for this exact screen (only its Squad-hub
+           tile hover teaser), so layout follows §B1's fx-panel template
+           directly; [TUNED]/[JUDGMENT CALL], logged in plan2-decisions.md F2. -->
+      <div id="injurylist-overlay">
+        <div id="injurylist-body"><!-- built by ui/injurylistui.js --></div>
       </div>
 
       <!-- =====================  TEAM SHEET VIEW OVERLAY (F1)  ============= -->
@@ -854,17 +879,9 @@
         <div class="sqts-body" id="sqts-body"><!-- built by ui/teamsheetui.js --></div>
       </div>
 
-      <!-- =====================  KIT NUMBERS OVERLAY (M11)  =============== -->
+      <!-- ============  KIT NUMBERS OVERLAY (M11; F2 fx-panel rebuild)  ==== -->
       <div id="kitnumbers-overlay">
-        <div class="news-crumb">
-          <span class="crumb-prev">SQUAD</span>
-          <span class="crumb-sep">&rsaquo;</span>
-          <span class="crumb-cur">KIT NUMBERS</span>
-        </div>
-        <div class="kn-body">
-          <div id="kn-list"><!-- built by ui/kitnumbersui.js --></div>
-          <div id="kn-changes"><!-- built by ui/kitnumbersui.js --></div>
-        </div>
+        <div id="kitnumbers-body"><!-- built by ui/kitnumbersui.js --></div>
       </div>
 
       <!-- =====================  SQUAD REPORT OVERLAY (M11)  ============= -->
@@ -971,16 +988,14 @@
       <footer class="footer" id="footer-playerstats" hidden>
         <span class="prompt"><span class="btn-glyph b">B</span> Back</span>
       </footer>
-      <footer class="footer" id="footer-tactics" hidden>
-        <span class="prompt" data-action="prev-page"><span class="btn-glyph lb">LB</span> Prev Page</span>
-        <span class="prompt" data-action="next-page"><span class="btn-glyph rb">RB</span> Next Page</span>
+      <footer class="footer" id="footer-injurylist" hidden>
         <span class="prompt" data-action="back"><span class="btn-glyph b">B</span> Back</span>
       </footer>
       <footer class="footer" id="footer-teamsheet" hidden><!-- built by ui/teamsheetui.js (prompts change with focus) --></footer>
-      <footer class="footer" id="footer-kitnumbers" hidden>
-        <span class="prompt" data-action="select"><span class="btn-glyph a">A</span> Select / Edit Number</span>
-        <span class="prompt" data-action="back"><span class="btn-glyph b">B</span> Back</span>
-      </footer>
+      <!-- F2: prompt label toggles "Select Player" / "Edit Kit Number" per
+           ms_EDIT_KIT_NUMBERS_PAGE(.._SELECTED_PLAYER).png — built by
+           ui/kitnumbersui.js, same pattern as footer-teamsheet. -->
+      <footer class="footer" id="footer-kitnumbers" hidden></footer>
       <footer class="footer" id="footer-squadreport" hidden>
         <span class="prompt" data-action="sort"><span class="btn-glyph x">X</span> Sort</span>
         <span class="prompt" data-action="bio"><span class="btn-glyph a">A</span> Player Bio</span>

@@ -19,6 +19,7 @@ import { resolvePenaltyShootout } from "../comps/knockoututil.js";
 import { nationSquadRoster, completeUserKnockoutTie, checkGroupPhaseCompletion } from "../comps/intl.js";
 import { tacticById } from "../../config/tactics.js";
 import { difficultyById } from "../../config/settings.js";
+import { instructionGroupFor, resolveInstructionEffects } from "../../config/instructions.js";
 
 const HALFTIME_MINUTE = 45;
 const FULLTIME_MINUTE = 90;
@@ -86,6 +87,33 @@ export function createMatchState(state, fixture) {
   return matchState;
 }
 
+// F2 ROLES tab: "corner takers weight assist attribution" — [TUNED], no
+// dedicated corner-kick chance type exists to redirect into (same
+// engine/sim/events.js limit config/instructions.js's own header explains),
+// so a designated corner taker gets the same small ASSIST_ATTRIBS weight
+// bump either instruction option would give them.
+const CORNER_TAKER_ASSIST_BONUS = 0.10;
+
+/** F2: Map<playerId, {shootingMult, assistMult}> for the user's starting XI
+ * — folds together Player Instructions' per-category effects (config/
+ * instructions.js) and the Roles tab's corner-taker assist bonus, since
+ * engine/sim/events.js's multiplierFn hook only needs one lookup per
+ * candidate regardless of which F2 feature produced the number. */
+function buildInstructionMults(state) {
+  const mults = new Map();
+  const instructions = state.squad.instructions || {};
+  const cornerIds = new Set([state.squad.leftCornerId, state.squad.rightCornerId].filter((id) => id != null));
+  for (const entry of state.squad.lineup) {
+    if (entry.gk) continue;
+    const group = instructionGroupFor(entry.pos);
+    const picks = instructions[entry.playerId];
+    const base = group && picks ? resolveInstructionEffects(group, picks) : { shootingMult: 0, assistMult: 0 };
+    if (cornerIds.has(entry.playerId)) base.assistMult += CORNER_TAKER_ASSIST_BONUS;
+    if (base.shootingMult || base.assistMult) mults.set(entry.playerId, base);
+  }
+  return mults;
+}
+
 function clubLookup(state, matchState) {
   const map = matchState.isIntl ? state.nationsById : state.clubsById;
   return {
@@ -114,10 +142,18 @@ function regenerateSegment(state, matchState) {
   const userPenaltyTakerId = matchState.isIntl ? null : state.squad.penaltyTakerId;
   const homePenaltyTakerId = matchState.isUserHome ? userPenaltyTakerId : null;
   const awayPenaltyTakerId = matchState.isUserHome ? null : userPenaltyTakerId;
+  // F2 (plan2.md Player Instructions sim hooks): same "user's own club match
+  // only, not internationals" scope as the tactic/penalty-taker lines above —
+  // built once per segment from state.squad.instructions (F2's per-player
+  // instruction picks), keyed by playerId for events.js's own lookup.
+  const userInstructionMults = matchState.isIntl ? null : buildInstructionMults(state);
+  const homeInstructionMults = matchState.isUserHome ? userInstructionMults : null;
+  const awayInstructionMults = matchState.isUserHome ? null : userInstructionMults;
   const { events } = simulateSegment({
     fromMinute: matchState.minute, toMinute: matchState.segmentEnd,
     homeClub, awayClub, homeXI: matchState.homeXI, awayXI: matchState.awayXI, rng: matchState.rng,
     homeTacticModifier, awayTacticModifier, homePenaltyTakerId, awayPenaltyTakerId,
+    homeInstructionMults, awayInstructionMults,
   });
   matchState.timeline = events;
 }
