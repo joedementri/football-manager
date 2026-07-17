@@ -305,7 +305,7 @@ function renderGtnReportFooter(state) {
     html += prompt("a", "A", "bid", "Bid") + prompt("x", "X", "loan", "Loan");
   }
   if (state.gtn.missions.length > 1) {
-    html += prompt("r1", "R1", "next-mission", "Switch Group");
+    html += prompt("rb", "RB", "next-mission", "Switch Group");
   }
   html += prompt("b", "B", "back", "Back");
   return html;

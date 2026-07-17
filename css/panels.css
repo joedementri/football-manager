@@ -1,0 +1,296 @@
+/* ===========================================================================
+   panels.css — shared "sub-screen" design language (fable-plans/plan2.md
+   PART B, built once in F0, reused by every milestone from F1 on).
+   Primitives: centered dark panel (.fx-panel), paper dossier (.fx-paper),
+   player context card + action list (.fx-playercard/.fx-actions), attribute
+   chips + colour bands (.fx-attr-chip), stars/medallion/fuzzy values.
+   Pairs with js/ui/panelkit.js (pure render helpers that emit these classes).
+   Do not rewrite base.css tokens here — only extend.
+   =========================================================================== */
+
+/* ---------------------------- §B1 centered dark panel --------------------- */
+.fx-panel {
+  position: absolute;
+  left: 50%;
+  top: 90px;
+  bottom: 90px;
+  width: 78%;
+  transform: translateX(-50%);
+  background: rgba(17, 20, 24, 0.97);
+  border-radius: 6px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 10px 30px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: var(--font-cond);
+}
+
+.fx-panel__titlebar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 14px 22px;
+  background: rgba(0, 0, 0, 0.28);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.fx-panel__title {
+  color: var(--gold);
+  font-weight: 700;
+  font-size: 26px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.fx-panel__context {
+  position: absolute;
+  right: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.fx-panel__selectors {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 22px;
+  background: rgba(0, 0, 0, 0.16);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.fx-selector-row { display: flex; align-items: center; gap: 22px; }
+.fx-selector { display: flex; align-items: center; gap: 8px; }
+.fx-selector__value {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  color: var(--ink);
+  font-weight: 600;
+}
+.fx-selector__badge { margin-left: auto; }
+
+.fx-panel__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 22px;
+}
+.fx-panel__body::-webkit-scrollbar { width: 8px; }
+.fx-panel__body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 4px; }
+.fx-panel__body::-webkit-scrollbar-track { background: transparent; }
+
+/* Identity header variant: crest + office/manager + budget lines */
+.fx-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 22px;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.fx-identity__crest { width: 40px; height: 46px; flex: 0 0 auto; }
+.fx-identity__names { display: flex; flex-direction: column; line-height: 1.15; }
+.fx-identity__office { font-size: 13px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+.fx-identity__manager { font-size: 18px; font-weight: 700; color: var(--ink); }
+.fx-identity__budgets {
+  margin-left: auto;
+  display: flex;
+  gap: 26px;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--ink-dim);
+}
+.fx-identity__budgets b { color: var(--ink); font-weight: 700; }
+
+/* Two-pane variant */
+.fx-panel__twopane { display: flex; height: 100%; gap: 0; }
+.fx-panel__pane-left { flex: 1 1 55%; min-width: 0; overflow: auto; border-right: 1px solid rgba(255,255,255,0.06); padding-right: 16px; }
+.fx-panel__pane-right { flex: 1 1 45%; min-width: 0; overflow: auto; padding-left: 16px; }
+
+/* ---------------------------- §B1 sortable table --------------------------- */
+.fx-table { width: 100%; border-collapse: collapse; font-family: var(--font-ui); font-size: 14px; }
+.fx-table thead th {
+  position: sticky; top: 0;
+  background: #0d1013;
+  color: var(--ink-dim);
+  text-align: left;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 8px 10px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.fx-table thead th.is-sorted { color: var(--gold); }
+.fx-table thead th .caret { font-size: 10px; margin-right: 3px; }
+.fx-table thead th.num, .fx-table td.num { text-align: right; }
+.fx-table tbody tr { background: #1d2126; cursor: pointer; }
+.fx-table tbody tr:nth-child(even) { background: #171b1f; }
+.fx-table tbody tr td { padding: 7px 10px; color: var(--ink); }
+.fx-table tbody tr.is-sel { background: linear-gradient(150deg, var(--gold-bright), var(--gold-deep)); }
+.fx-table tbody tr.is-sel td { color: var(--gold-text-dark); font-weight: 600; }
+.fx-table tbody tr.is-sel td:first-child::before { content: "(X) "; font-weight: 700; }
+
+/* ---------------------------- §B2 paper dossier ---------------------------- */
+.fx-paper {
+  position: relative;
+  background: #ece6d8;
+  color: #2b2822;
+  border-radius: 3px;
+  padding: 26px 30px;
+  font-family: var(--font-ui);
+  box-shadow: 0 12px 34px rgba(0,0,0,0.55);
+}
+.fx-paper::before, .fx-paper::after {
+  content: "";
+  position: absolute;
+  width: 22px; height: 22px;
+  background: #11141833;
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+.fx-paper::before { left: 0; top: 0; }
+.fx-paper::after { right: 0; top: 0; transform: rotate(90deg); }
+.fx-paper__title {
+  font-family: var(--font-cond);
+  font-weight: 700;
+  font-size: 24px;
+  color: #2a2410;
+  text-transform: uppercase;
+  padding-bottom: 8px;
+  border-bottom: 3px solid var(--blue);
+  margin-bottom: 14px;
+}
+.fx-paper__body { color: #45403a; font-size: 15px; line-height: 1.5; }
+.fx-paper__row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(0,0,0,0.08); }
+.fx-paper__signatures { display: flex; justify-content: space-around; margin-top: 22px; }
+.fx-paper__sig { text-align: center; }
+.fx-paper__sig svg { width: 90px; height: 30px; opacity: 0.65; }
+.fx-paper__sig-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #6b6458; margin-top: 2px; }
+
+.fx-input-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #1c3d42;
+  color: #eaf3f2;
+  border-radius: 3px;
+  padding: 9px 14px;
+  margin: 6px 0;
+  font-family: var(--font-cond);
+  font-size: 16px;
+}
+.fx-input-row__steppers { display: flex; align-items: center; gap: 10px; }
+.fx-input-row__value { font-weight: 700; min-width: 90px; text-align: right; }
+
+/* ---------------------------- §B3 player card + actions -------------------- */
+.fx-playercard {
+  position: absolute;
+  left: 40px; top: 90px; bottom: 90px;
+  width: 300px;
+  background: rgba(15, 18, 22, 0.96);
+  border-radius: 6px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+}
+.fx-playercard__portrait {
+  width: 84px; height: 84px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #3a4148, #14171b);
+  margin: 0 auto;
+}
+.fx-playercard__name { text-align: center; font-size: 20px; font-weight: 700; color: var(--ink); }
+.fx-playercard__sub { text-align: center; font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim); display: flex; align-items: center; justify-content: center; gap: 6px; }
+.fx-playercard__posbar { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.fx-playercard__club { display: flex; align-items: center; justify-content: center; gap: 6px; font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim); }
+.fx-playercard__stats { display: flex; justify-content: space-between; font-family: var(--font-ui); font-size: 12px; color: var(--ink-dim); border-top: 1px solid rgba(255,255,255,0.08); border-bottom: 1px solid rgba(255,255,255,0.08); padding: 8px 0; }
+.fx-playercard__stats b { display: block; color: var(--ink); font-size: 15px; }
+.fx-playercard__word--gold { color: var(--gold); font-weight: 700; }
+.fx-playercard__tagline { font-family: var(--font-ui); font-size: 12px; color: #e0a92e; display: flex; gap: 6px; align-items: flex-start; }
+
+.fx-actions { display: flex; flex-direction: column; gap: 4px; margin-top: auto; }
+.fx-actions__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.04);
+  font-family: var(--font-cond);
+  font-size: 15px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.fx-actions__row.is-sel {
+  background: linear-gradient(150deg, var(--gold-bright), var(--gold-deep));
+  color: var(--gold-text-dark);
+  font-weight: 700;
+}
+.fx-actions__row.is-disabled { opacity: 0.45; cursor: default; }
+.fx-actions__row .fx-actions__why { font-family: var(--font-ui); font-size: 11px; color: var(--ink-faint); margin-left: auto; text-align: right; }
+.fx-actions__row.is-sel .fx-actions__why { color: rgba(42,36,16,0.75); }
+
+/* ---------------------------- §B4 attribute chips + colour scale ----------- */
+.fx-attr-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: 13px;
+}
+.fx-attr-chip--green { background: #39b54a; color: #0e1a0f; }
+.fx-attr-chip--yellow { background: #e8c227; color: #241d05; }
+.fx-attr-chip--orange { background: #d9822b; color: #fff; }
+.fx-attr-chip--red { background: #c0392b; color: #fff; }
+
+.fx-attr-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; font-family: var(--font-ui); font-size: 14px; color: var(--ink-dim); }
+.fx-attr-row__name { color: var(--ink); }
+
+.fx-pos-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+.fx-pos-bar { display: inline-block; width: 4px; align-self: stretch; border-radius: 2px; }
+
+.fx-attrpanel__header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.fx-attrpanel__portrait { position: relative; width: 56px; height: 56px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #3a4148, #14171b); }
+.fx-attrpanel__kitnum { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 700; color: rgba(255,255,255,0.10); }
+.fx-attrpanel__ovr { font-size: 30px; font-weight: 700; color: var(--ink); }
+.fx-attrpanel__name { font-size: 16px; font-weight: 700; color: var(--gold); }
+.fx-attrpanel__fitbar { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.1); overflow: hidden; margin-top: 4px; }
+.fx-attrpanel__fitbar > i { display: block; height: 100%; background: var(--green-ok); }
+.fx-attrpanel__pagedots { display: flex; align-items: center; gap: 5px; justify-content: flex-end; margin-top: 8px; }
+.fx-attrpanel__pagedots i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.25); display: block; }
+.fx-attrpanel__pagedots i.on { background: var(--gold); }
+
+/* ---------------------------- §B5 stars / medallion / fuzzy ---------------- */
+.fx-stars { display: inline-flex; gap: 2px; }
+.fx-stars svg { width: 14px; height: 14px; }
+.fx-stars .is-full { fill: var(--gold); }
+.fx-stars .is-half { fill: url(#fx-star-half-grad); }
+.fx-stars .is-empty { fill: #3a4148; }
+
+.fx-medallion { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px; }
+.fx-medallion__plate {
+  width: 120px; height: 120px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #2c333b, #14171b);
+  border: 3px solid rgba(242,193,78,0.5);
+  display: flex; align-items: center; justify-content: center;
+}
+.fx-medallion__plate svg { width: 56px; height: 64px; }
+.fx-medallion__lines { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 16px; text-align: center; font-family: var(--font-ui); font-size: 12px; color: var(--ink-dim); }
+.fx-medallion__lines b { display: block; font-size: 16px; color: var(--ink); }
+
+.fx-fuzzy { display: inline-flex; gap: 3px; align-items: center; }
+.fx-fuzzy .fx-attr-chip--min { background: #c0392b; color: #fff; }
+.fx-fuzzy .fx-attr-chip--max { background: #39b54a; color: #0e1a0f; }
+.fx-fuzzy__sep { color: var(--ink-faint); font-size: 11px; }

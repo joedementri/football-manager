@@ -45,6 +45,20 @@ export function deadlineDays(seasonStartYear) {
   return [w.summer.close, w.winter.close];
 }
 
+/** True on any day inside a transfer window (fable-plans/plan2.md F0: Central
+ * day-strip cells show the transfer-window icon "on every day of July" in
+ * ms_CENTRAL_SCREEN_HOVERING_*.png). Calendar-year-relative rather than
+ * seasonStartYear-relative like transferWindows() above — a window is always
+ * Jul1-Sep1 / Jan1-Feb1 of *some* year regardless of which season "owns" that
+ * date, so this sidesteps season-boundary edge cases entirely. */
+export function isTransferWindowOpen(date) {
+  const y = date.getFullYear();
+  return (
+    isDateInRange(date, new Date(y, 6, 1), new Date(y, 8, 1)) ||
+    isDateInRange(date, new Date(y, 0, 1), new Date(y, 1, 1))
+  );
+}
+
 /** Growth application dates (plan1.md "Growth & decline": "Applied twice per
  * season (Feb 1 and July 1)"). The July 1 date is next season's kickoff/
  * rollover moment. */

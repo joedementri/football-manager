@@ -12,7 +12,7 @@
 import { SCREENS } from "./store.js";
 import {
   renderAll, renderCentral, renderSeason, renderOffice, renderTransfers, renderSquad,
-  renderEmailList, renderEmailDetail,
+  renderEmailTabs, renderEmailList, renderEmailDetail,
   renderNewsCategoryTabs, renderNewsList,
 } from "../ui/render.js";
 import { renderSquadList } from "../ui/squadlist.js";
@@ -328,11 +328,26 @@ export function initRouter(store) {
     emailPrompt.style.cursor = "pointer";
     emailPrompt.addEventListener("click", () => store.openOverlay("email"));
   }
-  const closeEmailPrompt = footerEmail.querySelector(".prompt");
-  if (closeEmailPrompt) {
-    closeEmailPrompt.style.cursor = "pointer";
-    closeEmailPrompt.addEventListener("click", () => store.closeOverlay());
-  }
+  // F0: Close Inbox / Delete Message / Archive Message — one delegated
+  // data-action handler, same pattern as every other footer built since.
+  footerEmail.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    if (el.dataset.action === "back") store.closeOverlay();
+    else if (el.dataset.action === "delete") store.deleteSelectedEmail();
+    else if (el.dataset.action === "archive") store.archiveSelectedEmail();
+  });
+
+  // F0: Emails / Player Conversations / Message Archive tabs.
+  document.getElementById("email-tabs").addEventListener("click", (e) => {
+    const tab = e.target.closest(".email-tab");
+    if (tab) store.selectEmailTab(tab.dataset.tab);
+  });
+  store.on("email:tab", () => {
+    renderEmailTabs(store.state);
+    renderEmailList(store.state);
+    renderEmailDetail(store.state);
+  });
 
   // Delegated (not per-row) because render.js rebuilds #email-list's rows
   // from state on every render — per-row listeners would be destroyed with

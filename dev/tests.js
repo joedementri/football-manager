@@ -31,7 +31,7 @@ import { applyGrowthToWorld } from "../js/engine/growth.js";
 import { applyRetirementsAndRegens } from "../js/engine/retirement.js";
 import { buildCupState } from "../js/engine/comps/cup.js";
 import { acceptJob } from "../js/engine/jobs.js";
-import { Store, createCareerState } from "../js/core/store.js";
+import { Store, createCareerState, emailsForTab } from "../js/core/store.js";
 import { computeValue } from "../js/engine/value.js";
 import { computeWage, computeWageCeiling, squadWageBill } from "../js/engine/wage.js";
 import {
@@ -79,6 +79,8 @@ import {
 import { nationSquadRoster, createInitialIntlState } from "../js/engine/comps/intl.js";
 import { roundLabel, resolvePenaltyShootout } from "../js/engine/comps/knockoututil.js";
 import { NT_JOB_REP_THRESHOLD, refreshNtJobMarket, acceptNtJob } from "../js/engine/ntjobs.js";
+import { attrBand } from "../js/ui/panelkit.js";
+import { isTransferWindowOpen } from "../js/config/calendar.js";
 
 const groups = []; // [{ title, results: [{name, pass, detail}] }]
 let current = null;
@@ -1632,6 +1634,41 @@ async function run() {
     assert("state.intl round-trips (qualifying/tournament groups, knockout brackets)", deepEqual(roundTripped.intl, state.intl));
     assert("state.nationalTeam round-trips (nationId, squadPlayerIds, lineup)", deepEqual(roundTripped.nationalTeam, state.nationalTeam));
     assert("state.ntJobMarket round-trips", deepEqual(roundTripped.ntJobMarket, state.ntJobMarket));
+  }
+
+  group("ui/panelkit.js — §B4 attribute colour bands (fable-plans/plan2.md F0)");
+  assert("49 -> red", attrBand(49) === "red", `got ${attrBand(49)}`);
+  assert("50 -> orange", attrBand(50) === "orange", `got ${attrBand(50)}`);
+  assert("64 -> orange", attrBand(64) === "orange", `got ${attrBand(64)}`);
+  assert("65 -> yellow", attrBand(65) === "yellow", `got ${attrBand(65)}`);
+  assert("79 -> yellow", attrBand(79) === "yellow", `got ${attrBand(79)}`);
+  assert("80 -> green", attrBand(80) === "green", `got ${attrBand(80)}`);
+
+  group("config/calendar.js — isTransferWindowOpen (F0 Central day-strip ⇄ icon)");
+  assert("Jul 1 is in the summer window", isTransferWindowOpen(new Date(2015, 6, 1)));
+  assert("Aug 15 is in the summer window", isTransferWindowOpen(new Date(2015, 7, 15)));
+  assert("Sep 1 is in the summer window (inclusive close)", isTransferWindowOpen(new Date(2015, 8, 1)));
+  assert("Sep 2 is NOT in a window", !isTransferWindowOpen(new Date(2015, 8, 2)));
+  assert("Jan 1 is in the winter window", isTransferWindowOpen(new Date(2016, 0, 1)));
+  assert("Jan 20 is in the winter window", isTransferWindowOpen(new Date(2016, 0, 20)));
+  assert("Feb 1 is in the winter window (inclusive close)", isTransferWindowOpen(new Date(2016, 1, 1)));
+  assert("Feb 2 is NOT in a window", !isTransferWindowOpen(new Date(2016, 1, 2)));
+  assert("Dec 15 is NOT in a window", !isTransferWindowOpen(new Date(2015, 11, 15)));
+
+  group("core/store.js — emailsForTab (F0 Emails/Player Conversations/Message Archive tabs)");
+  {
+    const fakeState = {
+      ui: { emailTab: "inbox" },
+      inbox: { emails: [
+        { id: 1, subject: "A", archived: false },
+        { id: 2, subject: "B", archived: true },
+        { id: 3, subject: "C", archived: false },
+      ] },
+    };
+    assert("inbox tab returns only non-archived emails", emailsForTab(fakeState, "inbox").length === 2 && emailsForTab(fakeState, "inbox").every((e) => !e.archived));
+    assert("archive tab returns only archived emails", emailsForTab(fakeState, "archive").length === 1 && emailsForTab(fakeState, "archive")[0].id === 2);
+    assert("conversations tab is always empty (no backing feature)", emailsForTab(fakeState, "conversations").length === 0);
+    assert("omitting the tab arg falls back to state.ui.emailTab", emailsForTab(fakeState).length === emailsForTab(fakeState, "inbox").length);
   }
 
   render();

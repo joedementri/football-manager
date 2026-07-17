@@ -120,7 +120,30 @@
 .news-item.r { border-color: #d8483e; }
 .news-item.g { border-color: var(--green-ok); }
 
-.c-tables { grid-area: tables; padding: 14px 16px; }
+.c-tables { grid-area: tables; }
+/* F0: c-tables became a 3-page carousel (Tables/Fixtures/Top Scorers) —
+   .tile[data-carousel] zeroes the outer tile's own padding (see "generic
+   carousel pieces" below), so this restores the tile's original 14px/16px
+   inset on each .cpage instead of the generic carousel's 18px/20px, same
+   precedent as .se-tables in the Season screen (M10). */
+.screen--central .c-tables .cpage { padding: 14px 16px; }
+.c-tables__head { display: flex; align-items: center; justify-content: space-between; }
+.c-tables__badge {
+  font-family: var(--font-ui); font-size: 11px; font-weight: 700; letter-spacing: 0.3px;
+  color: #fff; background: linear-gradient(160deg, #2f6fd6, #1c4fa0);
+  border-radius: 3px; padding: 3px 8px; text-transform: uppercase;
+}
+.c-tables__teaser { display: flex; flex-direction: column; }
+.c-tables__teaser-photo {
+  flex: 1; margin-top: 10px; border-radius: 4px;
+  background: linear-gradient(135deg, #3b4a5a, #20272f);
+  position: relative; overflow: hidden;
+}
+.c-tables__teaser-photo::after {
+  content: ""; position: absolute; inset: 0;
+  background: repeating-linear-gradient(60deg, rgba(255,255,255,0.05) 0 8px, rgba(0,0,0,0.05) 8px 16px);
+}
+.c-tables__teaser-cap { margin-top: 8px; font-family: var(--font-ui); font-size: 14px; color: var(--ink-dim); }
 .tbl { width: 100%; margin-top: 12px; font-family: var(--font-ui); font-size: 14px; border-collapse: collapse; }
 .tbl th { text-align: right; color: var(--ink-faint); font-weight: 600; font-size: 12px; padding-bottom: 6px; }
 .tbl th.l { text-align: left; }
@@ -132,6 +155,32 @@
 /* highlights the user's own club row (Central's mini league table, M3) */
 .tbl tr.is-user td { color: var(--gold); font-weight: 700; }
 .tbl tr.is-user td.num { color: var(--gold); }
+
+/* F0: News/GTN/Tables-Fixtures-TopScorers tiles turn solid gold on hover
+   (ms_CENTRAL_SCREEN_HOVERING_*.png) — full swap, not the subtle .is-link
+   outline every other tile gets, so text colours need their own overrides
+   per tile rather than reusing .tile.is-gold's static rule. */
+.hub-tile--gold-hover:hover {
+  background: linear-gradient(150deg, var(--gold-bright), var(--gold-deep));
+}
+.hub-tile--gold-hover:hover .panel-title,
+.hub-tile--gold-hover:hover .c-news__head,
+.hub-tile--gold-hover:hover .c-news__date,
+.hub-tile--gold-hover:hover .c-gtn__scout .name,
+.hub-tile--gold-hover:hover .scout-row .who,
+.hub-tile--gold-hover:hover .scout-row .who b,
+.hub-tile--gold-hover:hover .scout-row .pos,
+.hub-tile--gold-hover:hover .tbl th,
+.hub-tile--gold-hover:hover .tbl td,
+.hub-tile--gold-hover:hover .tbl td.num,
+.hub-tile--gold-hover:hover .tbl tr.is-user td,
+.hub-tile--gold-hover:hover .tbl tr.is-user td.num,
+.hub-tile--gold-hover:hover .c-tables__teaser-cap {
+  color: var(--gold-text-dark);
+}
+.hub-tile--gold-hover:hover .c-gtn::after { display: none; }
+.hub-tile--gold-hover:hover .c-news__thumb,
+.hub-tile--gold-hover:hover .c-tables__teaser-photo { filter: grayscale(0.3) brightness(0.85); }
 
 /* ===========================  SQUAD  ===================================== */
 .screen--squad.is-active {
@@ -429,6 +478,11 @@
 .email-list { display: flex; flex-direction: column; overflow-y: auto; padding-right: 4px; }
 .email-list::-webkit-scrollbar { width: 8px; }
 .email-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+/* F0: Player Conversations tab (and an emptied Emails/Archive list) —
+   same "NO ITEMS AVAILABLE" empty state as the Office inbox tile. */
+.email-list .empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--ink-faint); }
+.email-list .empty .icon { width: 46px; height: 46px; }
+.email-list .empty .lbl { font-family: var(--font-cond); font-size: 22px; letter-spacing: 1px; }
 .email-row {
   display: grid; grid-template-columns: 30px 1fr auto; align-items: center;
   gap: 12px; padding: 12px 14px; cursor: pointer;

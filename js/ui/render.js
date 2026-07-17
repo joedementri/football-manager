@@ -8,6 +8,8 @@ import {
   dateSlash, dateLong, dateDayMonth, number, money,
 } from "../core/format.js";
 import { upcomingFixtures, fixtureOnDate } from "../engine/calendar.js";
+import { isTransferWindowOpen } from "../config/calendar.js";
+import { emailsForTab } from "../core/store.js";
 import { toEpochDay } from "../core/clock.js";
 import { domesticCupFor } from "../engine/objectives.js";
 import { cupStatusForClub } from "../engine/comps/cup.js";
@@ -70,6 +72,12 @@ function renderDayStrip(state) {
           `<svg class="crest crest--xs day__crest"><use href="#crest-${oppClubId}"></use></svg>` +
           `<span class="day__ha">${isHome ? "H" : "A"}</span>` +
         `</div>`;
+    } else if (isTransferWindowOpen(d)) {
+      // fable-plans/plan2.md F0: non-match days inside a transfer window show
+      // the ⇄ icon instead of the plain advance arrow (match-day crests keep
+      // priority — ms_CENTRAL_SCREEN_HOVERING_*.png's July days are all
+      // non-match preseason days, so every cell shows the window icon there).
+      matchIcon = `<svg class="adv-ico adv-ico--window"><use href="#ic-transfer"></use></svg>`;
     }
     return (
       `<div class="day${isNow}${hasMatch ? " has-match" : ""}" data-date="${toEpochDay(d)}">` +
@@ -142,6 +150,12 @@ function renderCentralTable(state) {
       `<svg class="crest crest--xs"><use href="#crest-${r.club.id}"></use></svg> ${r.club.shortName}</td>` +
       `<td class="num">${r.pld}</td><td class="num">${r.pts}</td></tr>`
   )).join("");
+
+  // Procedural text badge (no real league-logo asset, per plan2.md §A4) —
+  // matches ms_CENTRAL_SCREEN_HOVERING_BOTTOM_RIGHT_TILE_TABLE.png's
+  // top-right league ribbon.
+  const badge = document.getElementById("c-tables-badge");
+  if (badge) badge.textContent = state.league.name;
 }
 
 export function renderCentral(state) {
@@ -361,22 +375,38 @@ export function renderSeason(state) {
 }
 
 /* ----------------------------- Email overlay -------------------------------- */
+export function renderEmailTabs(state) {
+  document.querySelectorAll(".email-tab").forEach((t) => {
+    t.classList.toggle("is-active", t.dataset.tab === state.ui.emailTab);
+  });
+}
+
 export function renderEmailList(state) {
   const list = document.getElementById("email-list");
-  list.innerHTML = state.inbox.emails.map((e, i) => {
-    const sel = i === state.ui.emailSelectedIndex ? " is-sel" : "";
-    const icon = e.read ? "ic-envelope-open" : "ic-envelope";
-    return (
-      `<div class="email-row${sel}" data-email="${i}">` +
-        `<svg class="icon"><use href="#${icon}"></use></svg>` +
-        `<div><div class="er-from">${e.from}</div><div class="er-subj">${e.subject}</div></div>` +
-        `<div class="er-date">${dateSlash(e.date)}</div>` +
-      `</div>`
-    );
-  }).join("");
+  const emails = emailsForTab(state);
+  if (!emails.length) {
+    // Player Conversations tab (no backing feature) always lands here;
+    // Emails/Message Archive can too once everything's read+deleted.
+    list.innerHTML = `<div class="empty"><svg class="icon"><use href="#ic-envelope"></use></svg><span class="lbl">NO ITEMS AVAILABLE</span></div>`;
+  } else {
+    list.innerHTML = emails.map((e, i) => {
+      const sel = i === state.ui.emailSelectedIndex ? " is-sel" : "";
+      const icon = e.read ? "ic-envelope-open" : "ic-envelope";
+      return (
+        `<div class="email-row${sel}" data-email="${i}">` +
+          `<svg class="icon"><use href="#${icon}"></use></svg>` +
+          `<div><div class="er-from">${e.from}</div><div class="er-subj">${e.subject}</div></div>` +
+          `<div class="er-date">${dateSlash(e.date)}</div>` +
+        `</div>`
+      );
+    }).join("");
+  }
 
-  const unread = state.inbox.emails.filter((e) => !e.read).length;
-  const badge = document.querySelector(".email-tab.is-active .badge");
+  // Unread count always reflects the main Emails list, regardless of which
+  // tab is currently active (real FIFA shows this badge on the tab label
+  // itself, not just while that tab happens to be selected).
+  const unread = emailsForTab(state, "inbox").filter((e) => !e.read).length;
+  const badge = document.querySelector('.email-tab[data-tab="inbox"] .badge');
   if (badge) badge.textContent = unread;
 }
 
@@ -404,8 +434,17 @@ function renderEmailActions(d) {
 }
 
 export function renderEmailDetail(state) {
-  const d = state.inbox.emails[state.ui.emailSelectedIndex];
-  if (!d) return;
+  const d = emailsForTab(state)[state.ui.emailSelectedIndex];
+  if (!d) {
+    // F0: Player Conversations (always empty) or an emptied Emails/Archive
+    // list — clear the read pane instead of leaving the previous tab's
+    // email showing (state.ui.emailSelectedIndex resets to 0 on tab switch,
+    // but index 0 of an empty list is nothing).
+    document.querySelectorAll(".email-meta > div").forEach((el) => { el.innerHTML = ""; });
+    document.querySelector(".email-text").innerHTML = "";
+    document.getElementById("email-actions").hidden = true;
+    return;
+  }
   document.querySelector("#email-read .crest use").setAttribute("href", `#${d.crest}`);
   const meta = document.querySelectorAll(".email-meta > div");
   meta[0].innerHTML = `<span class="k">Date</span> ${dateSlash(d.date)}`;

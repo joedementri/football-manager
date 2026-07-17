@@ -242,6 +242,12 @@ function createUiDefaults(today) {
     overlay: null, // null | 'email' | 'news' | 'squadlist' | 'playerbio' | 'calendar' | 'matchday'
     overlayStack: [], // nested overlays (playerbio opened from within squadlist)
     emailSelectedIndex: 0,
+    // F0: "Emails"/"Player Conversations"/"Message Archive" tabs
+    // (ms_EMAIL_NOTIFICATION_SCREEN.png) — Player Conversations has no
+    // backing feature (always the "NO ITEMS AVAILABLE" empty state, same
+    // footing as the pre-M0 Office inbox stub); Archive lists emails the
+    // user has archived off the main list via the footer's Y prompt.
+    emailTab: "inbox",
     newsCategory: "breaking",
     newsSelectedIndex: { breaking: 0, world: 0, club: 0, transfer: 0, intl: 0 },
     squadlist: { sortKey: "overall", sortDir: "desc", selectedIndex: -1 },
@@ -466,6 +472,18 @@ function deriveIndices(state, {
  * matchdayFinish()) so Central/Season's table tiles reflect new results. */
 export function refreshLeagueTable(state) {
   state.league.table = buildLeagueTable(state.league, state.league.clubs, state.fixtures.byLeague.get(state.league.id), state.results);
+}
+
+/** F0: the email overlay's 3 tabs each show a different slice of
+ * state.inbox.emails — Emails (not archived), Player Conversations (always
+ * empty — no backing feature), Message Archive (archived). Shared by
+ * ui/render.js's list render and the Store methods below so both index the
+ * same list the same way. */
+export function emailsForTab(state, tab) {
+  const t = tab || state.ui.emailTab;
+  if (t === "archive") return state.inbox.emails.filter((e) => e.archived);
+  if (t === "conversations") return [];
+  return state.inbox.emails.filter((e) => !e.archived);
 }
 
 /**
@@ -746,9 +764,45 @@ export class Store {
 
   selectEmail(idx) {
     this.state.ui.emailSelectedIndex = idx;
-    const email = this.state.inbox.emails[idx];
+    const email = emailsForTab(this.state)[idx];
     if (email) email.read = true;
     this.emit("email:select", idx);
+  }
+
+  /** F0: switching Emails/Player Conversations/Message Archive resets the
+   * selection (indices mean different things per tab's filtered list — see
+   * emailsForTab above). */
+  selectEmailTab(tab) {
+    if (tab !== "inbox" && tab !== "conversations" && tab !== "archive") return;
+    this.state.ui.emailTab = tab;
+    this.state.ui.emailSelectedIndex = 0;
+    this.emit("email:tab", tab);
+  }
+
+  /** Y Archive Message: only meaningful from the main Emails list — moves
+   * the selected email onto the Message Archive tab. Archiving from the
+   * Archive tab itself isn't a mechanic shown in any reference pic, so it's
+   * a no-op there rather than an invented "unarchive" (see plan2-decisions.md F0). */
+  archiveSelectedEmail() {
+    if (this.state.ui.emailTab !== "inbox") return;
+    const list = emailsForTab(this.state);
+    const email = list[this.state.ui.emailSelectedIndex];
+    if (!email) return;
+    email.archived = true;
+    this.state.ui.emailSelectedIndex = 0;
+    this.emit("email:select", this.state.ui.emailSelectedIndex);
+  }
+
+  /** X Delete Message: permanently removes the selected email from whichever
+   * tab it's currently being viewed on (Emails or Message Archive). */
+  deleteSelectedEmail() {
+    const list = emailsForTab(this.state);
+    const email = list[this.state.ui.emailSelectedIndex];
+    if (!email) return;
+    const idx = this.state.inbox.emails.indexOf(email);
+    if (idx !== -1) this.state.inbox.emails.splice(idx, 1);
+    this.state.ui.emailSelectedIndex = 0;
+    this.emit("email:select", this.state.ui.emailSelectedIndex);
   }
 
   selectNewsCategory(cat) {

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Panel Kit — F0 dev page</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@400;500;600;700&family=Saira:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/base.css" />
+  <link rel="stylesheet" href="../css/chrome.css" />
+  <link rel="stylesheet" href="../css/panels.css" />
+  <link rel="stylesheet" href="dev.css" />
+  <style>
+    /* Layout for this sampler page only — not part of the shared kit.
+       base.css locks html/body to a fixed 100%-height, overflow:hidden box
+       (correct for the game's letterboxed stage); this standalone dev page
+       is a long scrolling document instead, so undo both here. */
+    html, body { height: auto; min-height: 100%; overflow: visible; }
+    body { background: #0b0e11; }
+    .kit-sample {
+      position: relative;
+      width: 1280px;
+      height: 460px;
+      margin: 0 auto 28px;
+      background:
+        radial-gradient(120% 80% at 50% -10%, rgba(70, 86, 104, 0.55), rgba(10, 14, 18, 0) 60%),
+        linear-gradient(180deg, #11161c 0%, #161c23 38%, #18242a 62%, #1c3322 82%, #2c5a30 100%);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .kit-sample--short { height: 320px; }
+    .kit-sample--tall { height: 640px; }
+    .kit-label {
+      max-width: 1280px; margin: 0 auto; padding: 4px 2px;
+      font-family: var(--font-ui); color: var(--ink-dim); font-size: 13px;
+    }
+    .kit-row { display: flex; gap: 24px; align-items: flex-start; padding: 20px; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <header class="hdr">
+    <h1>Panel Kit</h1>
+    <p class="sub">F0 verification page — one of each fable-plans/plan2.md §B1-B5 shared primitive (js/ui/panelkit.js + css/panels.css), rendered for eyeballing against the reference pics. Not part of the game itself.</p>
+  </header>
+
+  <svg class="svg-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="fx-star-half-grad" x1="0" x2="1" y1="0" y2="0">
+        <stop offset="50%" stop-color="#f2c14e" />
+        <stop offset="50%" stop-color="#3a4148" />
+      </linearGradient>
+    </defs>
+    <symbol id="crest-pompey" viewBox="0 0 48 56">
+      <path d="M4 4h40v30c0 12-13 18-20 22C17 52 4 46 4 34V4z" fill="#1c4fa0"/>
+      <path d="M24 16a9 9 0 1 0 6 15.6A7 7 0 1 1 24 16z" fill="#f2c14e"/>
+    </symbol>
+  </svg>
+
+  <div class="kit-label">§B1 — fxPanel (centered dark panel, title bar, selector bars, identity header)</div>
+  <div class="kit-sample" id="sample-panel"></div>
+
+  <div class="kit-label">§B1 — fxTable (sortable table, zebra rows, gold selected row)</div>
+  <div class="kit-sample kit-sample--short" id="sample-table"></div>
+
+  <div class="kit-label">§B2 — fxPaper (paper dossier) + fxInputRow</div>
+  <div class="kit-sample" id="sample-paper"></div>
+
+  <div class="kit-label">§B3 — fxPlayerCard + fxActionList</div>
+  <div class="kit-sample kit-sample--tall" id="sample-playercard"></div>
+
+  <div class="kit-label">§B4 — fxAttrPanelHeader + attribute chips (colour bands) + fuzzy ranges</div>
+  <div class="kit-sample kit-sample--short" id="sample-attrs"></div>
+
+  <div class="kit-label">§B5 — starRating + teamMedallion + glyph pills (A/B/X/Y + LB/RB/LT/RT/LS/RS)</div>
+  <div class="kit-sample kit-sample--short" id="sample-misc"></div>
+
+  <script type="module" src="kit.js"></script>
+</body>
+</html>

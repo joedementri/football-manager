@@ -288,7 +288,7 @@ export function renderMatchday(state) {
 
   if (m.atHalftime) {
     container.innerHTML = renderHalftime(state, m);
-    setFooterHtml(footer, prompt("a", "A", "continue-second-half", "Continue") + prompt("l3", "L3", "open-sub", "Substitution"));
+    setFooterHtml(footer, prompt("a", "A", "continue-second-half", "Continue") + prompt("ls", "LS", "open-sub", "Substitution"));
     return;
   }
 
@@ -298,7 +298,7 @@ export function renderMatchday(state) {
     prompt("a", "A", "toggle-play", playLabel) +
     prompt("x", "X", "cycle-speed", m.speed >= 4 ? "Speed: 4x" : "Speed: 1x") +
     prompt("y", "Y", "instant", "Sim To End") +
-    prompt("l3", "L3", "open-sub", "Substitution")
+    prompt("ls", "LS", "open-sub", "Substitution")
   );
 }
 
