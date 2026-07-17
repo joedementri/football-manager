@@ -98,13 +98,28 @@
   color: var(--gold-text-dark);
 }
 
-.sqts-formation { position: absolute; left: 14px; bottom: 14px; z-index: 3; color: #fff; }
+/* F1-fixes: was bottom-left, which overlapped the Substitutes/Reserves
+   drawer once it opened as a bar (and worse once the drawer overlays the
+   pitch, per the F1-fixes drawer rework below) — top-left instead, clear of
+   the centred crest banner and never covered by anything. */
+.sqts-formation { position: absolute; left: 14px; top: 14px; z-index: 3; color: #fff; }
 .sqts-formation b { font-family: var(--font-cond); font-weight: 700; font-size: 22px; line-height: 1; display: block; text-shadow: 0 2px 6px rgba(0,0,0,0.7); }
 .sqts-formation span { font-family: var(--font-ui); font-size: 13px; opacity: 0.9; text-shadow: 0 1px 4px rgba(0,0,0,0.7); }
 
 /* ---------------------------- bottom drawer -------------------------------- */
+/* F1-fixes: expanded used to be `flex: 0 1 auto` inside .sqts-pitchpanel's
+   flex column, so opening it shrank the pitch above it. Taking it out of
+   flow (position:absolute, pinned to the panel's bottom edge) instead makes
+   it float *over* the lower part of the pitch — the pitch (flex:1 1 auto)
+   keeps its full height either way. The bar-only states (collapsed, or
+   minimized — see js/ui/teamsheetui.js's renderDrawer) stay in-flow as a
+   plain small footer bar, same as always. */
 .sqts-drawer { flex: 0 0 auto; position: relative; z-index: 4; }
-.sqts-drawer--open { flex: 0 1 auto; }
+.sqts-drawer--open {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 6;
+  flex: none;
+  box-shadow: 0 -10px 26px rgba(0, 0, 0, 0.55);
+}
 .sqts-drawer__bar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 6px 16px;
@@ -135,13 +150,30 @@
 .sqts-slotcard--empty { background: transparent; cursor: default; }
 .sqts-slotcard.is-focus { background: linear-gradient(150deg, var(--gold-bright), var(--gold-deep)); }
 .sqts-slotcard.is-armed { background: linear-gradient(150deg, #6fd9e8, #2b98ab); }
-.sqts-slotcard__top { display: flex; align-items: center; justify-content: space-between; position: relative; }
+.sqts-slotcard__top { display: flex; align-items: center; justify-content: space-between; gap: 4px; position: relative; }
 .sqts-slotcard__portrait {
-  width: 34px; height: 34px; border-radius: 50%;
+  flex: 0 0 auto;
+  width: 30px; height: 30px; border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, #3a4148, #14171b);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-cond); font-weight: 700; font-size: 13px; color: rgba(255,255,255,0.7);
 }
-.sqts-slotcard__ovr { font-family: var(--font-cond); font-weight: 700; font-size: 16px; color: var(--ink); }
+/* F1-fixes: bench/reserve cards had no position label at all — the pitch's
+   own jerseys carry the *formation slot*'s position, which bench/reserve
+   players don't have, so this is the player's own primary position instead
+   (posDot's colour banding matches the right panel's mini-header). */
+.sqts-slotcard__pos {
+  flex: 0 1 auto; display: inline-flex; align-items: center; gap: 3px;
+  font-family: var(--font-ui); font-weight: 600; font-size: 11px; color: var(--ink-dim);
+  white-space: nowrap;
+}
+.sqts-slotcard.is-focus .sqts-slotcard__pos, .sqts-slotcard.is-armed .sqts-slotcard__pos { color: var(--gold-text-dark); }
+.sqts-slotcard__ovr { flex: 0 0 auto; font-family: var(--font-cond); font-weight: 700; font-size: 16px; color: var(--ink); }
 .sqts-slotcard.is-focus .sqts-slotcard__ovr, .sqts-slotcard.is-armed .sqts-slotcard__ovr { color: var(--gold-text-dark); }
+/* Energy/Form Change View mode's trend arrow, same glyph as the pitch's
+   .sqts-jersey__arrow just sized down for the smaller card. */
+.sqts-slotcard__arrow { flex: 0 0 auto; font-family: var(--font-cond); font-weight: 700; font-size: 15px; color: var(--ink); line-height: 1; }
+.sqts-slotcard.is-focus .sqts-slotcard__arrow, .sqts-slotcard.is-armed .sqts-slotcard__arrow { color: var(--gold-text-dark); }
 .sqts-slotcard__statusrow { display: flex; align-items: center; gap: 5px; margin-top: 5px; }
 .sqts-slotcard__name { font-family: var(--font-ui); font-size: 12px; font-weight: 600; color: var(--ink); margin-top: 3px; }
 .sqts-slotcard.is-focus .sqts-slotcard__name, .sqts-slotcard.is-armed .sqts-slotcard__name { color: var(--gold-text-dark); }
@@ -168,13 +200,28 @@
 .sqts-panelhead.is-anchor .sqts-panelhead__name { color: #4fc3d9; }
 
 .sqts-pagetitle { flex: 0 0 auto; text-align: left; font-size: 18px; margin-bottom: 4px; text-transform: none; letter-spacing: normal; }
-/* Only the attribute list scrolls — header/title above and the (RS) pager
-   dots below both stay pinned, matching every attribute-page reference pic
-   (the pager never moves even on the 16-row Skill Attributes page). */
-.sqts-panelbody { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+/* Only the attribute list scrolls — header/title above and the pager below
+   both stay pinned, matching every attribute-page reference pic (the pager
+   never moves even on the 16-row Skill Attributes page).
+   F1-fixes: rows used to run flush to the box edge, so the scrollbar thumb
+   sat directly on top of each row's attribute chip on any page long enough
+   to scroll — padding-right reserves 14px inside the scrolling box itself
+   (rather than on .sqts-right's own padding, which would also shift the
+   non-scrolling header/title/pager) to put clear air between the chips and
+   the thumb. */
+.sqts-panelbody { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 14px; }
 .sqts-panelbody::-webkit-scrollbar { width: 8px; }
 .sqts-panelbody::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 4px; }
 .fx-attrpanel__pagedots { flex: 0 0 auto; }
+/* F1-fixes: was a bare (RS) glyph pill — now prev/next chevrons flanking
+   the dots, matching js/carousel.js's main-menu carousel bar. .cnav's base
+   styling is calibrated for sitting over a hub-tile photo (opacity 0.35,
+   only reaching 1 while the ancestor [data-carousel] tile is hovered) — this
+   pager isn't over a photo and has no such ancestor, so it gets its own
+   always-legible opacity instead. */
+.sqts-pagernav .dots { position: static; display: flex; gap: 6px; }
+.sqts-pagernav .cnav { opacity: 0.7; }
+.sqts-pagernav .cnav:hover, .sqts-pagernav .cnav:focus-visible { opacity: 1; }
 
 .sqts-attr-row--compare {
   display: grid; grid-template-columns: 40px 1fr 40px;

@@ -170,15 +170,21 @@ export function renderCentral(state) {
 }
 
 /* ----------------------------- Squad -------------------------------------- */
-function sheetPitchHtml(sheet) {
+// F1-fixes: this preview pitch used the same flat, un-clubbed `#kit`
+// placeholder the Team Sheet view's own pitch used to — now that gen/crest.js
+// injects a `#kit-<clubId>` symbol per club, both pitches should agree (a
+// keeper still gets the plain generic icon; see ui/teamsheetui.js's kitSvg
+// for why that one stays un-clubbed).
+function sheetPitchHtml(state, sheet) {
   const jerseysHtml = sheet.lineup.map((p) => {
     const gkClass = p.gk ? " gk" : "";
     const cap = p.captain ? `<span class="jersey__cap">C</span>` : "";
+    const kitHref = p.gk ? "#kit" : `#kit-${state.club.id}`;
     return (
       `<div class="jersey${gkClass}" style="left:${p.x}%;top:${p.y}%">` +
         `<div class="jersey__top">` +
           `<span class="jersey__pos">${p.pos}</span>` +
-          `<svg class="jersey__kit"><use href="#kit"></use></svg>` +
+          `<svg class="jersey__kit"><use href="${kitHref}"></use></svg>` +
           `<span class="jersey__rating">${p.rating}</span>${cap}` +
         `</div>` +
         `<div class="jersey__name">${p.name}</div>` +
@@ -204,7 +210,7 @@ function renderSheetCarousel(state) {
   const sheets = state.squad.sheets;
   const pages = sheets.map((sheet, i) => (
     `<div class="cpage sq-sheet__formation${i === state.squad.activeSheetIndex ? " is-active" : ""}" data-sheet-index="${i}">` +
-      sheetPitchHtml(sheet) +
+      sheetPitchHtml(state, sheet) +
     `</div>`
   ));
   if (sheets.length < 6) {

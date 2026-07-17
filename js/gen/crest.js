@@ -126,3 +126,23 @@ export function kitInnerSVG(club) {
 export function kitSVGString(club, size = 24) {
   return `<svg viewBox="0 0 24 24" width="${size}" height="${size}">${kitInnerSVG(club)}</svg>`;
 }
+
+/** `<symbol id="kit-<id>" ...>` markup — same sprite-injection pattern as
+ * crestSymbolMarkup above, so pitch jerseys can `<use href="#kit-<id>">`
+ * instead of the flat single-colour `#kit` placeholder every jersey used to
+ * reference regardless of club (F1-fixes: "make sure the jerseys rendered
+ * are the club's jerseys"). */
+export function kitSymbolMarkup(club) {
+  return `<symbol id="kit-${club.id}" viewBox="0 0 24 24">${kitInnerSVG(club)}</symbol>`;
+}
+
+/** Mirrors injectClubCrestSymbols exactly (same sprite element, same
+ * skip-if-present guard) — js/main.js and core/router.js call both together
+ * wherever a club (or the whole league table) needs its crest available. */
+export function injectClubKitSymbols(clubs) {
+  const sprite = document.querySelector(".svg-sprite");
+  for (const club of clubs) {
+    if (sprite.querySelector(`#kit-${club.id}`)) continue;
+    sprite.insertAdjacentHTML("beforeend", kitSymbolMarkup(club));
+  }
+}

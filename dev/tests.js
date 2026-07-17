@@ -1810,6 +1810,45 @@ async function run() {
     const substitutesCount = teamSheetFocusableSlots({ squad: tsStore.state.squad, ui: { teamSheet: { ...ts, drawer: "substitutes" } } }).length;
     assert("focusable slots = 11 XI-only when the drawer is collapsed", collapsedCount === 11);
     assert("focusable slots grow to include the bench once Substitutes is open", substitutesCount === 11 + tsStore.state.squad.bench.filter((id) => id != null).length);
+
+    // F1-fixes: the drawer overlays the pitch instead of compressing it
+    // (CSS-only, untestable here), and minimizes back to just its bar
+    // whenever a bench/reserve slot gets armed *from within* the open
+    // drawer — letting the pitch show through to pick the swap's other
+    // half — then un-minimizes once that second pick lands, once the arm
+    // is cancelled, or the drawer bar is clicked again. Arming an XI slot
+    // instead (manual pitch-first pick, or Suggested Subs) must NOT
+    // minimize, since the drawer's own list is the next click's target.
+    assert("drawer is open (substitutes) and not minimized after the earlier (B) step",
+      ts.drawer === "substitutes" && ts.drawerMinimized === false);
+
+    const benchIdBefore = tsStore.state.squad.bench[0];
+    tsStore.teamSheetFocus("bench", 0);
+    tsStore.teamSheetSelectPlayer(); // arm from inside the open drawer
+    assert("arming a bench slot while the drawer is open minimizes it",
+      ts.armed && ts.armed.zone === "bench" && ts.drawerMinimized === true);
+
+    tsStore.teamSheetToggleDrawer(); // "click subs/reserves panel again" -> peek
+    assert("toggling the bar while minimized un-minimizes without cancelling the arm or changing drawer type",
+      ts.drawerMinimized === false && !!ts.armed && ts.drawer === "substitutes");
+
+    tsStore.teamSheetFocus("bench", 0);
+    tsStore.teamSheetSelectPlayer(); // cancel (same slot)
+    assert("cancelling the arm also un-minimizes", ts.armed === null && ts.drawerMinimized === false);
+
+    tsStore.teamSheetFocus("bench", 0);
+    tsStore.teamSheetSelectPlayer(); // re-arm -> minimizes again
+    assert("re-arming re-minimizes the drawer", ts.drawerMinimized === true);
+    tsStore.teamSheetFocus("xi", 3);
+    tsStore.teamSheetSelectPlayer(); // completes the swap on the (now-visible) pitch
+    assert("completing the swap clears armed and un-minimizes the drawer", ts.armed === null && ts.drawerMinimized === false);
+    assert("the swap actually moved the bench player into XI slot 3", tsStore.state.squad.lineup[3].playerId === benchIdBefore);
+
+    tsStore.teamSheetFocus("xi", 4);
+    tsStore.teamSheetSelectPlayer(); // arm an XI slot while the drawer is open
+    assert("arming an XI slot while the drawer is open leaves it expanded, not minimized",
+      ts.armed && ts.armed.zone === "xi" && ts.drawerMinimized === false);
+    tsStore.teamSheetSelectPlayer(); // cancel (same slot) — leave state clean
   }
 
   render();

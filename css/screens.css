@@ -198,6 +198,29 @@
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3);
   background: linear-gradient(180deg, #244a2a, #15281a);
 }
+/* F1-fixes: every clickable element on the Squad page should get the same
+   hover cue chrome.css's `.tile.is-link:hover` gives sq-club — but most of
+   this screen's other tiles put `is-link` on an inner `.cpage`, not the
+   outer `.tile` that selector actually requires both classes on (Squad
+   Report/Ranking, Tactics, Player Roles, Kit Numbers), the team-sheet
+   carousel's own `.cpage`s never carried `is-link` at all (wired via
+   router.js's dedicated .sq-sheet delegation instead), and sq-natl/
+   sq-natlsel only ever carry `data-open` (never `is-link`, live or not) —
+   none of those had any hover feedback before now. `inset` (not chrome.css's
+   outset ring) throughout since `.tile`/`.sq-sheet` both set
+   `overflow: hidden`, which would otherwise clip an outset shadow. */
+.sq-sheet .cpage,
+.sq-grid .cpage.is-link,
+.sq-natl:not(.is-disabled),
+.sq-natlsel:not(.is-disabled) {
+  cursor: pointer; transition: box-shadow 0.12s ease;
+}
+.sq-sheet .cpage:hover,
+.sq-grid .cpage.is-link:hover,
+.sq-natl:not(.is-disabled):hover,
+.sq-natlsel:not(.is-disabled):hover {
+  box-shadow: inset 0 0 0 2px rgba(242, 193, 78, 0.55), inset 0 4px 16px rgba(0, 0, 0, 0.4);
+}
 
 /* full-bleed perspective pitch */
 .pitch { position: absolute; inset: 0; overflow: hidden; perspective: 1000px; }

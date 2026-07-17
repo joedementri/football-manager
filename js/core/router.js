@@ -34,7 +34,7 @@ import { renderTeamSheet } from "../ui/teamsheetui.js";
 import { renderTeamStats, renderPlayerStats } from "../ui/statsui.js";
 import { renderSettings } from "../ui/settingsui.js";
 import { renderSaves } from "../ui/savesui.js";
-import { injectClubCrestSymbols } from "../gen/crest.js";
+import { injectClubCrestSymbols, injectClubKitSymbols } from "../gen/crest.js";
 import { fromEpochDay } from "./clock.js";
 
 export function initRouter(store) {
@@ -326,6 +326,7 @@ export function initRouter(store) {
   // sprite (only the starting league's are, at boot — see gen/crest.js).
   store.on("jobs:accepted", () => {
     injectClubCrestSymbols(store.state.league.table.map((r) => r.club));
+    injectClubKitSymbols(store.state.league.table.map((r) => r.club));
     renderAll(store.state);
   });
   // M10: accepting an NT job needs the Squad screen's sq-natl/sq-natlsel
@@ -558,12 +559,24 @@ export function initRouter(store) {
   });
 
   // F1: pitch jerseys + bench/reserve/suggested-subs cards + the drawer bar.
-  // Hover moves focus only (mouseover bubbles, unlike mouseenter, so this
-  // works delegated against content ui/teamsheetui.js rebuilds wholesale
-  // every render); a click both focuses *and* activates (X) in one gesture —
-  // see core/store.js's teamSheetActivateSlot for why that's the right
-  // mouse-equivalent of "move the cursor here, then press X".
-  sqtsBodyEl.addEventListener("mouseover", (e) => {
+  // Hover moves focus only; a click both focuses *and* activates (A) in one
+  // gesture — see core/store.js's teamSheetActivateSlot for why that's the
+  // right mouse-equivalent of "move the cursor here, then press A".
+  //
+  // F1-fixes: this used to listen for "mouseover" (bubbles, unlike
+  // mouseenter, so it works delegated against content ui/teamsheetui.js
+  // rebuilds wholesale every render) — but the browser also *synthesizes* a
+  // mouseover for whatever element ends up under a perfectly stationary
+  // cursor whenever a re-render changes the DOM there (e.g. arming a
+  // bench/reserve card minimizes the drawer, which can reveal a pitch
+  // jersey at that same pixel underneath). That phantom event was silently
+  // stealing focus away from the slot the user just armed, before they'd
+  // moved the mouse at all. "mousemove" doesn't have that problem — unlike
+  // mouseover/mouseout, it only ever fires from genuine pointer-device
+  // movement, never synthesized by a layout change — so it can't be spoofed
+  // by our own re-render. teamSheetFocus's existing sameSlot no-op guard
+  // keeps this just as cheap under real, continuous mouse movement.
+  sqtsBodyEl.addEventListener("mousemove", (e) => {
     const el = e.target.closest("[data-zone]");
     if (el) store.teamSheetFocus(el.dataset.zone, Number(el.dataset.index));
   });
@@ -572,16 +585,20 @@ export function initRouter(store) {
     if (slotEl) { store.teamSheetActivateSlot(slotEl.dataset.zone, Number(slotEl.dataset.index)); return; }
     const drawerEl = e.target.closest('[data-action="toggle-drawer"]');
     if (drawerEl) { store.teamSheetToggleDrawer(); return; }
-    // (RS) attribute-panel page cycling has no on-pitch button — clicking
-    // the pager dots themselves is this screen's mouse equivalent (full
-    // mouse support per plan2.md §A4).
-    if (e.target.closest(".fx-attrpanel__pagedots")) store.teamSheetChangeAttrPage(1);
+    // F1-fixes: the (RS) glyph pill was replaced with prev/next chevron
+    // buttons (matching js/carousel.js's main-menu tile carousels) — each
+    // gets its own data-action; clicking a dot directly still just advances
+    // one page, same as before.
+    const prevEl = e.target.closest('[data-action="attrpage-prev"]');
+    if (prevEl) { store.teamSheetChangeAttrPage(-1); return; }
+    const nextEl = e.target.closest('[data-action="attrpage-next"]');
+    if (nextEl) { store.teamSheetChangeAttrPage(1); return; }
+    if (e.target.closest(".fx-attrpanel__pagedots .dots")) store.teamSheetChangeAttrPage(1);
   });
   footerTeamsheet.addEventListener("click", (e) => {
     const el = e.target.closest("[data-action]");
     if (!el) return;
     switch (el.dataset.action) {
-      case "advance": store.advanceOneDay(); break;
       case "back": store.teamSheetBack(); break;
       case "suggested-subs": store.teamSheetSuggestedSubs(); break;
       case "select-player": store.teamSheetSelectPlayer(); break;
@@ -1017,7 +1034,7 @@ export function initRouter(store) {
       if (key === "v" || key === "V") { store.teamSheetChangeView(1); return; }
       if (key === "r" || key === "R") { store.teamSheetChangeAttrPage(1); return; }
       if (key === "y" || key === "Y") { store.teamSheetSuggestedSubs(); return; }
-      if (key === "x" || key === "X" || key === "Enter") { store.teamSheetSelectPlayer(); return; }
+      if (key === "a" || key === "A" || key === "Enter") { store.teamSheetSelectPlayer(); return; }
       if (key === "ArrowUp" || key === "ArrowDown" || key === "ArrowLeft" || key === "ArrowRight") {
         const slots = teamSheetFocusableSlots(store.state);
         const focus = store.state.ui.teamSheet.focus;

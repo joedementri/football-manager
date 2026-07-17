@@ -357,7 +357,7 @@ function createUiDefaults(today) {
     // `drawer` ('collapsed'|'substitutes'|'reserves'|'suggested'), `focus`
     // (the currently-viewed slot — `{zone:'xi'|'bench'|'reserve', index}` —
     // teal ring, right panel follows it), `armed` (the first-picked slot of
-    // an in-progress (X) swap, or null), `suggested` (Y's ranked-candidates
+    // an in-progress (A) swap, or null), `suggested` (Y's ranked-candidates
     // drawer content, or null) and `attrPage` (right panel's §B4 page index).
     // All purely presentational — the real data (sheets/lineup/bench) lives
     // on state.squad, same footing as every other overlay's `ui.*` slice.
@@ -365,6 +365,7 @@ function createUiDefaults(today) {
       tab: "squad",
       changeView: 0,
       drawer: "collapsed",
+      drawerMinimized: false,
       focus: { zone: "xi", index: 0 },
       armed: null,
       suggested: null,
@@ -1594,6 +1595,7 @@ export class Store {
       tab: "squad",
       changeView: 0,
       drawer: "collapsed",
+      drawerMinimized: false,
       focus: { zone: "xi", index: 0 },
       armed: null,
       suggested: null,
@@ -1651,7 +1653,7 @@ export class Store {
 
   /** Moves the teal "currently-viewed" ring — mouse hover and keyboard
    * arrow-navigation both call this (a swap only ever executes from
-   * teamSheetSelectPlayer, i.e. an explicit (X)/click — see that method's
+   * teamSheetSelectPlayer, i.e. an explicit (A)/click — see that method's
    * own header). Doesn't touch `armed`: browsing around while a swap is in
    * progress is just looking, per every SELECT_PLAYER* pic. */
   teamSheetFocus(zone, index) {
@@ -1668,11 +1670,19 @@ export class Store {
   }
 
   /**
-   * (X) Select Player: first press on a filled slot arms it (teal ring,
+   * (A) Select Player: first press on a filled slot arms it (teal ring,
    * matches ms_TEAM_SHEET_VIEW_SELECT_PLAYER.png); pressing the same slot
    * again cancels; pressing a *different* slot swaps the two
    * (teamSheetSwap) and clears the armed state. No-op on an empty slot
    * (nothing to arm) or while a non-SQUAD tab is showing.
+   *
+   * F1-fixes: also drives the drawer's overlay/minimize behaviour — arming a
+   * slot *inside* the open drawer (bench/reserve/suggested, i.e. not "xi")
+   * minimizes it back to a bar so the pitch is visible to pick the other
+   * half of the swap; arming an XI slot (Suggested Subs' own flow, or a
+   * manual pitch-first pick) leaves the drawer fully expanded since the
+   * drawer's own list *is* where the next click needs to land. Clearing
+   * `armed` (cancel or a completed swap) always un-minimizes.
    */
   teamSheetSelectPlayer() {
     const ts = this.state.ui.teamSheet;
@@ -1680,22 +1690,25 @@ export class Store {
     if (!ts.armed) {
       if (teamSheetSlotPlayerId(this.state, ts.focus) == null) return;
       ts.armed = { ...ts.focus };
+      ts.drawerMinimized = ts.drawer !== "collapsed" && ts.focus.zone !== "xi";
       this.emit("teamsheet", null);
       return;
     }
     if (sameSlot(ts.armed, ts.focus)) {
       ts.armed = null;
+      ts.drawerMinimized = false;
       if (ts.suggested) { ts.suggested = null; ts.drawer = "substitutes"; }
       this.emit("teamsheet", null);
       return;
     }
     teamSheetSwap(this.state, ts.armed, ts.focus);
     ts.armed = null;
+    ts.drawerMinimized = false;
     if (ts.suggested) { ts.suggested = null; ts.drawer = "substitutes"; }
     this.emit("teamsheet", null);
   }
 
-  /** Mouse equivalent of "move the cursor here, then press (X)" — hover
+  /** Mouse equivalent of "move the cursor here, then press (A)" — hover
    * (teamSheetFocus) already tracks the pointer continuously, so a click
    * both focuses and activates in the one gesture real hardware needs two
    * inputs for. */
@@ -1709,24 +1722,37 @@ export class Store {
 
   /** Bottom drawer: collapsed -> Substitutes -> Reserves -> collapsed
    * (plan2.md F1.3). No-op while the Suggested Subs list is showing — (B)
-   * is the way out of that (teamSheetBack), not the drawer bar. */
+   * is the way out of that (teamSheetBack), not the drawer bar.
+   *
+   * F1-fixes: while the drawer is minimized (arming a bench/reserve slot
+   * shrunk it back to a bar so the pitch is visible — see
+   * teamSheetSelectPlayer), clicking the bar again is the documented way to
+   * peek the full list back open without disturbing the arm or cycling to
+   * the next drawer type; only a *second* bar-click (once already expanded)
+   * advances collapsed -> substitutes -> reserves as before. */
   teamSheetToggleDrawer() {
     const ts = this.state.ui.teamSheet;
     if (ts.tab !== "squad" || ts.drawer === "suggested") return;
+    if (ts.drawer !== "collapsed" && ts.drawerMinimized) {
+      ts.drawerMinimized = false;
+      this.emit("teamsheet", null);
+      return;
+    }
     const order = ["collapsed", "substitutes", "reserves"];
     ts.drawer = order[(order.indexOf(ts.drawer) + 1) % order.length];
+    ts.drawerMinimized = false;
     this.emit("teamsheet", null);
   }
 
   /**
    * (Y) Suggested Subs: arms the focused XI slot (same visual state as a
-   * manual (X) pick) and swaps the drawer to a ranked candidate list — same-
+   * manual (A) pick) and swaps the drawer to a ranked candidate list — same-
    * position first, then altPositions, then best OVR*fitness*form
    * (js/config/managerai.js, ported from managerai.ini's
    * [MAI_TOTAL_SCORE_1ST_11]) — auto-focusing the top candidate exactly like
    * ms_TEAM_SHEET_VIEW_SUGGESTED_SUBS.png (Westcarr pre-highlighted, gold
    * ring + swap icon). Empty pool -> ms_..._NO_SIMILAR.png's "No similar
-   * players available." (armed stays set so (X)/(B) still behave sensibly).
+   * players available." (armed stays set so (A)/(B) still behave sensibly).
    */
   teamSheetSuggestedSubs() {
     const ts = this.state.ui.teamSheet;
@@ -1742,6 +1768,7 @@ export class Store {
       .sort((a, b) => suggestedSubScore(b, slotEntry.pos) - suggestedSubScore(a, slotEntry.pos));
 
     ts.armed = { ...ts.focus };
+    ts.drawerMinimized = false; // arms an XI slot — the candidate list stays fully expanded
     ts.suggested = { forZone: ts.focus.zone, forIndex: ts.focus.index, candidateIds: candidates.map((p) => p.id) };
     ts.drawer = "suggested";
     if (candidates.length) {
@@ -1757,6 +1784,7 @@ export class Store {
    * negotiation/matchday's own closeX() overrides. */
   teamSheetBack() {
     const ts = this.state.ui.teamSheet;
+    ts.drawerMinimized = false; // every branch below is "reveal more", never less
     if (ts.drawer === "suggested") {
       ts.suggested = null;
       ts.armed = null;

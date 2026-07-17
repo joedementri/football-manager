@@ -111,9 +111,20 @@ const SWAP_ICON = `<svg class="sqts-swapicon"><use href="#ic-transfer"></use></s
 
 /* ============================== left pitch panel ========================= */
 
-const KIT_SVG = `<svg class="jersey__kit"><use href="#kit"></use></svg>`;
+// F1-fixes: jerseys must show the *club's* colours, not one fixed generic
+// icon — gen/crest.js's kitSymbolMarkup injects a `#kit-<clubId>` symbol per
+// club (js/main.js / core/router.js, mirroring how club crests already
+// work), so this just picks that symbol over the flat placeholder. Keepers
+// keep the old generic `#kit` + its `.jersey.gk .jersey__kit` CSS colour
+// override (real football's own convention: a keeper's shirt is never the
+// same colour as an outfield player's, club-specific or not).
+function kitSvg(state, isGk) {
+  const href = isGk ? "#kit" : `#kit-${state.club.id}`;
+  return `<svg class="jersey__kit"><use href="${href}"></use></svg>`;
+}
 
 function jerseyCaption(state, ts, entry, player) {
+  const kit = kitSvg(state, !!entry.gk);
   const dotHtml = `<span class="sqts-jersey__dot sqts-jersey__dot--${fitnessBand(player)}"></span>`;
   if (ts.changeView === 1) {
     // Energy/Form: no position/OVR label; trend arrow above the jersey
@@ -121,7 +132,7 @@ function jerseyCaption(state, ts, entry, player) {
     // energy bar (ms_TEAM_SHEET_VIEW_CHANGE_VIEW_2of3_ENERGY_FORM.png).
     return {
       arrow: `<span class="sqts-jersey__arrow">${formArrow(player.ratingHistory)}</span>`,
-      top: KIT_SVG,
+      top: kit,
       bar: `<div class="sqts-jersey__bar"><i style="width:${player.fitness}%;background:${FITNESS_BAND_HEX[fitnessBand(player)]}"></i></div>`,
     };
   }
@@ -130,14 +141,14 @@ function jerseyCaption(state, ts, entry, player) {
     // player's position group (ms_..._3of3_POSITIONAL_COLORING.png).
     const posColorDot = `<span class="sqts-jersey__dot" style="background:${positionColorFor(positionInfo(player.position).area)}"></span>`;
     return {
-      top: `${KIT_SVG}<span class="jersey__rating">${player.overall}</span>`,
+      top: `${kit}<span class="jersey__rating">${player.overall}</span>`,
       bar: `<div class="sqts-jersey__bar"><i style="width:${player.fitness}%"></i></div>`,
       dot: posColorDot,
     };
   }
   // mode 0: Position/OVR (default) — pos label + OVR + fitness-banded dot.
   return {
-    top: `<span class="jersey__pos">${entry.pos}</span>${KIT_SVG}<span class="jersey__rating">${player.overall}</span>`,
+    top: `<span class="jersey__pos">${entry.pos}</span>${kit}<span class="jersey__rating">${player.overall}</span>`,
     bar: `<div class="sqts-jersey__bar"><i style="width:${player.fitness}%"></i></div>`,
     dot: dotHtml,
   };
@@ -176,20 +187,47 @@ function renderPitchPanel(state, ts) {
 
 /* ============================== drawer (Substitutes/Reserves/Suggested) == */
 
+// F1-fixes: the drawer's cards were missing two things every reference pic's
+// bench/reserve rows show — a filled kit-number bubble (was an empty grey
+// circle) and the player's own primary position next to it (not the
+// formation-slot label pitch jerseys use, since bench/reserve players don't
+// have one) — and didn't respect Change View at all (always OVR + a plain
+// fitness dot, regardless of pitch mode). `mainRow`/`statusRow` below mirror
+// jerseyCaption's 3 modes so the drawer stays in lockstep with the pitch.
+function slotCardMain(ts, player) {
+  if (ts.changeView === 1) {
+    return {
+      main: `<span class="sqts-slotcard__arrow">${formArrow(player.ratingHistory)}</span>`,
+      status: `<div class="sqts-jersey__bar"><i style="width:${player.fitness}%;background:${FITNESS_BAND_HEX[fitnessBand(player)]}"></i></div>`,
+    };
+  }
+  if (ts.changeView === 2) {
+    const area = positionInfo(player.position).area;
+    return {
+      main: `<span class="sqts-slotcard__ovr">${player.overall}</span>`,
+      status: `<span class="sqts-jersey__dot" style="background:${positionColorFor(area)}"></span><div class="sqts-jersey__bar"><i style="width:${player.fitness}%"></i></div>`,
+    };
+  }
+  return {
+    main: `<span class="sqts-slotcard__ovr">${player.overall}</span>`,
+    status: `<span class="sqts-jersey__dot sqts-jersey__dot--${fitnessBand(player)}"></span><div class="sqts-jersey__bar"><i style="width:${player.fitness}%"></i></div>`,
+  };
+}
+
 function slotCard(state, ts, zone, index, player) {
   const cls = ringClass(ts, zone, index);
   const swap = showSwapIcon(ts, zone, index) ? SWAP_ICON : "";
+  const info = positionInfo(player.position);
+  const { main, status } = slotCardMain(ts, player);
   return (
     `<div class="sqts-slotcard${cls}" data-zone="${zone}" data-index="${index}">` +
       `<div class="sqts-slotcard__top">` +
-        `<span class="sqts-slotcard__portrait"></span>` +
-        `<span class="sqts-slotcard__ovr">${player.overall}</span>` +
+        `<span class="sqts-slotcard__portrait">${player.kitNumber != null ? player.kitNumber : ""}</span>` +
+        `<span class="sqts-slotcard__pos">${posDot(info.area)}${player.position}</span>` +
+        main +
         swap +
       `</div>` +
-      `<div class="sqts-slotcard__statusrow">` +
-        `<span class="sqts-jersey__dot sqts-jersey__dot--${fitnessBand(player)}"></span>` +
-        `<div class="sqts-jersey__bar"><i style="width:${player.fitness}%"></i></div>` +
-      `</div>` +
+      `<div class="sqts-slotcard__statusrow">${status}</div>` +
       `<div class="sqts-slotcard__name">${player.commonName}</div>` +
     `</div>`
   );
@@ -203,7 +241,14 @@ function drawerBarText(drawer) {
 }
 
 function renderDrawer(state, ts) {
-  const arrow = ts.drawer === "collapsed" ? "&#9650;" : "&#9660;"; // ▲ / ▼
+  const isOpen = ts.drawer !== "collapsed";
+  // F1-fixes: an armed bench/reserve/suggested pick shrinks the drawer back
+  // to just this bar (revealing the pitch to finish the swap) without
+  // forgetting which list was open — drawerBarText still reports it, and
+  // clicking the bar again (or completing/cancelling the swap) re-expands
+  // it. See core/store.js's teamSheetSelectPlayer/teamSheetToggleDrawer.
+  const minimized = isOpen && ts.drawerMinimized;
+  const arrow = (!isOpen || minimized) ? "&#9650;" : "&#9660;"; // ▲ / ▼
   const barCls = ts.drawer === "suggested" ? " sqts-drawer__bar--gold" : "";
   const bar =
     `<div class="sqts-drawer__bar${barCls}" data-action="toggle-drawer">` +
@@ -212,7 +257,7 @@ function renderDrawer(state, ts) {
       `<span class="sqts-drawer__arrow">${arrow}</span>` +
     `</div>`;
 
-  if (ts.drawer === "collapsed") return `<div class="sqts-drawer">${bar}</div>`;
+  if (!isOpen || minimized) return `<div class="sqts-drawer">${bar}</div>`;
 
   let body;
   if (ts.drawer === "suggested" && ts.suggested) {
@@ -244,8 +289,19 @@ function renderDrawer(state, ts) {
 
 /* ============================== right attribute panel ==================== */
 
+// F1-fixes: was "F. Lastname" (abbreviated); every reference pic's right
+// panel actually spells out the full name — ui/playerbio.js's own bio-sub
+// line uses the same `firstName lastName` join.
 function playerNameFor(player) {
-  return `${player.firstName.charAt(0)}. ${player.lastName}`;
+  return `${player.firstName} ${player.lastName}`;
+}
+
+// Same one-liner every other ui/*.js module defines locally rather than
+// importing (render.js/gtnui.js/youthui.js/transfersui.js all repeat this
+// exact function) — css/flags.css keys off `data-flag="<nationId>"` directly,
+// no nation-object lookup needed.
+function flagSpan(nationId) {
+  return `<span class="flag" data-flag="${nationId}"></span>`;
 }
 
 function miniHeader(player, colorClass, kitNumber) {
@@ -255,7 +311,7 @@ function miniHeader(player, colorClass, kitNumber) {
       `<div class="fx-attrpanel__portrait"><span class="fx-attrpanel__kitnum">${kitNumber != null ? kitNumber : ""}</span></div>` +
       `<div>` +
         `<div>${posDot(info.area)} ${player.position} <span class="fx-attrpanel__ovr">${player.overall}</span></div>` +
-        `<div class="sqts-panelhead__name">${playerNameFor(player)}</div>` +
+        `<div class="sqts-panelhead__name">${flagSpan(player.nationId)} ${playerNameFor(player)}</div>` +
         `<div class="fx-attrpanel__fitbar"><i style="width:${player.fitness}%"></i></div>` +
       `</div>` +
     `</div>`
@@ -332,12 +388,22 @@ function renderRightPanel(state, ts) {
     : pageBodySingle(state, compareMode ? anchorPlayer : focusPlayer, page);
 
   const dots = pages.map((p, i) => `<i class="${i === pageIndex ? "on" : ""}"></i>`).join("");
+  // F1-fixes: was a bare (RS) glyph pill next to the dots — replaced with
+  // left/right chevron buttons flanking the dots, the same "cnav prev ·
+  // dots · cnav next" shape js/carousel.js's main-menu tile carousels use
+  // (core/router.js wires the two new data-actions to teamSheetChangeAttrPage).
+  const pager =
+    `<div class="fx-attrpanel__pagedots sqts-pagernav">` +
+      `<button type="button" class="cnav prev" data-action="attrpage-prev" aria-label="Previous">&lsaquo;</button>` +
+      `<div class="dots">${dots}</div>` +
+      `<button type="button" class="cnav next" data-action="attrpage-next" aria-label="Next">&rsaquo;</button>` +
+    `</div>`;
 
   return (
     header +
     `<div class="fx-panel__title sqts-pagetitle">${page.title}</div>` +
     `<div class="sqts-panelbody">${body}</div>` +
-    `<div class="fx-attrpanel__pagedots">${glyphPill("rs")}${dots}</div>`
+    pager
   );
 }
 
@@ -366,15 +432,21 @@ function renderFooter(state) {
     footer.innerHTML = `<span class="prompt" data-action="back">${glyphPill("b")} Back</span>`;
     return;
   }
+  // F1-fixes: (A) is the global "interact with whatever's highlighted"
+  // button everywhere else in this game (footer-main's static "(A) Select"
+  // prompt, every other overlay's own primary action) — it must not double
+  // as a day-advance shortcut here. Select Player (the highlighted slot's
+  // own action) now owns the (A) glyph; the old "(A) Advance" prompt is
+  // gone (Central's own Advance tile is still the one place that advances
+  // the day).
   const prompts = [
-    `<span class="prompt" data-action="advance">${glyphPill("a")} Advance</span>`,
-    `<span class="prompt" data-action="back">${glyphPill("b")} Back</span>`,
+    `<span class="prompt" data-action="select-player">${glyphPill("a")} Select Player</span>`,
   ];
   if (ts.focus.zone === "xi") {
     prompts.push(`<span class="prompt" data-action="suggested-subs">${glyphPill("y")} Suggested Subs</span>`);
   }
-  prompts.push(`<span class="prompt" data-action="select-player">${glyphPill("x")} Select Player</span>`);
   prompts.push(`<span class="prompt" data-action="change-view">${glyphPill("ls")} Change View</span>`);
+  prompts.push(`<span class="prompt" data-action="back">${glyphPill("b")} Back</span>`);
   footer.innerHTML = prompts.join("");
 }
 

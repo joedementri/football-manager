@@ -14,7 +14,7 @@ import { initRouter } from "./core/router.js";
 import { initStage } from "./stage.js";
 import { initCarousels } from "./carousel.js";
 import { initNewGame } from "./ui/newgame.js";
-import { injectClubCrestSymbols } from "./gen/crest.js";
+import { injectClubCrestSymbols, injectClubKitSymbols } from "./gen/crest.js";
 import { preloadNamePools } from "./gen/names.js";
 import { resetPlayerIdCounter } from "./gen/player.js";
 import * as db from "./core/db.js";
@@ -216,6 +216,11 @@ function startGame(state) {
   // (plain string templates, no network/image assets — gen/crest.js's own
   // header) even at full ~600-club scale.
   injectClubCrestSymbols(state.staticData.clubs);
+  // F1-fixes: Team Sheet's pitch jerseys need every club's kit colours
+  // available too, same "whole world, not just the user's league" reach as
+  // crests above (Search Players/GTN can surface any club's player, and F1's
+  // Suggested Subs drawer can too).
+  injectClubKitSymbols(state.staticData.clubs);
 
   document.getElementById("newgame-root").hidden = true;
   document.getElementById("game-root").hidden = false;
