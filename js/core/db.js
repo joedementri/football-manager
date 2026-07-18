@@ -549,6 +549,9 @@ export function serializeSave(state) {
     transferListings: [...(state.transfers?.listings || new Map()).entries()].map(serializeListingEntry),
     transferPendingOffers: (state.transfers?.pendingOffers || []).map(serializePendingOffer),
     clubTransferBudgets: [...(state.clubTransferBudgets || new Map()).entries()],
+    // F3: My Shortlist ({playerId, dateAdded}[]) — dateAdded converted to an
+    // epoch day the same way every other persisted Date in this file is.
+    transferShortlist: (state.transfers?.shortlist || []).map((s) => ({ playerId: s.playerId, dateAdded: toEpochDay(s.dateAdded) })),
     // M7: state.news.transfer is the one part of core/store.js's M0-era
     // NEWS_DATA stub this milestone starts writing real articles into
     // (engine/transferai.js/negotiation.js/freeagents.js's pushTransferNews)
@@ -605,6 +608,7 @@ export function deserializeSave(saved) {
     transferListings: new Map((saved.transferListings || []).map(deserializeListingEntry)),
     transferPendingOffers: (saved.transferPendingOffers || []).map(deserializePendingOffer),
     clubTransferBudgets: new Map(saved.clubTransferBudgets || []),
+    transferShortlist: (saved.transferShortlist || []).map((s) => ({ playerId: s.playerId, dateAdded: fromEpochDay(s.dateAdded) })),
     newsTransfer: saved.newsTransfer,
     gtn: saved.gtn ? deserializeGtnState(saved.gtn) : null,
     academy: saved.academy ? deserializeAcademyState(saved.academy) : null,

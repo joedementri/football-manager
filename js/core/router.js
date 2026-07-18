@@ -23,7 +23,9 @@ import { renderJobsOverlay } from "../ui/jobsui.js";
 import { renderNtJobsOverlay } from "../ui/ntjobsui.js";
 import { renderNatlSquad } from "../ui/natlsquad.js";
 import { renderContracts } from "../ui/contractsui.js";
-import { renderSearch, renderNegotiation, renderSellList, renderRequestFunds } from "../ui/transfersui.js";
+import { renderNegotiation, renderSellList, renderRequestFunds } from "../ui/transfersui.js";
+import { renderSearch, renderMyShortlist, computeSearchResults } from "../ui/searchui.js";
+import { positionInfo } from "../config/positions.js";
 import { renderGtn } from "../ui/gtnui.js";
 import { renderYouth } from "../ui/youthui.js";
 import { renderMyCareer } from "../ui/mycareerui.js";
@@ -64,8 +66,10 @@ export function initRouter(store) {
   const ctDetailEl = document.getElementById("ct-detail");
   const footerSearch = document.getElementById("footer-search");
   const searchOverlay = document.getElementById("search-overlay");
-  const srFiltersEl = document.getElementById("sr-filters");
-  const srResultsEl = document.getElementById("sr-results");
+  const searchBodyEl = document.getElementById("search-body");
+  const footerShortlist = document.getElementById("footer-shortlist");
+  const shortlistOverlay = document.getElementById("shortlist-overlay");
+  const shortlistBodyEl = document.getElementById("shortlist-body");
   const footerNegotiation = document.getElementById("footer-negotiation");
   const negotiationOverlay = document.getElementById("negotiation-overlay");
   const ngBodyEl = document.getElementById("ng-body");
@@ -166,6 +170,10 @@ export function initRouter(store) {
       searchOverlay.classList.toggle("is-active", open);
       footerSearch.hidden = !open;
       if (open) renderSearch(store.state);
+    } else if (name === "shortlist") {
+      shortlistOverlay.classList.toggle("is-active", open);
+      footerShortlist.hidden = !open;
+      if (open) renderMyShortlist(store.state);
     } else if (name === "negotiation") {
       negotiationOverlay.classList.toggle("is-active", open);
       footerNegotiation.hidden = !open;
@@ -284,6 +292,7 @@ export function initRouter(store) {
     if (store.state.ui.overlay === "selllist") renderSellList(store.state);
     if (store.state.ui.overlay === "requestfunds") renderRequestFunds(store.state);
     if (store.state.ui.overlay === "search") renderSearch(store.state);
+    if (store.state.ui.overlay === "shortlist") renderMyShortlist(store.state);
     if (store.state.ui.overlay === "email") { renderEmailList(store.state); renderEmailDetail(store.state); }
     // M8: a mission's report/salary tick can land mid-advance same as the M7
     // cases above, and every screen's GTN preview tile needs the same
@@ -301,6 +310,7 @@ export function initRouter(store) {
   });
   store.on("contracts", () => renderContracts(store.state));
   store.on("search", () => renderSearch(store.state));
+  store.on("shortlist", () => renderMyShortlist(store.state));
   store.on("negotiation", () => renderNegotiation(store.state));
   store.on("selllist", () => renderSellList(store.state));
   store.on("requestfunds", () => renderRequestFunds(store.state));
@@ -398,6 +408,7 @@ export function initRouter(store) {
       else if (tile.dataset.open === "jobs") store.openBrowseJobs();
       else if (tile.dataset.open === "contracts") store.openContracts();
       else if (tile.dataset.open === "search") store.openTransferSearch();
+      else if (tile.dataset.open === "shortlist") store.openMyShortlist();
       else if (tile.dataset.open === "selllist") store.openSellList();
       else if (tile.dataset.open === "requestfunds") store.openRequestFunds();
       else if (tile.dataset.open === "gtn") store.openGtn();
@@ -791,69 +802,175 @@ export function initRouter(store) {
     if (el) handleContractsAction(el.dataset.action);
   });
 
-  // Search Players (M7): area-picker/stepper/toggle clicks in the filter
-  // row, row selection in the results list, and the footer's Bid/Loan/
-  // Approach (which of these three shows depends on the Free Agents Only
-  // toggle — see ui/transfersui.js's renderSearchFooter).
-  function handleSearchFilterAction(action, target) {
-    const f = store.state.ui.transferSearch;
-    switch (action) {
-      case "set-area": store.setSearchFilter("area", target.dataset.value); break;
-      case "minovr-down": store.setSearchFilter("minOverall", Math.max(0, f.minOverall - 5)); break;
-      case "minovr-up": store.setSearchFilter("minOverall", Math.min(99, f.minOverall + 5)); break;
-      case "maxvalue-down": store.setSearchFilter("maxValue", Math.max(0, f.maxValue - 1000000)); break;
-      case "maxvalue-up": store.setSearchFilter("maxValue", f.maxValue + 1000000); break;
-      case "toggle-freeagents": store.setSearchFilter("freeAgentsOnly", !f.freeAgentsOnly); break;
-    }
+  // F3 (fable-plans/plan2.md): Player Search — PLAYER SEARCH filter tiles ->
+  // SEARCH RESULTS (tabs/cards/report) -> action-menu playercard. One fully-
+  // delegated handler on #search-body (same "many different interactive sub-
+  // states, no point pre-querying dozens of stable IDs" reasoning as GTN/
+  // Youth's own handlers), matching ui/searchui.js's data-action vocabulary.
+  const TILE_CYCLE = {
+    1: { 0: (d) => store.searchCycleArea(d), 1: (d) => store.searchCycleRole(d) },
+    2: { 0: (d) => store.searchCycleNationality(d) },
+    3: { 0: (d) => store.searchCycleStatus(d) },
+    4: { 0: (d) => store.searchAdjustMinAge(d), 1: (d) => store.searchAdjustMaxAge(d) },
+    5: { 0: (d) => store.searchCycleCountry(d) },
+    6: { 0: (d) => store.searchCycleLeague(d) },
+    7: { 0: (d) => store.searchCycleTeam(d) },
+  };
+  function activateFilterTile(tile, sub) {
+    store.searchFilterFocus(tile, sub);
+    if (tile === 0) { store.searchStartEditName(); return; }
+    const fn = (TILE_CYCLE[tile] || {})[sub] || (TILE_CYCLE[tile] || {})[0];
+    if (fn) fn(1);
   }
-  srFiltersEl.addEventListener("click", (e) => {
+  searchBodyEl.addEventListener("click", (e) => {
+    const tileEl = e.target.closest('[data-action="filter-activate"]');
+    if (tileEl) { activateFilterTile(Number(tileEl.dataset.tile), Number(tileEl.dataset.sub || 0)); return; }
+    const cardEl = e.target.closest('[data-action="select-result"]');
+    if (cardEl) {
+      const playerId = Number(cardEl.dataset.player);
+      const s = store.state.ui.transferSearch;
+      if (s.selectedPlayerId === playerId) store.searchOpenActionMenu();
+      else store.searchSelectResult(playerId);
+      return;
+    }
+    const tabEl = e.target.closest('[data-action="tab"]');
+    if (tabEl) { store.searchSetResultsTab(tabEl.dataset.tab); return; }
     const el = e.target.closest("[data-action]");
-    if (el) handleSearchFilterAction(el.dataset.action, el);
-  });
-  srResultsEl.addEventListener("click", (e) => {
-    const row = e.target.closest(".sr-row");
-    if (row) store.selectSearchResult(Number(row.dataset.player));
+    if (!el) return;
+    switch (el.dataset.action) {
+      case "report-prev": store.searchCycleReportPage(-1, 3); break;
+      case "report-next": store.searchCycleReportPage(1, 3); break;
+      case "ask-scout": case "toggle-shortlist": case "enquire":
+      case "approach-buy": case "approach-loan": case "sign-free-agent": {
+        const playerId = Number(e.target.closest("[data-player]")?.dataset.player);
+        store.performPlayerAction(el.dataset.action, playerId);
+        break;
+      }
+    }
   });
   function handleSearchFooterAction(action) {
-    const f = store.state.ui.transferSearch;
-    if (action === "back") { store.closeOverlay(); return; }
-    if (f.selectedPlayerId == null) return;
+    const s = store.state.ui.transferSearch;
     switch (action) {
-      case "bid": store.startBid(f.selectedPlayerId); break;
-      case "loan": store.startLoanBid(f.selectedPlayerId, "season"); break;
-      case "approach": store.startFreeAgentApproach(f.selectedPlayerId); break;
+      case "back": if (s.stage === "results") store.searchBackFromResults(); else store.closeOverlay(); break;
+      case "reset": store.searchResetFilters(); break;
+      case "search": store.searchSubmitFilters(); break;
+      case "filter-select": activateFilterTile(s.filterTile, s.filterSub); break;
+      case "report-next": store.searchCycleReportPage(1, 3); break;
     }
   }
   footerSearch.addEventListener("click", (e) => {
     const el = e.target.closest("[data-action]");
     if (el) handleSearchFooterAction(el.dataset.action);
   });
+  // PLAYER NAME's live <input> (§B2's "(Y) opens direct numeric entry",
+  // applied to text here — this project's first free-text field, see
+  // ui/searchui.js's own header). `focusout` (unlike `blur`) bubbles, so this
+  // delegates cleanly off #search-body without needing to re-wire a fresh
+  // listener after every re-render the way a direct .addEventListener on the
+  // input itself would. Every keystroke also stops propagation — otherwise a
+  // typed "b"/"Escape" etc. would leak up to the global shortcut handler
+  // below and close the overlay mid-type.
+  searchBodyEl.addEventListener("focusout", (e) => {
+    if (e.target && e.target.id === "sx-nameinput") store.searchCommitName(e.target.value);
+  });
+  searchBodyEl.addEventListener("keydown", (e) => {
+    if (!e.target || e.target.id !== "sx-nameinput") return;
+    e.stopPropagation();
+    if (e.key === "Enter") { e.preventDefault(); store.searchCommitName(e.target.value); }
+    else if (e.key === "Escape") { e.preventDefault(); store.searchCommitName(store.state.ui.transferSearch.filters.name); }
+  });
 
-  // Negotiation (M7): fee-talks/contract-talks steppers + submit/cancel —
-  // one data-action handler shared by the body and footer, same pattern as
-  // Contracts above.
+  // F3: My Shortlist — same action-menu vocabulary as Search Results above.
+  shortlistBodyEl.addEventListener("click", (e) => {
+    const rowEl = e.target.closest("tr[data-row-id]");
+    if (rowEl && rowEl.dataset.rowId) {
+      const playerId = Number(rowEl.dataset.rowId);
+      const st = store.state.ui.shortlist;
+      if (st.selectedPlayerId === playerId) store.shortlistOpenActionMenu();
+      else store.selectShortlistPlayer(playerId);
+      return;
+    }
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    switch (el.dataset.action) {
+      case "ask-scout": case "toggle-shortlist": case "enquire":
+      case "approach-buy": case "approach-loan": case "sign-free-agent": {
+        const playerId = Number(e.target.closest("[data-player]")?.dataset.player);
+        store.performPlayerAction(el.dataset.action, playerId);
+        break;
+      }
+    }
+  });
+  footerShortlist.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    switch (el.dataset.action) {
+      case "sort": store.sortShortlist(); break;
+      case "back": if (store.state.ui.shortlist.actionMenuOpen) store.shortlistCloseActionMenu(); else store.closeOverlay(); break;
+      case "player-bio": if (store.state.ui.shortlist.selectedPlayerId != null) store.openPlayerBio(store.state.ui.shortlist.selectedPlayerId); break;
+    }
+  });
+
+  // F3 (fable-plans/plan2.md): Negotiation — Approach Transfer/Loan Offer
+  // dossier + Contract Negotiation panel. One data-action handler shared by
+  // the body and footer, same pattern as Contracts above; the exchange-
+  // player picker's fx-table rows are matched separately (they carry
+  // data-row-id, not data-action, same convention as every other fxTable
+  // consumer in this codebase).
   function handleNegotiationAction(action) {
+    const n = store.state.transfers.negotiation;
     switch (action) {
+      case "fee": store.negoStartEditFeeOffer(); break;
       case "fee-down": store.negoAdjustFeeOffer(-0.05); break;
       case "fee-up": store.negoAdjustFeeOffer(0.05); break;
-      case "wage-down": store.negoAdjustContractWage(-0.05); break;
-      case "wage-up": store.negoAdjustContractWage(0.05); break;
-      case "years-down": store.negoAdjustContractYears(-1); break;
-      case "years-up": store.negoAdjustContractYears(1); break;
-      case "role-down": store.negoCycleRole(-1); break;
-      case "role-up": store.negoCycleRole(1); break;
+      case "offer-mode-toggle": store.negoToggleOfferMode(); break;
+      case "exchange-open": store.negoOpenExchangePicker(); break;
+      case "exchange-close": store.negoCloseExchangePicker(); break;
+      case "loan-bonus-down": store.negoAdjustLoanBonus(-1); break;
+      case "loan-bonus-up": store.negoAdjustLoanBonus(1); break;
+      case "loan-length-toggle": store.negoCycleLoanLength(); break;
+      case "loan-futurefee-down": store.negoAdjustLoanFutureFee(-10000); break;
+      case "loan-futurefee-up": store.negoAdjustLoanFutureFee(10000); break;
+      case "reset-fee": store.negoResetOffer(); break;
       case "submit-fee": store.negoSubmitFeeOffer(); break;
+      case "submit-loan": store.negoSubmitLoanOffer(); break;
+      case "contract-wage-down": store.negoAdjustContractWage(-0.05); break;
+      case "contract-wage-up": store.negoAdjustContractWage(0.05); break;
+      case "contract-years-down": store.negoAdjustContractYears(-1); break;
+      case "contract-years-up": store.negoAdjustContractYears(1); break;
+      case "contract-bonus-down": store.negoAdjustContractBonus(-1); break;
+      case "contract-bonus-up": store.negoAdjustContractBonus(1); break;
+      case "contract-signing-down": store.negoAdjustSigningFee(-1000); break;
+      case "contract-signing-up": store.negoAdjustSigningFee(1000); break;
+      case "contract-role": store.negoCycleRole(1); break;
       case "submit-contract": store.negoSubmitContractOffer(); break;
-      case "back": store.closeNegotiation(); break;
+      case "back":
+        if (n && n.phase === "fee" && store.state.ui.transferSearch.exchangePickerOpen) store.negoCloseExchangePicker();
+        else store.closeNegotiation();
+        break;
+      case "player-bio": if (n) store.openPlayerBio(n.playerId); break;
     }
   }
   ngBodyEl.addEventListener("click", (e) => {
+    const rowEl = e.target.closest("tr[data-row-id]");
+    if (rowEl && rowEl.closest(".apo-exchangepicker")) { store.negoSetExchangePlayer(Number(rowEl.dataset.rowId)); return; }
     const el = e.target.closest("[data-action]");
     if (el) handleNegotiationAction(el.dataset.action);
   });
   footerNegotiation.addEventListener("click", (e) => {
     const el = e.target.closest("[data-action]");
     if (el) handleNegotiationAction(el.dataset.action);
+  });
+  // Offered Transfer Sum's "(Y) direct numeric entry" — same focusout/
+  // keydown-stopPropagation pattern as PLAYER NAME's text input above.
+  ngBodyEl.addEventListener("focusout", (e) => {
+    if (e.target && e.target.id === "apo-fee-input") store.negoCommitFeeOfferDirect(e.target.value);
+  });
+  ngBodyEl.addEventListener("keydown", (e) => {
+    if (!e.target || e.target.id !== "apo-fee-input") return;
+    e.stopPropagation();
+    if (e.key === "Enter") { e.preventDefault(); store.negoCommitFeeOfferDirect(e.target.value); }
+    else if (e.key === "Escape") { e.preventDefault(); store.negoCommitFeeOfferDirect(store.state.transfers.negotiation.feeOffer); }
   });
 
   // Sell / Loan List (M7): click a squad row to select it; asking-price
@@ -1217,6 +1334,81 @@ export function initRouter(store) {
       if (e.key === "ArrowUp") { const n = roster[Math.max(0, idx - 1)]; if (n) store.teamSheetRolesPickerFocus(n.id); return; }
       if (e.key === "Enter" || e.key === "a" || e.key === "A") { if (ts.rolesPickerFocusId != null) store.teamSheetRolesPick(ts.rolesPickerFocusId); return; }
     }
+    // F3 (fable-plans/plan2.md): Player Search — filter tiles / results grid
+    // / action menu, and My Shortlist's list + action menu. Same "keyboard
+    // support exists, full mouse covers pixel-precise nav" footing as every
+    // other F2/F3 screen's own keyboard block.
+    if (store.state.ui.overlay === "search" && store.state.ui.transferSearch.stage === "filters" && !store.state.ui.transferSearch.nameEditing) {
+      const s = store.state.ui.transferSearch;
+      const dualRows = { 1: 2, 4: 2 };
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        const delta = e.key === "ArrowLeft" ? -1 : 1;
+        const fn = (TILE_CYCLE[s.filterTile] || {})[s.filterSub] || (TILE_CYCLE[s.filterTile] || {})[0];
+        if (fn) fn(delta); else if (s.filterTile === 0) store.searchStartEditName();
+        return;
+      }
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        const rowDelta = e.key === "ArrowUp" ? -1 : 1;
+        const nextTile = Math.max(0, Math.min(7, s.filterTile + rowDelta * 4));
+        store.searchFilterFocus(nextTile, Math.min(s.filterSub, (dualRows[nextTile] || 1) - 1));
+        return;
+      }
+      if (e.key === "Enter" || e.key === "a" || e.key === "A") { activateFilterTile(s.filterTile, s.filterSub); return; }
+    }
+    if (store.state.ui.overlay === "search" && store.state.ui.transferSearch.stage === "results") {
+      const s = store.state.ui.transferSearch;
+      if (s.actionMenuOpen) {
+        const rows = Array.prototype.slice.call(document.querySelectorAll("#search-body .fx-actions__row"));
+        if (e.key === "ArrowDown") { store.searchActionMenuFocus(Math.min(rows.length - 1, s.actionMenuIndex + 1)); return; }
+        if (e.key === "ArrowUp") { store.searchActionMenuFocus(Math.max(0, s.actionMenuIndex - 1)); return; }
+        if (e.key === "Enter" || e.key === "a" || e.key === "A") {
+          const row = rows[s.actionMenuIndex];
+          if (row && row.dataset.action) store.performPlayerAction(row.dataset.action, s.selectedPlayerId);
+          return;
+        }
+      } else {
+        const results = computeSearchResults(store.state);
+        const filtered = s.resultsTab === "ALL" ? results : results.filter((p) => positionInfo(p.position).area === s.resultsTab);
+        const idx = filtered.findIndex((p) => p.id === s.selectedPlayerId);
+        const move = (delta) => { const n = filtered[Math.max(0, Math.min(filtered.length - 1, (idx === -1 ? 0 : idx) + delta))]; if (n) store.searchSelectResult(n.id); };
+        if (e.key === "ArrowDown") { move(2); return; }
+        if (e.key === "ArrowUp") { move(-2); return; }
+        if (e.key === "ArrowRight") { move(1); return; }
+        if (e.key === "ArrowLeft") { move(-1); return; }
+        if (e.key === "y" || e.key === "Y") { store.searchCycleReportPage(1, 3); return; }
+        if ((e.key === "Enter" || e.key === "a" || e.key === "A") && s.selectedPlayerId != null) { store.searchOpenActionMenu(); return; }
+      }
+    }
+    if (store.state.ui.overlay === "shortlist") {
+      const st = store.state.ui.shortlist;
+      if (st.actionMenuOpen) {
+        const rows = Array.prototype.slice.call(document.querySelectorAll("#shortlist-body .fx-actions__row"));
+        if (e.key === "ArrowDown") { store.shortlistActionMenuFocus(Math.min(rows.length - 1, st.actionMenuIndex + 1)); return; }
+        if (e.key === "ArrowUp") { store.shortlistActionMenuFocus(Math.max(0, st.actionMenuIndex - 1)); return; }
+        if (e.key === "Enter" || e.key === "a" || e.key === "A") {
+          const row = rows[st.actionMenuIndex];
+          if (row && row.dataset.action) store.performPlayerAction(row.dataset.action, st.selectedPlayerId);
+          return;
+        }
+      } else {
+        const list = store.state.transfers.shortlist;
+        const idx = list.findIndex((s2) => s2.playerId === st.selectedPlayerId);
+        if (e.key === "ArrowDown") { const n = list[Math.min(list.length - 1, idx + 1)]; if (n) store.selectShortlistPlayer(n.playerId); return; }
+        if (e.key === "ArrowUp") { const n = list[Math.max(0, idx - 1)]; if (n) store.selectShortlistPlayer(n.playerId); return; }
+        if (e.key === "x" || e.key === "X") { store.sortShortlist(); return; }
+        if ((e.key === "Enter" || e.key === "a" || e.key === "A") && st.selectedPlayerId != null) { store.shortlistOpenActionMenu(); return; }
+      }
+    }
+    // F3: Negotiation's [LT][RT] BUY/LOAN toggle — §A4 alternate (Z/C, first
+    // screen in this codebase to ever need LT/RT on a keyboard; nothing else
+    // claims Z/C yet).
+    if (store.state.ui.overlay === "negotiation") {
+      const n = store.state.transfers.negotiation;
+      if ((e.key === "z" || e.key === "Z" || e.key === "c" || e.key === "C") && n && (n.phase === "fee" || n.phase === "loan")) {
+        store.negoToggleOfferMode();
+        return;
+      }
+    }
     switch (e.key) {
       case "ArrowLeft": store.page(-1); break;
       case "ArrowRight": store.page(1); break;
@@ -1231,8 +1423,23 @@ export function initRouter(store) {
         if (store.state.ui.overlay === "matchday") store.closeMatchday();
         // Negotiation: closeNegotiation() also clears state.transfers.negotiation
         // (see engine/negotiation.js's cancelNegotiation) — a plain
-        // closeOverlay() would leave a stale in-flight deal behind.
-        else if (store.state.ui.overlay === "negotiation") store.closeNegotiation();
+        // closeOverlay() would leave a stale in-flight deal behind. The
+        // exchange-player picker (F3) is its own nested mode, closed first.
+        else if (store.state.ui.overlay === "negotiation") {
+          if (store.state.transfers.negotiation?.phase === "fee" && store.state.ui.transferSearch.exchangePickerOpen) store.negoCloseExchangePicker();
+          else store.closeNegotiation();
+        }
+        // F3: Search — action menu (if open) closes before the stage itself
+        // steps back from results to filters (searchBackFromResults already
+        // encodes exactly that order).
+        else if (store.state.ui.overlay === "search") {
+          if (store.state.ui.transferSearch.stage === "results") store.searchBackFromResults();
+          else store.closeOverlay();
+        }
+        else if (store.state.ui.overlay === "shortlist") {
+          if (store.state.ui.shortlist.actionMenuOpen) store.shortlistCloseActionMenu();
+          else store.closeOverlay();
+        }
         // Team Sheet: (B)/Esc steps back through its own nested modes
         // (suggested subs -> armed selection -> open drawer) before closing.
         else if (store.state.ui.overlay === "teamsheet") store.teamSheetBack();

@@ -23,7 +23,7 @@ import { isSameDate } from "../core/clock.js";
 import { deadlineDays } from "../config/calendar.js";
 import { positionInfo } from "../config/positions.js";
 import { computeSigningAsk, decisionChance } from "./playerdecision.js";
-import { scheduleResponse } from "./negotiation.js";
+import { scheduleResponse, resolvedSquadRole } from "./negotiation.js";
 import { buildFreeAgentNewsArticle, pushTransferNews } from "./transfernews.js";
 
 /** Players anywhere (never the user's own squad) whose contract expires next
@@ -55,9 +55,11 @@ export function startApproach(state, playerId) {
     playerId, sourceClubId: player.clubId, dealType: "free-agent",
     phase: "contract", round: 1, feeOffer: 0,
     lastFeeResponse: null, counterFee: null,
-    promisedRole: "important",
-    contractOffer: { wage: ask.wage, years: 3 },
+    promisedRole: "none",
+    contractOffer: { wage: ask.wage, years: 3, bonusPerGoal: 0, signingOnFee: 0 },
     lastContractResponse: null, loanLength: null, result: null,
+    exchangePlayerId: null, exchangeCreditApplied: 0, exchangeRejectedNote: false,
+    loanBonusPerGoal: 0, loanFutureFee: null,
   };
 }
 
@@ -72,7 +74,10 @@ function applyApproachResolution(state, playerId, contractOffer, promisedRole) {
   n.lastContractResponse = accepted ? "accepted" : "rejected";
   if (accepted) {
     player.contract.preAgreedClubId = state.club.id;
-    player.contract.preAgreedTerms = { wage: contractOffer.wage, years: contractOffer.years, squadRole: promisedRole };
+    player.contract.preAgreedTerms = {
+      wage: contractOffer.wage, years: contractOffer.years, squadRole: resolvedSquadRole(promisedRole),
+      signingBonus: contractOffer.signingOnFee || 0,
+    };
     pushTransferNews(state, buildFreeAgentNewsArticle({ player, toClub: state.club, today: state.calendar.today }));
     n.phase = "completed";
     n.result = "completed";

@@ -20,6 +20,7 @@
   <link rel="stylesheet" href="css/jobs.css" />
   <link rel="stylesheet" href="css/contracts.css" />
   <link rel="stylesheet" href="css/transfers.css" />
+  <link rel="stylesheet" href="css/search.css" />
   <link rel="stylesheet" href="css/gtn.css" />
   <link rel="stylesheet" href="css/youth.css" />
   <link rel="stylesheet" href="css/mycareer.css" />
@@ -446,10 +447,27 @@
           <div class="dots"><i class="on"></i><i></i><i></i></div>
         </div>
 
-        <div class="tile has-photo tr-search is-link" data-open="search">
-          <div class="tile__title">Search<br>Players</div>
-          <div class="tile__desc">Search for a specific player you want to buy, loan or scout</div>
-          <div class="dots"><i class="on"></i><i></i><i></i></div>
+        <!-- F3 (fable-plans/plan2.md): 3-page carousel per the transfers hub
+             hover pics — Search Players (dot 1) -> Scout Instructions
+             shortcut (dot 2, GTN's own Instructions tab, F5 territory — no
+             destination screen exists yet, so this page is deliberately not
+             is-link/data-open, same "visible for fidelity, not yet wired"
+             footing as F2's locked Edit Player tile) -> My Shortlist (dot 3). -->
+        <div class="tile has-photo tr-search" data-carousel>
+          <div class="cpages">
+            <div class="cpage is-active is-link" data-open="search">
+              <div class="tile__title">Search<br>Players</div>
+              <div class="tile__desc">Search for a specific player you want to buy, loan or scout</div>
+            </div>
+            <div class="cpage">
+              <div class="tile__title">Scout<br>Instructions</div>
+              <div class="tile__desc">Manage the criteria of players that you are looking for</div>
+            </div>
+            <div class="cpage is-link" data-open="shortlist">
+              <div class="tile__title">My Shortlist</div>
+              <div class="tile__desc">Players to keep an eye on</div>
+            </div>
+          </div>
         </div>
         <div class="tile has-photo tr-sell is-link" data-open="selllist">
           <div class="tile__title">Sell<br>Players</div>
@@ -723,16 +741,18 @@
       </div>
 
       <!-- =====================  SEARCH PLAYERS OVERLAY  ============== -->
+      <!-- F3 (fable-plans/plan2.md): PLAYER SEARCH filter tiles -> SEARCH
+           RESULTS (tabs/cards/report + action menu) — one mount point,
+           ui/searchui.js owns the breadcrumb + everything inside it (the
+           breadcrumb itself changes between the two stages, see its own
+           renderFilters/renderResults). -->
       <div id="search-overlay">
-        <div class="news-crumb">
-          <span class="crumb-prev">TRANSFERS</span>
-          <span class="crumb-sep">&rsaquo;</span>
-          <span class="crumb-cur">SEARCH PLAYERS</span>
-        </div>
-        <div class="sr-body">
-          <div id="sr-filters"><!-- built by ui/transfersui.js --></div>
-          <div id="sr-results"><!-- built by ui/transfersui.js --></div>
-        </div>
+        <div class="sx-body" id="search-body"><!-- built by ui/searchui.js --></div>
+      </div>
+
+      <!-- =====================  MY SHORTLIST OVERLAY  ================= -->
+      <div id="shortlist-overlay">
+        <div class="sx-body" id="shortlist-body"><!-- built by ui/searchui.js --></div>
       </div>
 
       <!-- =====================  NEGOTIATION OVERLAY  ================== -->
@@ -961,7 +981,8 @@
         <span class="prompt" data-action="suggest"><span class="btn-glyph x">X</span> Suggested Terms</span>
         <span class="prompt" data-action="back"><span class="btn-glyph b">B</span> Back</span>
       </footer>
-      <footer class="footer" id="footer-search" hidden><!-- built by ui/transfersui.js (prompts change with selection) --></footer>
+      <footer class="footer" id="footer-search" hidden><!-- built by ui/searchui.js (prompts change with stage/selection) --></footer>
+      <footer class="footer" id="footer-shortlist" hidden><!-- built by ui/searchui.js --></footer>
       <footer class="footer" id="footer-negotiation" hidden><!-- built by ui/transfersui.js (prompts change per phase) --></footer>
       <footer class="footer" id="footer-selllist" hidden><!-- built by ui/transfersui.js (prompts change with selection) --></footer>
       <footer class="footer" id="footer-requestfunds" hidden><!-- built by ui/transfersui.js --></footer>

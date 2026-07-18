@@ -588,3 +588,205 @@ layout/coordinate fix with no new store-level behavior) — 477/477 still green.
 `getBoundingClientRect()` (GK-bottom-vs-panel-bottom clearance, now positive on all 4 screens) and
 fresh screenshots of all 4 FORMATIONS states plus the SQUAD tab, then the full manual QA + §A5.4
 regression pass once more — zero console/page errors throughout.
+
+## F3 — 2026-07-18
+
+Transfers: PLAYER SEARCH filter tiles → SEARCH RESULTS (tabs/cards/report + action menu) → My
+Shortlist, plus the Approach — Transfer/Loan Offer paper dossier and the shared CONTRACT
+NEGOTIATION fx-panel. New files: `js/ui/searchui.js`, `js/config/summary.js`,
+`js/engine/enquiry.js`, `css/search.css`. Rewritten: `js/ui/transfersui.js` (Search Players moved
+out entirely; Negotiation's fee/contract/loan phases rebuilt as the dossier/panel — Sell List and
+Request Funds untouched, still F4/F6). Extended: `js/core/store.js`, `js/core/router.js`,
+`js/core/db.js`, `js/engine/negotiation.js`, `js/engine/freeagents.js`, `js/engine/contracts.js`,
+`js/engine/teamdecision.js`, `js/engine/gtn.js`, `js/config/contract.js`, `index.html`. This
+session had no live browser available via the usual tooling — Playwright's Python package turned
+out to be pre-installed, driven headless against the machine's own Chrome binary
+(`p.chromium.launch(executable_path=...)`); every manual-test claim below is from that, not a
+static code read.
+
+**Reference-pic reconciliation (hub tile carousels) — the plan's own guessed layout was wrong:**
+- [PLAN-TEXT CORRECTION] `ms_TRANSFERS_SCREEN_*_HOVER.png` (11 pics) reveal a completely
+  different tile→page mapping than plan2.md's own F3 build note guessed. Actual, pic-verified:
+  top-middle tile = Search Players(1) → **Scout Instructions**(2) → My Shortlist(3); the plan's
+  guess of "Search Players / My Shortlist / Transfer Negotiations" was wrong on 2 of 3 pages.
+  Transfer Negotiations is actually page 2 of the **Sell Players** tile (top-right, 2 pages, not
+  the 3 the plan guessed with "Transfer History" as a 3rd). Transfer History is actually page 2 of
+  the **Finances** tile (bottom-right) — a pairing the plan never mentioned at all. The wide
+  top-left tile (`ms_GTN_INSTRUCTION_1/2/3_REPORT_SHORTCUT_HOVER.png`) is a separate 3-page
+  carousel previewing each active scout instruction's report/status — distinct from the plain
+  "GLOBAL TRANSFER NETWORK" banner tile (bottom-left, single page, hub entry point only).
+  F3 only owns the Search-tile mapping (its own screens); Sell/Finances tile page-counts are
+  logged here for F4's benefit but not built/wired this milestone (out of scope, unchanged).
+- [DEVIATION-RESOLVED via pics] The Search tile's page 2 ("Scout Instructions") renders for visual
+  fidelity (exact pic text) but isn't `data-open`/clickable — its destination (GTN's own
+  Instructions tab) doesn't exist until F5. Same "visible now, wired later" footing as F2's
+  permanently-locked Edit Player tile.
+- [PLAN-TEXT CORRECTION] Plan2.md's own inline gloss said "ROLE = position-group
+  (Any/GK/DEF/MID/ATT)" — `ms_SEARCH_PLAYERS_SCREEN_EXAMPLE.png` (Messi) shows the opposite:
+  POSITION holds the area ("ATT") and ROLE holds the specific code ("CF"). Built per the pic:
+  POSITION cycles Any/GK/DEF/MID/ATT, ROLE cycles Any + the 28 `POSITION_CODES` (filtered to the
+  chosen area, or all 28 if area=Any).
+
+**New engine/config additions:**
+- [TUNED] `js/config/summary.js`'s six Search Report "Summary" aggregate ratings (Athleticism/
+  Technical Ability/Shooting/Passing/Defending/Mentality) — no INI table exists for FIFA's own
+  summary-box math, so these are authored attribute-mean groupings, not reverse-engineered. Sanity
+  check against the one worked pic example (Messi, `ms_..._SEARCH_RESULTS.png`): Athleticism,
+  Defending and Passing land on the pic's *exact* shown value; Shooting is 1 point off (rounding);
+  Mentality can't be checked at all (its most plausible member, `composure`, is never shown on any
+  Search Report attribute page in any pic).
+- [TUNED] Per-attribute fuzzy ranges for unscouted players — no per-attribute scouting range
+  exists anywhere in this codebase (only `player.scouting.ovrRange`/`potRange` are fuzzed); every
+  individual attribute chip on the Search Report/My Shortlist pages reuses `scoutingRangeFor`'s
+  same half-width band, computed live at render time rather than a new stored/persisted range.
+- [PLAN-TEXT CORRECTION, pic-sourced both ways] Search Report's Physical/Technical page labels
+  ("Long Passing"/"Short Passing"/"Sliding Tackle"/"Attack Position") are verbatim-different from
+  F1's own Team Sheet attribute page labels for the *same underlying fields*
+  ("Long Pass"/"Short Pass"/"Slide Tackle"/"Att. Position") — two different FIFA 15 screens, two
+  different label strings, both pic-verified. Deliberately NOT reused from
+  `ui/teamsheetui.js`'s `PHYSICAL_ATTRS`/`SKILL_ATTRS` — a fresh `PHYSICAL_PAGE`/`MENTAL_PAGE`/
+  `TECHNICAL_PAGE` set lives in `ui/searchui.js` instead.
+- [TUNED] Squad Role display set (`config/contract.js`'s `SQUAD_ROLE_DISPLAY`/`SQUAD_ROLE_CYCLE`,
+  used by both the Approach Offer's "CURRENT CONTRACT" block and the CONTRACT NEGOTIATION panel):
+  plan2.md's own F3.6 text names 5 labels ("Crucial 1st Team Player / Important 1st Team Player /
+  Rotation Player / Sub / Future 1st Team Player") but this engine only ever had 4 real
+  `squadRole` tiers (prospect/rotation/important/crucial, unchanged since plan1 M6) — adding a
+  genuine 5th "sub" tier would ripple into renewal odds/loan approval chances/squad generation
+  well outside F3's scope, so "Sub" is dropped from the display set; the other 4 map 1:1, 2 of
+  them pic-verified verbatim (crucial → "Crucial 1st Team Player" on Messi's Approach Offer card;
+  prospect → "Future 1st Team Player" on Maloney's Current Contract). "Do Not Specify" (pic-
+  verified as Maloney's own *offered*-but-unset default) is a genuine 5th UI-only choice — sending
+  no explicit role promise at all — resolved to "important" at completion time
+  (`negotiation.js`'s `resolvedSquadRole`, exported so `freeagents.js`'s approach flow uses the
+  identical fallback) since "none" was never a real persisted `squadRole` value.
+- [NEW ENGINE] `engine/gtn.js`'s `startPlayerScout` — the action menu's "Ask `<scout>` to Scout
+  `<name>`" row targets one already-known player directly (auto-picks the cheapest idle scout,
+  Short tier, seeded with exactly that one target) rather than fitting the existing broad
+  region/area/tags "mission" model. `processMissionReport`'s find-new-players phase is skipped
+  entirely for a `mission.targetPlayerId` mission so it never picks up anyone beyond its target,
+  confirmed over 40 simulated report-tick days in `dev/tests.js`.
+- [TUNED] Enquiry "not for sale" threshold and range: `ENQUIRY_REFUSE_THRESHOLD = -50` (raw
+  `teamdecision` score) is plan2.md's own §A6 worked example for this exact ledger entry, used
+  verbatim; `ENQUIRY_RANGE_PCT = 12.5` is the plan's own literal F3.3 wording (wanted fee ±12.5%).
+  `engine/teamdecision.js`'s scoring logic was refactored (pure extraction, no behaviour change)
+  into a new exported `computeTeamDecisionScore` so both `computeWantedFee` and the new Enquiry
+  engine share one source of truth for the raw score.
+- [NEW ENGINE] Player-exchange ("And/Or Player: Select Player") in `engine/negotiation.js`: credit
+  = `round(exchangePlayer.value × 0.9)` (plan2.md F3.4's own literal spec), evaluated once on the
+  *first* fee submission only (locked in across counter-rounds after that) via a needs-check that
+  reuses `playerdecision.js`'s own "position group has room" threshold (<4 players sharing the
+  overall group) rather than inventing a second needs-check shape — plan2.md F3.4 just said "reuse
+  transferai needs check" without naming a function. `n.feeOffer` always stays the pure-cash figure
+  (what the UI shows/what gets deducted); the credit is applied only to the accept/counter/reject
+  *decision* math, kept as a separate `n.exchangeCreditApplied` field.
+- [BEHAVIOUR CHANGE from plan1 M7] Loan negotiation restructured from a one-shot instant
+  approval roll into a real editable `phase: "loan"` (Bonus Per Goal/Loan Length/Future Fee) plus
+  an explicit `submitLoanOffer`, mirroring `startFeeNegotiation`/`submitFeeOffer`'s own two-step
+  shape — required because F3's `ms_APPROACH_LOAN_OFFER_SCREEN.png` shows a real editable dossier
+  with a SUBMIT OFFER button, not plan1's original "resolves the instant you request it." Updated
+  the one existing test that depended on the old instant-resolve behaviour
+  (`dev/tests.js`'s "engine/negotiation.js — loan request + return" group now calls
+  `submitLoanOffer` after `startLoanNegotiation`).
+- [JUDGMENT CALL, pic-driven discovery] The Approach Offer dossier's `[LT][RT]` BUY/LOAN toggle
+  isn't just a UI nicety — `ms_APPROACH_LOAN_OFFER_SCREEN.png`'s right page is still titled
+  "TRANSFER OFFER" (not "LOAN OFFER"), proving both modes share **one** dossier/component, not the
+  two separate screens plan2.md's F3.4/F3.5 build notes implied by listing them as separate steps.
+  Built as one dossier; `negoToggleOfferMode()` restarts the negotiation via
+  `startFeeNegotiation`/`startLoanNegotiation` when switched (discards in-progress edits in the
+  mode being left, same as picking a different Approach action from scratch would).
+- [NEW FIELD, cosmetic only — same "not modelled as negotiable" footing as engine/contracts.js's
+  own plan1 M6 header note] Signing On Fee (Contract Negotiation) and Bonus Per Goal (both
+  dossiers) are real, editable, stored, and paid at completion, but do **not** yet feed
+  `acceptanceChance`/`decisionChance` — wiring `BONUS_ACCEPTANCE_BASE_VALUE=80` into the
+  acceptance curve is explicitly F6's own audit task (plan2.md F6.2).
+- [PIC-GUESS] "Future Fee" (Loan Offer dossier) — a buy-option amount not named anywhere in
+  plan2.md's own text, found directly on the pic. Stored (`Not Set` / an amount, steppable) with
+  no option-to-buy mechanic wired yet, same footing as Bonus Per Goal/Signing On Fee above.
+- [DEFERRED, not dropped] `player.loan.bonusPerGoal`/`futureFee` are set on loan completion but
+  **not** added to `core/db.js`'s positional `serializeSave`/`deserializeSave` array for
+  `player.loan` — extending that fixed-position array is a real (if narrow) save-format risk, and
+  nothing reads these two fields back yet (F4's own Negotiations ledger will be the first real
+  consumer). Session-only for now; flagged here for F4 to extend.
+- [TUNED] "(RS) Player Bio" footer prompt — pic-evidenced on both the Approach Offer dossier
+  (`ms_APPROACH_TRANSFER_OFFER_SCREEN.png`/`..._LOAN_...png`) and My Shortlist
+  (`ms_MY_SHORTLIST_SCREEN.png`) — wired to the existing `store.openPlayerBio`, nests correctly on
+  the existing overlay stack (same `openOverlay` push/pop every other nested overlay already uses).
+- [JUDGMENT CALL] Action menu's default gold-selected row skips "Ask `<scout>` to Scout" when it's
+  disabled (no idle GTN scout hired) and lands on "Add to My Shortlist" instead, rather than
+  defaulting the keyboard cursor onto a row (A) can't do anything with.
+- Read `ms_CONTRACTS_SCREEN_CONTRACT_NEGOTIATION.png` early, even though it's formally listed
+  under F6's own "Pics:" header, not F3's — F3.6's own build text explicitly directs building this
+  shared component now ("same component as F6 renewals") since F3 needs a working Contract
+  Negotiation step to complete a transfer purchase this milestone; F6 will reuse it unchanged.
+- [TUNED] Contract Negotiation's "Player Demands: Length" shows the same figure as the editable
+  "Additional Years" field (both default to `n.contractOffer.years`, 3) — this engine has no
+  separately-computed *demanded* length, only a demanded wage (`computeSigningAsk` returns only
+  `{wage}`); showing one shared number is an honest reflection of that, not a bug.
+- Keyboard: LT/RT's §A4 fallback (Z/C) is used for the offer-mode toggle — the first screen in
+  this codebase to ever need an LT/RT keyboard binding, so no existing alternate to conflict with.
+- Not a code issue, just a note for future test/QA writing: plan2.md's own §A5.4 regression text
+  says "Portsmouth (League 1)" — `data/clubs.json` actually has Portsmouth's `leagueId` as
+  `"eng-4"` (League Two, per `data/leagues.json`). Used League Two throughout this milestone's
+  testing since that's what the real game data says; the plan's own parenthetical is just
+  imprecise, nothing here was changed because of it.
+- Known fidelity gap, not fixed this pass: the PLAYER SEARCH filter tiles' COUNTRY/LEAGUE/TEAM
+  icons (the pic shows a flag-and-stars icon for Country and a ball-in-shield icon for
+  League/Team) were not built — only NATIONALITY got its flag icon. Cosmetic-only, logged rather
+  than silently skipped.
+
+**Bugs found and fixed during Playwright QA (would not have been caught by a static code read):**
+- [ENGINE FIX] A literal `*/` inside `css/search.css`'s own header comment
+  (`.apo-*/.cn-*` — intended to mean "the .apo- and .cn- prefix classes") closed the CSS comment
+  early. Everything from there to the *next* real `*/` five lines later was consumed as a garbled,
+  invalid "selector," and the CSS parser's error-recovery silently ate the very next real rule
+  along with it — `#search-overlay, #shortlist-overlay { display: none; }`. Both overlays
+  rendered permanently visible (full-screen, transparent, intercepting every click on the page)
+  from boot, with no console error of any kind (a dropped/merged CSS rule doesn't throw). Found by
+  comparing `document.styleSheets[…].cssRules` (browser's own parsed rule list) against the raw
+  file text and noticing the base rule was simply missing from the former. Fixed by rewording the
+  comment; verified by re-diffing the parsed rule count/order.
+- [ENGINE FIX] `.news-crumb` (`css/screens.css`) is `position:absolute` with a `top:110px` tuned
+  for sitting directly inside a `#foo-overlay` root. Nested one level deeper here — inside
+  `.sx-body`, itself already `position:absolute` — it positioned relative to `.sx-body`'s own box
+  instead of the stage root, landing mid-grid instead of above it and intercepting clicks on the
+  PLAYER NAME tile's whole first row. Fixed by giving the F3 screens their own ordinary-flow
+  `.sx-crumb` class (visually identical, no `position:absolute`) instead of reusing `.news-crumb`.
+- [ENGINE FIX] The POSITION/ROLE and MIN AGE/MAX AGE dual-tiles' *outer* wrapper div also carried
+  `.is-focus` (and therefore the same gold gradient) whenever *either* inner row was focused,
+  gold-highlighting both stacked rows simultaneously instead of just the actively-focused one.
+  Fixed by removing the redundant outer-level class — each `tileHtml()`-rendered row already
+  computes its own `.is-focus` correctly.
+- [ENGINE FIX] `renderMyShortlist` threw `Cannot read properties of null (reading 'clubId')`
+  whenever a player was shortlisted from Search Results' action menu while the My Shortlist
+  overlay had never been opened that session: `core/router.js`'s `store.on("shortlist", ...)`
+  re-renders unconditionally regardless of which overlay is actually open (same pattern every
+  other `store.on(...)` listener in this file already uses), and `state.ui.shortlist.
+  selectedPlayerId` was never seeded on add — a non-empty list with a `null` selection tried to
+  render a null player's card. Fixed in two places: `store.toggleShortlistPlayer` now seeds/clears
+  `selectedPlayerId` on add/remove, and `renderMyShortlist` independently falls back to the list's
+  first entry if the stored selection doesn't resolve to a real list member (defence in depth).
+- [TUNED] "My Shortlist" (`ms_MY_SHORTLIST_SCREEN.png`) is Title Case, not ALL-CAPS like every
+  other `.fx-paper__title` (PLAYER INFO/TRANSFER OFFER on the Approach Offer dossier) — a
+  dedicated `.sx-shortlist__title` override (`text-transform:none`) rather than a general §B2
+  change, since every other paper-dossier title genuinely is upper-case per its own pic.
+
+**Testing:** `dev/tests.js` extended with 10 new groups (~45 assertions: six Summary groupings
+incl. the Messi spot-checks, Squad Role display set, teamdecision score + Enquiry range/refusal
+sampling, `startPlayerScout` incl. the 40-day "never finds anyone else" check, `computeSearchResults`'s
+filter matrix via a live Store, `buildActionRows`'s free-agent gating, exchange-credit formula
+sampling, the loan dossier's editable-phase + 3-6 day response scheduling, My Shortlist's
+add/remove-never-duplicates via a live Store, and a `transferShortlist` save/load round-trip) —
+535/535 total, all green (2 genuine test bugs caught and fixed along the way: a cross-group
+`player.scouting` reference-sharing contamination in `buildM7FakeState`'s shallow clone, and a
+GK-filter assertion invalidated by `computeSearchResults`' own 300-result cap making two clearly-
+different-sized pools compare equal). Manual QA via headless Playwright (this session had no
+interactive browser or existing driver either — Python's `playwright` package was pre-installed
+and pointed at the machine's own Chrome binary, `executable_path=`, no `playwright install`
+needed): full flow driven end-to-end (new game as Portsmouth → Transfers → Player Search → type a
+name → cycle Position → Reset → Search For Players → select a result → cycle Change View through
+all 3 report pages → open the action menu → Enquire → Add to Shortlist → Approach to Buy → toggle
+Loan mode and back → open the exchange picker and pick a player → direct-entry the Offered
+Transfer Sum → Submit Offer → back out to the hub → reach My Shortlist via the tile's 3rd carousel
+page → select a shortlisted player → open its action menu), zero console/page errors throughout
+after the fixes above landed. §A5.4 regression (new game as Portsmouth, advance 10 days
+incl. auto-simmed match days, open all 5 hubs) also clean.

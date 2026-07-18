@@ -81,10 +81,16 @@
 .sr-row.is-sel { background: linear-gradient(180deg, var(--gold-bright), var(--gold-deep)); border-radius: 4px; }
 .sr-row.is-sel .sr-row__name { color: var(--gold-text-dark); }
 
-/* ----- Negotiation ----- */
+/* ----- Negotiation -----
+   F3 (fable-plans/plan2.md): widened/raised from the old M7 stepper-list
+   bounds (top:160/left:36/right:36/bottom:56) to match the Approach Offer
+   dossier's near-fullscreen "book" look (ms_APPROACH_TRANSFER_OFFER_
+   SCREEN.png/ms_APPROACH_LOAN_OFFER_SCREEN.png) — the Contract Negotiation
+   fx-panel (css/search.css's .cn-panel) still sizes itself to 78% width
+   centered within this same box, same as every other §B1 fx-panel. */
 .ng-body {
   position: absolute;
-  top: 160px; left: 36px; right: 36px; bottom: 56px;
+  top: 60px; left: 24px; right: 24px; bottom: 90px;
   z-index: 7;
 }
 .ng-head { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-bottom: 18px; }

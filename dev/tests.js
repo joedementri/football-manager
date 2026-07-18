@@ -47,7 +47,8 @@ import { getClubBudget, spendClubBudget, creditClubBudget } from "../js/engine/c
 import { pushTransferNews } from "../js/engine/transfernews.js";
 import {
   startFeeNegotiation, adjustFeeOffer, submitFeeOffer, submitNegotiationContractOffer,
-  startLoanNegotiation, cancelNegotiation, resolveLoanReturns,
+  startLoanNegotiation, submitLoanOffer, cancelNegotiation, resolveLoanReturns,
+  setExchangePlayer, adjustLoanBonusPerGoal, cycleLoanLength, adjustLoanFutureFee, resolvedSquadRole,
 } from "../js/engine/negotiation.js";
 import { eligibleFreeAgentTargets, startApproach, submitApproach } from "../js/engine/freeagents.js";
 import {
@@ -94,6 +95,13 @@ import {
   INSTRUCTION_GROUPS, instructionGroupFor, resolveInstructionEffects, defaultInstructionsFor,
 } from "../js/config/instructions.js";
 import { INJURIES, pickInjuryName } from "../js/config/injuries.js";
+import { SUMMARY_GROUPS, computeSummary } from "../js/config/summary.js";
+import { SQUAD_ROLE_DISPLAY, SQUAD_ROLE_CYCLE } from "../js/config/contract.js";
+import { computeTeamDecisionScore } from "../js/engine/teamdecision.js";
+import { ENQUIRY_REFUSE_THRESHOLD, ENQUIRY_RANGE_PCT, submitEnquiry } from "../js/engine/enquiry.js";
+import { startPlayerScout, cheapestIdleScout, scoutReportStatus } from "../js/engine/gtn.js";
+import { computeSearchResults, buildActionRows } from "../js/ui/searchui.js";
+import { EXCHANGE_PLAYER_VALUE_PCT } from "../js/engine/negotiation.js";
 
 const groups = []; // [{ title, results: [{name, pass, detail}] }]
 let current = null;
@@ -977,6 +985,7 @@ async function run() {
       state.transfers.negotiation = null;
       state.transfers.pendingOffers = [];
       startLoanNegotiation(state, candidate.id, "short");
+      submitLoanOffer(state);
       if (candidate.clubId === state.club.id) { loanedCandidate = candidate; break; }
     }
     assert(`a loan request is accepted for at least one of ${candidates.length} sampled candidates`, !!loanedCandidate);
@@ -2140,6 +2149,289 @@ async function run() {
     assert("rightCornerId survives a save/load round-trip", rtRoundTripped.squadRightCornerId === rtOutfielder.id);
     assert("shortFreeKickId survives a save/load round-trip", rtRoundTripped.squadShortFreeKickId === rtOutfielder.id);
     assert("longFreeKickId survives a save/load round-trip", rtRoundTripped.squadLongFreeKickId === rtOutfielder.id);
+  }
+
+  /* ============================================================================
+   * F3 (fable-plans/plan2.md): Transfers — Search, action menu, dossier offers.
+   * ========================================================================== */
+
+  group("config/summary.js — six aggregate Search Report ratings (F3.2)");
+  {
+    assert("SUMMARY_GROUPS has exactly 6 rows (Athleticism/Technical/Shooting/Passing/Defending/Mentality)", SUMMARY_GROUPS.length === 6);
+    const messiAttrs = {
+      acceleration: 96, sprintSpeed: 90, agility: 94, balance: 95, jumping: 73, stamina: 77, strength: 60, reactions: 94,
+      aggression: 48, interceptions: 22, positioning: 92, vision: 90, composure: 60,
+      ballControl: 96, crossing: 84, dribbling: 96, finishing: 94, fkAccuracy: 90, headingAcc: 71,
+      longPass: 76, shortPass: 89, marking: 25, shotPower: 80, longShots: 88, standTackle: 21, slideTackle: 20, volleys: 85, curve: 89, penalties: 76,
+      gkDiving: 10, gkHandling: 10, gkKicking: 10, gkPositioning: 10, gkReflexes: 10,
+    };
+    const summary = computeSummary({ attrs: messiAttrs });
+    const byKey = Object.fromEntries(summary.map((s) => [s.key, s.value]));
+    // ms_SEARCH_PLAYERS_SCREEN_SEARCH_RESULTS.png shows Athleticism 84,
+    // Defending 22, Passing 83 for exactly this attribute set — see
+    // config/summary.js's own header for the reverse-engineering notes.
+    assert(`computeSummary's Athleticism matches the reference pic's Messi example (84) — got ${byKey.athleticism}`, byKey.athleticism === 84);
+    assert(`computeSummary's Defending matches the reference pic's Messi example (22) — got ${byKey.defending}`, byKey.defending === 22);
+    assert(`computeSummary's Passing matches the reference pic's Messi example (83) — got ${byKey.passing}`, byKey.passing === 83);
+    assert(`computeSummary's Technical Ability matches the reference pic's Messi example (88) — got ${byKey.technical}`, byKey.technical === 88);
+  }
+
+  group("config/contract.js — Squad Role display set (F3/F6 CONTRACT NEGOTIATION panel)");
+  {
+    assert("SQUAD_ROLE_CYCLE has 5 entries (4 real tiers + 'none'/Do Not Specify)", SQUAD_ROLE_CYCLE.length === 5);
+    assert("SQUAD_ROLE_CYCLE includes 'none' as its first entry", SQUAD_ROLE_CYCLE[0] === "none");
+    assert("crucial -> 'Crucial 1st Team Player' (pic-verified, Messi's Approach Offer card)", SQUAD_ROLE_DISPLAY.crucial === "Crucial 1st Team Player");
+    assert("prospect -> 'Future 1st Team Player' (pic-verified, Maloney's Current Contract)", SQUAD_ROLE_DISPLAY.prospect === "Future 1st Team Player");
+    assert("none -> 'Do Not Specify' (pic-verified default, Maloney's own New Contract Details)", SQUAD_ROLE_DISPLAY.none === "Do Not Specify");
+    assert("resolvedSquadRole('none') falls back to 'important' (this engine's own pre-F3 default)", resolvedSquadRole("none") === "important");
+    assert("resolvedSquadRole('crucial') passes through unchanged", resolvedSquadRole("crucial") === "crucial");
+  }
+
+  group("engine/teamdecision.js + engine/enquiry.js — 'Enquire about <name>' (F3.3)");
+  {
+    const state = buildM7FakeState();
+    const otherClubs = state.staticData.clubs.filter((c) => c.id !== state.club.id).slice(0, 15);
+    let sawAccept = false, sawRefuse = false, enquiriesMade = 0;
+    for (const sellingClub of otherClubs) {
+      const roster = state.playersByClub.get(sellingClub.id) || [];
+      if (!roster.length) continue;
+      const target = roster[0];
+      const score = computeTeamDecisionScore({ player: target, buyingClub: state.club, sellingClub, state });
+      const result = submitEnquiry(state, target.id);
+      enquiriesMade++;
+      if (result.refused) {
+        sawRefuse = sawRefuse || score <= ENQUIRY_REFUSE_THRESHOLD;
+      } else {
+        sawAccept = true;
+        const wantedFee = computeWantedFee({ player: target, buyingClub: state.club, sellingClub, state });
+        const expectedLo = Math.round(wantedFee * (1 - ENQUIRY_RANGE_PCT / 100));
+        const expectedHi = Math.round(wantedFee * (1 + ENQUIRY_RANGE_PCT / 100));
+        assert(`Enquire's range brackets the wanted fee at +-${ENQUIRY_RANGE_PCT}% (lo ${result.lo} == ${expectedLo}, hi ${result.hi} == ${expectedHi})`,
+          result.lo === expectedLo && result.hi === expectedHi && result.lo <= wantedFee && wantedFee <= result.hi);
+      }
+      if (sawAccept && sawRefuse) break;
+    }
+    assert("at least one sampled enquiry resolved with a fee range (not refused)", sawAccept);
+    assert(`at least one sampled enquiry was refused (teamdecision score <= ${ENQUIRY_REFUSE_THRESHOLD})`, sawRefuse);
+    const inboxCount = state.inbox.emails.filter((e) => e.subject && e.subject.startsWith("[Transfer] Enquiry")).length;
+    assert(`submitEnquiry logs exactly one inbox note per enquiry made (${enquiriesMade} enquiries, ${inboxCount} emails)`, inboxCount === enquiriesMade);
+  }
+
+  group("engine/gtn.js — startPlayerScout (F3's 'Ask <scout> to Scout <name>')");
+  {
+    const state = buildM7FakeState();
+    state.gtn = createInitialGtnState(state);
+    const target = state.staticData.clubs.filter((c) => c.id !== state.club.id)
+      .map((c) => (state.playersByClub.get(c.id) || [])[0]).find(Boolean);
+    // buildM7FakeState's player clones only deep-copy contract/loan — every
+    // other group's buildM7FakeState() call shares the same underlying
+    // world.players[i].scouting object by reference, so an earlier group's
+    // scouting (this file's own pre-existing "engine/gtn.js" tests, or one
+    // of this milestone's own other groups) can leave this exact player
+    // already partly/fully scouted by the time this group runs. Reset it
+    // explicitly rather than depending on cross-group test order.
+    target.scouting = { level: 0, ovrRange: scoutingRangeFor(target.overall, 0), potRange: scoutingRangeFor(target.potential, 0) };
+
+    assert("cheapestIdleScout returns null with no scouts hired", cheapestIdleScout(state) === null);
+    const statusBefore = scoutReportStatus(state, target);
+    assert(`an unscouted player with no active mission reads 'not-scouting' (got '${statusBefore.kind}')`, statusBefore.kind === "not-scouting");
+
+    const hireA = hireScout(state, 0);
+    const hireB = hireScout(state, 0);
+    assert("2 scouts hired for the targeted-scout test", hireA.ok && hireB.ok);
+    const cheapest = cheapestIdleScout(state);
+    assert("cheapestIdleScout picks the lower-cost of the two idle scouts",
+      cheapest && missionCost(0, cheapest) <= missionCost(0, state.gtn.scouts.find((s) => s.id !== cheapest.id)));
+
+    const result = startPlayerScout(state, target.id);
+    assert("startPlayerScout succeeds against an idle scout + sufficient budget", result.ok === true);
+    assert("the targeted mission is seeded with exactly the one target player", result.mission.targetPlayerId === target.id && result.mission.foundPlayerIds.length === 1 && result.mission.foundPlayerIds[0] === target.id);
+    assert("the assigned scout now carries the mission's own id", state.gtn.scouts.find((s) => s.id === cheapest.id).missionId === result.mission.id);
+    assert("exactly one of the 2 hired scouts remains idle after the assignment", state.gtn.scouts.filter((s) => !s.missionId).length === 1);
+    assert("the target player's scouting.level is bumped to at least 1", target.scouting.level >= 1);
+
+    const statusAfter = scoutReportStatus(state, target);
+    assert(`a player with an active targeted mission reads 'scouting' (got '${statusAfter.kind}')`, statusAfter.kind === "scouting" || target.scouting.level >= 3);
+
+    // Tick the mission's daily report cycle several weeks forward — a
+    // targeted mission must never pick up any player beyond its one target
+    // (engine/gtn.js's own "!mission.targetPlayerId" guard).
+    let day = state.calendar.today;
+    for (let i = 0; i < 40; i++) {
+      day = addDays(day, 1);
+      runDailyGtnActivity(state, day);
+    }
+    assert("a targeted mission's foundPlayerIds never grows beyond its one target, even after 40 days of report ticks",
+      result.mission.foundPlayerIds.length === 1);
+    assert("40 days of report ticks narrows a targeted mission's player to fully scouted (level 3)", target.scouting.level === 3);
+  }
+
+  group("ui/searchui.js — computeSearchResults filter matrix (live Store, F3.1/F3.2)");
+  {
+    const srClub = world.clubs.find((c) => c.id !== "manchester-united") || world.clubs[5];
+    const srLeague = world.leagues.find((l) => l.id === srClub.leagueId);
+    const srState = createCareerState({ managerName: "Search Test", club: srClub, league: srLeague, world, seasonStartYear: 2014 });
+    const f = srState.ui.transferSearch.filters;
+
+    const baseline = computeSearchResults(srState);
+    assert(`baseline search (no filters) excludes the user's own club (${baseline.length} results)`, baseline.every((p) => p.clubId !== srState.club.id) && baseline.length > 0);
+
+    f.area = "GK";
+    const gkOnly = computeSearchResults(srState);
+    // Both pools hit computeSearchResults' own 300-result cap in a ~600-club
+    // world, so comparing raw .length here would be comparing 300 to 300 —
+    // meaningless. Prove the filter actually narrows by checking the
+    // *baseline* pool contains non-GKs (something to exclude) and every
+    // *filtered* result is a GK (nothing wrongly included) instead.
+    assert(`POSITION=GK returns a non-empty, 100% goalkeeper result set (${gkOnly.length} results)`,
+      gkOnly.length > 0 && gkOnly.every((p) => positionInfo(p.position).area === "GK"));
+    assert("the unfiltered baseline pool includes non-goalkeepers (proves the GK filter above is doing real work)",
+      baseline.some((p) => positionInfo(p.position).area !== "GK"));
+    f.area = "ALL";
+
+    const someOther = baseline.find((p) => p.clubId !== srState.club.id);
+    f.name = someOther.commonName.slice(0, 3);
+    const nameFiltered = computeSearchResults(srState);
+    assert(`PLAYER NAME substring narrows results and every hit contains the substring ('${f.name}': ${nameFiltered.length} of ${baseline.length})`,
+      nameFiltered.length > 0 && nameFiltered.length <= baseline.length &&
+      nameFiltered.every((p) => p.commonName.toLowerCase().includes(f.name.toLowerCase()) || `${p.firstName} ${p.lastName}`.toLowerCase().includes(f.name.toLowerCase())));
+    f.name = "";
+
+    f.minAge = 30;
+    const oldOnly = computeSearchResults(srState);
+    assert(`MIN AGE=30 narrows results to 30+ only (${oldOnly.length} of ${baseline.length})`, oldOnly.every((p) => p.age >= 30) && oldOnly.length <= baseline.length);
+    f.minAge = 0;
+
+    f.status = "FREE";
+    const freeOnly = computeSearchResults(srState);
+    const freeSet = new Set(eligibleFreeAgentTargets(srState).map((p) => p.id));
+    assert(`TRANSFER STATUS=Free Agents matches engine/freeagents.js's own eligibility set exactly (${freeOnly.length} results)`,
+      freeOnly.every((p) => freeSet.has(p.id)));
+    f.status = "ANY";
+
+    const backToBaseline = computeSearchResults(srState);
+    assert("resetting every filter back to Any restores the original baseline result count", backToBaseline.length === baseline.length);
+  }
+
+  group("ui/searchui.js — buildActionRows: free agents excluded from Approach-to-Buy/Loan (F3.3)");
+  {
+    const faClub = world.clubs.find((c) => c.id !== "manchester-united") || world.clubs[6];
+    const faLeague = world.leagues.find((l) => l.id === faClub.leagueId);
+    const faState = createCareerState({ managerName: "FA Test", club: faClub, league: faLeague, world, seasonStartYear: 2014 });
+    const freeAgents = eligibleFreeAgentTargets(faState);
+    const normalTarget = faState.players.find((p) => p.clubId !== faState.club.id && p.contract.endYear > faState.seasonStartYear + 1);
+
+    if (freeAgents.length) {
+      const faHtml = buildActionRows(faState, freeAgents[0], 0);
+      assert("a free-agent-eligible player's action menu offers 'Sign Free Agent'", faHtml.includes("Sign Free Agent"));
+      assert("a free-agent-eligible player's action menu hides Approach-to-Buy/Loan", !faHtml.includes("to Buy") && !faHtml.includes("to Loan"));
+    } else {
+      assert("(no free agents in this sampled world — skipped, not a failure)", true);
+    }
+    if (normalTarget) {
+      const normalHtml = buildActionRows(faState, normalTarget, 0);
+      assert("a normal (non-expiring) target's action menu offers Approach-to-Buy/Loan, not Sign Free Agent",
+        normalHtml.includes("to Buy") && normalHtml.includes("to Loan") && !normalHtml.includes("Sign Free Agent"));
+    }
+  }
+
+  group("engine/negotiation.js — player-exchange credit = round(adjValue*0.9) (F3.4)");
+  {
+    const state = buildM7FakeState();
+    const buyerRoster = state.squad.roster;
+    let sawAccepted = false, sawRejected = false;
+    const otherClubs = state.staticData.clubs.filter((c) => c.id !== state.club.id).slice(0, 15);
+    for (const sellingClub of otherClubs) {
+      const sellingRoster = state.playersByClub.get(sellingClub.id) || [];
+      if (!sellingRoster.length) continue;
+      const target = sellingRoster[0];
+      for (const exchangePlayer of buyerRoster) {
+        state.transfers.negotiation = null;
+        state.transfers.pendingOffers = [];
+        startFeeNegotiation(state, target.id);
+        setExchangePlayer(state, exchangePlayer.id);
+        submitFeeOffer(state);
+        const n = state.transfers.negotiation;
+        const expectedCredit = Math.round(exchangePlayer.value * EXCHANGE_PLAYER_VALUE_PCT);
+        if (n.exchangeCreditApplied > 0) {
+          sawAccepted = true;
+          assert(`accepted exchange credit == round(value*${EXCHANGE_PLAYER_VALUE_PCT}) (£${n.exchangeCreditApplied} == £${expectedCredit})`, n.exchangeCreditApplied === expectedCredit);
+        } else if (n.exchangeRejectedNote) {
+          sawRejected = true;
+        }
+        if (sawAccepted && sawRejected) break;
+      }
+      if (sawAccepted && sawRejected) break;
+    }
+    assert("at least one sampled exchange offer was accepted (credit applied)", sawAccepted);
+    assert("at least one sampled exchange offer was rejected (club didn't need that position, cash-only note shown)", sawRejected);
+  }
+
+  group("engine/negotiation.js — Loan Offer's editable phase + 3-6 day response scheduling (F3.5)");
+  {
+    const state = buildM7FakeState(new Date(2014, 8, 15)); // not a deadline day
+    const otherClub = state.staticData.clubs.find((c) => c.id !== state.club.id);
+    const target = (state.playersByClub.get(otherClub.id) || [])[0];
+
+    startLoanNegotiation(state, target.id, "season");
+    assert("startLoanNegotiation opens an editable 'loan' phase, not an instant roll (F3 changed this from plan1 M7)", state.transfers.negotiation.phase === "loan");
+
+    adjustLoanBonusPerGoal(state, 5);
+    assert("adjustLoanBonusPerGoal steps loanBonusPerGoal", state.transfers.negotiation.loanBonusPerGoal === 5);
+    cycleLoanLength(state);
+    assert("cycleLoanLength toggles season<->short", state.transfers.negotiation.loanLength === "short");
+    adjustLoanFutureFee(state, 20000);
+    assert("adjustLoanFutureFee sets an explicit future fee (was 'Not Set'/null)", state.transfers.negotiation.loanFutureFee === 20000);
+    adjustLoanFutureFee(state, -20000);
+    assert("stepping a future fee back down to 0 returns it to 'Not Set' (null)", state.transfers.negotiation.loanFutureFee === null);
+
+    const beforeCount = state.transfers.pendingOffers.length;
+    submitLoanOffer(state);
+    assert("submitLoanOffer (non-deadline-day) moves phase to 'loan-waiting'", state.transfers.negotiation.phase === "loan-waiting");
+    assert("submitLoanOffer queues exactly one pendingOffers entry", state.transfers.pendingOffers.length === beforeCount + 1);
+    const entry = state.transfers.pendingOffers[state.transfers.pendingOffers.length - 1];
+    const daysOut = toEpochDay(entry.dueDate) - toEpochDay(state.calendar.today);
+    assert(`the queued loan response is due within transfers.ini's 3-6 day window (got ${daysOut})`, daysOut >= 3 && daysOut <= 6);
+  }
+
+  group("core/store.js — My Shortlist add/remove is idempotent, never duplicates (F3.7)");
+  {
+    const slClub = world.clubs.find((c) => c.id !== "manchester-united") || world.clubs[7];
+    const slLeague = world.leagues.find((l) => l.id === slClub.leagueId);
+    const slState = createCareerState({ managerName: "Shortlist Test", club: slClub, league: slLeague, world, seasonStartYear: 2014 });
+    const slStore = new Store(slState);
+    const target = slState.players.find((p) => p.clubId !== slState.club.id);
+
+    assert("shortlist starts empty for a new career", slState.transfers.shortlist.length === 0);
+    slStore.toggleShortlistPlayer(target.id);
+    assert("toggling an unshortlisted player adds exactly one entry", slState.transfers.shortlist.length === 1 && slState.transfers.shortlist[0].playerId === target.id);
+    assert("adding seeds the My Shortlist screen's own selection to the newly-added player", slState.ui.shortlist.selectedPlayerId === target.id);
+    slStore.toggleShortlistPlayer(target.id);
+    assert("toggling the same player again removes it (net no-op) rather than duplicating", slState.transfers.shortlist.length === 0);
+    assert("removing the only/selected entry clears the My Shortlist screen's selection", slState.ui.shortlist.selectedPlayerId === null);
+
+    // A second, different player added while the first is still present must
+    // never collide/duplicate either.
+    const target2 = slState.players.find((p) => p.clubId !== slState.club.id && p.id !== target.id);
+    slStore.toggleShortlistPlayer(target.id);
+    slStore.toggleShortlistPlayer(target2.id);
+    assert("shortlisting 2 distinct players yields exactly 2 entries, no duplicates", slState.transfers.shortlist.length === 2);
+    const ids = slState.transfers.shortlist.map((s) => s.playerId).sort();
+    assert("the 2 entries are exactly the 2 distinct players added", ids[0] === Math.min(target.id, target2.id) && ids[1] === Math.max(target.id, target2.id));
+  }
+
+  group("core/db.js — transferShortlist round-trips through save/load (F3)");
+  {
+    const dbState = buildM7FakeState();
+    dbState.transfers.shortlist = [{ playerId: dbState.squad.roster[0].id, dateAdded: dbState.calendar.today }];
+    dbState.results = new Map();
+    dbState.cups = new Map();
+    dbState.jobMarket = { vacancies: [] };
+    const dbRoundTripped = deserializeSave(serializeSave(dbState));
+    assert("transferShortlist survives a save/load round-trip (playerId + dateAdded)",
+      dbRoundTripped.transferShortlist.length === 1 &&
+      dbRoundTripped.transferShortlist[0].playerId === dbState.squad.roster[0].id &&
+      dbRoundTripped.transferShortlist[0].dateAdded.getTime() === dbState.calendar.today.getTime());
   }
 
   render();

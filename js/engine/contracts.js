@@ -234,8 +234,9 @@ function signWithNewClub(state, player, rng) {
       movePlayerToClub(state, player, club.id);
       player.contract = {
         wage: terms.wage, endYear: state.seasonStartYear + terms.years,
-        signingBonus: 0, squadRole: terms.squadRole || "rotation", warnedExpiry: false,
+        signingBonus: terms.signingBonus || 0, squadRole: terms.squadRole || "rotation", warnedExpiry: false,
       };
+      if (terms.signingBonus && club.id === state.club.id) state.finances.transferBudget -= terms.signingBonus;
       recomputeValue(player, club, state.seasonStartYear);
       return club;
     }

@@ -138,6 +138,59 @@ export function startMission(state, opts) {
   return { ok: true, mission };
 }
 
+/**
+ * F3 (fable-plans/plan2.md): "Ask <scout> to Scout <name>" — the Search
+ * Results/Shortlist action-menu row (ms_SEARCH_PLAYERS_SCREEN_SEARCH_
+ * RESULTS_PLAYER_SELECTED.png: "Ask M. Karadas to Scout Lionel Messi").
+ * Unlike a broad region/area/tags mission, this targets one already-known
+ * player directly — reuses the mission object shape (so processMissionReport
+ * / runDailyGtnActivity's existing daily tick narrows it for free) via a new
+ * optional `targetPlayerId` field: a targeted mission is seeded with that
+ * player already "found" and never searches for anything else
+ * (candidatePlayersForMission skips it, see below). Auto-picks the cheapest
+ * idle scout (plan2.md's own wording: "cheapest idle GTN scout") rather than
+ * letting the user choose one — the action-menu row is a single click, no
+ * scout-picker step is evidenced in the reference pic. Tier is always
+ * "Short" (index 0) — a single-target job has no reason to run the full
+ * multi-month broad-search duration a real mission needs; [TUNED], no INI
+ * table sizes a single-player job differently from a broad one.
+ */
+export function cheapestIdleScout(state) {
+  const idle = state.gtn.scouts.filter((s) => !s.missionId);
+  if (!idle.length) return null;
+  return idle.slice().sort((a, b) => missionCost(0, a) - missionCost(0, b))[0];
+}
+
+export function startPlayerScout(state, playerId) {
+  const scout = cheapestIdleScout(state);
+  if (!scout) return { error: "no-idle-scout" };
+  const player = state.playersById.get(playerId);
+  if (!player) return { error: "not-found" };
+  const cost = missionCost(0, scout);
+  if (cost > state.finances.transferBudget) return { error: "insufficient-funds", cost };
+  state.finances.transferBudget -= cost;
+
+  const tier = MISSION_TIERS[0];
+  const today = state.calendar.today;
+  const mission = {
+    id: nextGtnId(state),
+    scoutId: scout.id,
+    region: "ALL", area: "ALL", tags: [], minAge: 0, maxAge: 0, maxValue: 0,
+    tierIndex: 0, tierLabel: tier.label, cost,
+    startDate: today, endDate: addMonths(today, tier.months),
+    nextReportDate: addDays(today, FIRST_REPORT_DAYS),
+    targetPlayerId: playerId,
+    foundPlayerIds: [playerId], seenPlayerIds: [playerId], updatedPlayerIds: [],
+    status: "active",
+  };
+  scout.missionId = mission.id;
+  state.gtn.missions.push(mission);
+  player.scouting.level = Math.max(player.scouting.level, 1);
+  player.scouting.ovrRange = scoutingRangeFor(player.overall, player.scouting.level);
+  player.scouting.potRange = scoutingRangeFor(player.potential, player.scouting.level);
+  return { ok: true, mission, scout };
+}
+
 export function cancelMission(state, missionId) {
   const g = state.gtn;
   const idx = g.missions.findIndex((m) => m.id === missionId);
@@ -212,7 +265,10 @@ function processMissionReport(state, mission, today) {
 
   const cap = MAX_SCOUTED_PLAYERS_BY_JUDGMENT[scout.judgment];
   const remainingCap = cap - mission.foundPlayerIds.length;
-  if (remainingCap > 0) {
+  // A targeted single-player mission (F3's startPlayerScout) never looks for
+  // anyone beyond its one target — same "known-quantity request" reading
+  // that keeps its RegionAreaTags fields as wide-open "ALL" placeholders.
+  if (remainingCap > 0 && !mission.targetPlayerId) {
     const [lo, hi] = FIND_COUNT_RANGE_BY_EXPERIENCE[scout.experience];
     const wantCount = rng.int(lo, hi);
     const pool = candidatePlayersForMission(state, mission);
@@ -266,6 +322,27 @@ export function runDailyGtnActivity(state, today) {
 /* ============================================================================
  * Derived read helpers (ui/gtnui.js + ui/render.js)
  * ========================================================================== */
+
+/**
+ * F3: Search Report / Shortlist "Report Status" box copy (plan2.md F3.2:
+ * "Report Status text varies: Report Complete (green check, scouting level
+ * 3), Currently Scouting…, Not Scouting (+ contextual line...)").
+ * `kind` drives the icon + colour; `line` is the body sentence.
+ */
+export function scoutReportStatus(state, player) {
+  if (player.scouting.level >= 3) {
+    return { kind: "complete", line: `The Scout Report on ${player.commonName} is complete. There shall be no more updates.` };
+  }
+  const activeMission = state.gtn.missions.find((m) => m.status === "active" && m.foundPlayerIds.includes(player.id));
+  if (activeMission) {
+    return { kind: "scouting", line: `${player.commonName} is currently being scouted — the report will keep narrowing as new information comes in.` };
+  }
+  const listing = state.transfers.listings.get(player.id);
+  const contextLine = listing
+    ? `${player.commonName} is currently ${listing.type === "loan" ? "loan listed" : "transfer listed"} by ${state.clubsById.get(player.clubId)?.name || "their club"}.`
+    : `No scout has been assigned to ${player.commonName} yet.`;
+  return { kind: "not-scouting", line: contextLine };
+}
 
 export function missionNewCount(mission) {
   return mission.foundPlayerIds.filter((id) => !mission.seenPlayerIds.includes(id)).length;

@@ -50,15 +50,18 @@ function positionRankScore(player, sellingRoster) {
 }
 
 /**
- * The selling club's "wanted fee" for `player` — see config/teamdecision.js's
- * header for how the summed score maps onto a %-of-`player.value` multiplier.
+ * The selling club's raw team-decision score for `player` (transferteam
+ * decision.ini's summed, clamped total — see config/teamdecision.js's header
+ * for the individual contributions) — shared by computeWantedFee below and
+ * F3's Enquire action (ui: "not for sale" gate, plan2.md's own §A6 example
+ * ledger entry: "teamdecision points <= -50 => refuse").
  * @param {object} opts
  * @param {object} opts.player
  * @param {object} opts.buyingClub
  * @param {object} opts.sellingClub
  * @param {object} opts.state
  */
-export function computeWantedFee({ player, buyingClub, sellingClub, state }) {
+export function computeTeamDecisionScore({ player, buyingClub, sellingClub, state }) {
   const buyingLeague = leagueForClub(state, buyingClub.id);
   const buyerOverall = clubOverallTarget(buyingClub, buyingLeague).mean;
   const teamOverallScore = bracketVal(TEAM_OVERALL, buyerOverall);
@@ -78,8 +81,20 @@ export function computeWantedFee({ player, buyingClub, sellingClub, state }) {
   const posScore = positionRankScore(player, sellingRoster);
 
   const rawScore = teamOverallScore + timeScore + squadScore + futureScore + posScore;
-  const totalScore = Math.min(TOTAL_POINTS_CAP.MAX_POINTS, Math.max(TOTAL_POINTS_CAP.MIN_POINTS, rawScore));
+  return Math.min(TOTAL_POINTS_CAP.MAX_POINTS, Math.max(TOTAL_POINTS_CAP.MIN_POINTS, rawScore));
+}
 
+/**
+ * The selling club's "wanted fee" for `player` — see config/teamdecision.js's
+ * header for how the summed score maps onto a %-of-`player.value` multiplier.
+ * @param {object} opts
+ * @param {object} opts.player
+ * @param {object} opts.buyingClub
+ * @param {object} opts.sellingClub
+ * @param {object} opts.state
+ */
+export function computeWantedFee({ player, buyingClub, sellingClub, state }) {
+  const totalScore = computeTeamDecisionScore({ player, buyingClub, sellingClub, state });
   const t = (totalScore - TOTAL_POINTS_CAP.MIN_POINTS) / (TOTAL_POINTS_CAP.MAX_POINTS - TOTAL_POINTS_CAP.MIN_POINTS);
   const pct = POINTS_VALUE.MIN + t * (POINTS_VALUE.MAX - POINTS_VALUE.MIN);
 

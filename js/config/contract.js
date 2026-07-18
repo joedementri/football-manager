@@ -73,3 +73,33 @@ export function minBracketVal(table, x) {
   for (const row of table) if (x >= row.min) val = row.val;
   return val;
 }
+
+// F3/F6 (fable-plans/plan2.md): the Contract Negotiation panel's "Squad
+// Role:" picker (ms_CONTRACTS_SCREEN_CONTRACT_NEGOTIATION.png,
+// ms_APPROACH_TRANSFER_OFFER_SCREEN.png's "CURRENT CONTRACT" block).
+// [PLAN-TEXT CORRECTION] the plan's own F3.6 text names 5 labels ("Crucial
+// 1st Team Player / Important 1st Team Player / Rotation Player / Sub /
+// Future 1st Team Player") but this engine only ever had 4 squadRole tiers
+// (prospect/rotation/important/crucial, since plan1 M6 — see engine/
+// playerdecision.js's SQUAD_ROLE_TIER); adding a genuine 5th "sub" tier
+// would ripple into contract renewal odds, loan approval chances and squad
+// generation well outside F3's scope. "Sub" is dropped from the display set;
+// the other 4 map 1:1 onto the existing tiers — 2 of the 4 are pic-verified
+// verbatim (crucial -> "Crucial 1st Team Player" on Messi's Approach Offer
+// card; prospect -> "Future 1st Team Player" on Maloney's Current Contract
+// panel), important/rotation follow the same "<Tier> 1st Team Player" /
+// "<Tier> Player" naming pattern. "Do Not Specify" (Maloney's own *offered*
+// default, distinct from his actual current role) is a genuine 5th UI-only
+// choice — picking it sends no explicit promisedRole at all, same as this
+// engine's own pre-F3 default (engine/negotiation.js's startFeeNegotiation
+// already defaulted promisedRole to "important" server-side; "Do Not
+// Specify" surfaces that "no strong promise" state honestly instead of
+// silently pre-selecting a tier the user never chose).
+export const SQUAD_ROLE_DISPLAY = {
+  none: "Do Not Specify",
+  crucial: "Crucial 1st Team Player",
+  important: "Important 1st Team Player",
+  rotation: "Rotation Player",
+  prospect: "Future 1st Team Player",
+};
+export const SQUAD_ROLE_CYCLE = ["none", "crucial", "important", "rotation", "prospect"];

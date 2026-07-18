@@ -25,7 +25,8 @@ import { createInitialContinentalState } from "../engine/comps/continental.js";
 import { createInitialIntlState, intlFixtureOnDate } from "../engine/comps/intl.js";
 import * as ntJobsEngine from "../engine/ntjobs.js";
 import { pickBestXI, applyCaptainToLineup, pickDefaultBench, reservesOf } from "../gen/squad.js";
-import { positionInfo } from "../config/positions.js";
+import { positionInfo, AREAS, POSITION_CODES } from "../config/positions.js";
+import * as enquiryEngine from "../engine/enquiry.js";
 import { isSimilarPosition, suggestedSubScore } from "../config/managerai.js";
 import { applyBoardReview, applyMidSeasonGrowth, rolloverSeason } from "../engine/season.js";
 import { acceptJob } from "../engine/jobs.js";
@@ -277,16 +278,40 @@ function createUiDefaults(today) {
     // 'accepted'|'rejected'|null, shown as a banner until the next selection.
     contracts: { selectedPlayerId: null, offerWage: 0, offerYears: 3, lastResult: null },
 
-    // M7 (ui/transfersui.js): Search Players' filter form + result selection —
-    // purely presentational (the actual listings/negotiation/pendingOffers
-    // data lives on state.transfers, not here, since engine code reads/
-    // writes it directly).
+    // F3 (fable-plans/plan2.md, ui/searchui.js): PLAYER SEARCH filter tiles ->
+    // SEARCH RESULTS (tabs/cards/report) -> action-menu playercard. Purely
+    // presentational — the actual listings/negotiation/pendingOffers/
+    // shortlist data lives on state.transfers, not here.
     transferSearch: {
-      area: "ALL", minOverall: 0, maxValue: 0, freeAgentsOnly: false, selectedPlayerId: null,
+      stage: "filters", // "filters" | "results"
+      filters: {
+        name: "", area: "ALL", role: "ANY", nationId: null, status: "ANY",
+        minAge: 0, maxAge: 0, country: null, leagueId: null, teamId: null,
+      },
+      filterTile: 0, filterSub: 0, // 8-tile grid cursor; filterSub picks the stacked row inside tiles 1 (position/role) and 4 (min/max age)
+      nameEditing: false,
+      resultsTab: "ALL", // ALL/ATT/MID/DEF/GK
+      selectedPlayerId: null,
+      reportPage: 0, // 0..2 RS pager (Summary/Physical/Technical)
+      actionMenuOpen: false,
+      actionMenuIndex: 0,
+      exchangePickerOpen: false,
     },
+    // F3: My Shortlist paper dossier — selected shortlist player + the
+    // Pos-column sort direction (its one sortable column, same "X sorts the
+    // one sortable column" convention as ui/squadreportui.js's own Squad
+    // Report overlay).
+    shortlist: { selectedPlayerId: null, sortDir: "asc", actionMenuOpen: false, actionMenuIndex: 0 },
     // Sell/Loan List overlay: selected squad player + the asking-price draft
     // being adjusted before listPlayer() commits it.
     sellList: { selectedPlayerId: null, askingPriceDraft: 0 },
+    // F3: Negotiation dossier UI-only toggles (never persisted, same footing
+    // as state.transfers.negotiation itself) — `editingFeeOffer` swaps the
+    // Approach — Transfer Offer's "Offered Transfer Sum" row into a live
+    // numeric <input> (§B2's "(Y) opens direct numeric entry"); the other
+    // dossier fields are stepper-only, matching what the reference pics
+    // actually show a (Y) glyph next to and what they don't.
+    negotiation: { editingFeeOffer: false },
     // Request Funds overlay: the amount being adjusted before submission, and
     // the outcome of the last request/reallocation (shown as a banner).
     requestFunds: { amount: 100000, lastResult: null },
@@ -445,7 +470,7 @@ function createUiDefaults(today) {
  */
 function deriveIndices(state, {
   allClubs, allLeagues, allNations, allCups, results = new Map(), clubLeague, cups, finances,
-  transferListings, transferPendingOffers, clubTransferBudgets,
+  transferListings, transferPendingOffers, clubTransferBudgets, transferShortlist,
 }) {
   state.staticData = { leagues: allLeagues, clubs: allClubs, nations: allNations, cups: allCups };
   state.clubLeague = clubLeague || new Map(allClubs.map((c) => [c.id, c.leagueId]));
@@ -506,6 +531,14 @@ function deriveIndices(state, {
   state.transfers.listings = transferListings || new Map();
   state.transfers.pendingOffers = transferPendingOffers || [];
   state.transfers.negotiation = null;
+  // F3: My Shortlist ({playerId, dateAdded}[]) — persists like listings above
+  // (not re-derivable from the seed). Enquiry results (F3's "Enquire about
+  // <name>" action) are deliberately NOT persisted, same "in-flight/session-
+  // only UI state" footing as `negotiation` itself just above — a fresh
+  // enquiry is one click away, and the inbox email it sends already is the
+  // durable record.
+  state.transfers.shortlist = transferShortlist || [];
+  state.transfers.enquiries = new Map();
   // CPU clubs' own transfer budgets (engine/clubbudget.js) — lazily
   // populated per club as CPU<->CPU activity/incoming bids touch them;
   // persists across saves so a club's spend isn't silently refilled on reload.
@@ -780,7 +813,7 @@ export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
     allClubs: clubs, allLeagues: leagues, allNations: nations, allCups: cups,
     results: saved.results, clubLeague: saved.clubLeague, cups: saved.cupsState, finances: saved.finances,
     transferListings: saved.transferListings, transferPendingOffers: saved.transferPendingOffers,
-    clubTransferBudgets: saved.clubTransferBudgets,
+    clubTransferBudgets: saved.clubTransferBudgets, transferShortlist: saved.transferShortlist,
   });
 
   // F1: a pre-F1 save never had state.squad.sheets at all — same "fresh
@@ -2357,46 +2390,352 @@ export class Store {
     this.emit("settings", null);
   }
 
-  /* ----- M7: Search Players (world-wide, real numbers — fuzzy GTN ranges
-   * are M8) ----- */
+  /* ----- F3 (fable-plans/plan2.md): Player Search — PLAYER SEARCH filter
+   * tiles -> SEARCH RESULTS (tabs/cards/report) -> action-menu playercard.
+   * ui/searchui.js owns all rendering; computeSearchResults/buildActionRows
+   * there are pure read-derivations (same footing as this file's own
+   * teamSheetFocusableSlots export), everything below is the only thing
+   * allowed to mutate state.ui.transferSearch. ----- */
 
   openTransferSearch() {
-    this.state.ui.transferSearch.selectedPlayerId = null;
+    const s = this.state.ui.transferSearch;
+    s.stage = "filters";
+    s.selectedPlayerId = null;
+    s.actionMenuOpen = false;
+    s.exchangePickerOpen = false;
+    s.nameEditing = false;
     this.openOverlay("search");
   }
 
-  setSearchFilter(key, value) {
-    this.state.ui.transferSearch[key] = value;
+  searchFilterFocus(tile, sub = 0) {
+    const s = this.state.ui.transferSearch;
+    s.filterTile = Math.max(0, Math.min(7, tile));
+    s.filterSub = sub;
     this.emit("search", null);
   }
 
-  selectSearchResult(playerId) {
-    this.state.ui.transferSearch.selectedPlayerId = playerId;
+  searchStartEditName() {
+    this.state.ui.transferSearch.nameEditing = true;
     this.emit("search", null);
   }
 
-  /* ----- M7: Negotiation (fee talks -> contract talks, loans, free-agent
+  searchCommitName(value) {
+    const s = this.state.ui.transferSearch;
+    s.filters.name = (value || "").trim();
+    s.nameEditing = false;
+    this.emit("search", null);
+  }
+
+  searchCycleArea(delta) {
+    const f = this.state.ui.transferSearch.filters;
+    const opts = ["ALL", ...AREAS];
+    f.area = opts[(opts.indexOf(f.area) + delta + opts.length) % opts.length];
+    if (f.role !== "ANY" && positionInfo(f.role).area !== f.area && f.area !== "ALL") f.role = "ANY";
+    this.emit("search", null);
+  }
+
+  searchCycleRole(delta) {
+    const f = this.state.ui.transferSearch.filters;
+    const codes = f.area === "ALL" ? POSITION_CODES : POSITION_CODES.filter((c) => positionInfo(c).area === f.area);
+    const opts = ["ANY", ...codes];
+    f.role = opts[(opts.indexOf(f.role) + delta + opts.length) % opts.length];
+    this.emit("search", null);
+  }
+
+  searchCycleNationality(delta) {
+    const f = this.state.ui.transferSearch.filters;
+    const nations = this.state.staticData.nations.slice().sort((a, b) => a.name.localeCompare(b.name));
+    const opts = [null, ...nations.map((n) => n.id)];
+    f.nationId = opts[(opts.indexOf(f.nationId) + delta + opts.length) % opts.length];
+    this.emit("search", null);
+  }
+
+  searchCycleStatus(delta) {
+    const f = this.state.ui.transferSearch.filters;
+    const opts = ["ANY", "LISTED", "LOAN", "EXPIRING", "FREE"];
+    f.status = opts[(opts.indexOf(f.status) + delta + opts.length) % opts.length];
+    this.emit("search", null);
+  }
+
+  searchAdjustMinAge(delta) {
+    const f = this.state.ui.transferSearch.filters;
+    f.minAge = Math.max(0, Math.min(f.maxAge || 45, f.minAge + delta * 1));
+    this.emit("search", null);
+  }
+
+  searchAdjustMaxAge(delta) {
+    const f = this.state.ui.transferSearch.filters;
+    const next = f.maxAge === 0 && delta > 0 ? 15 : f.maxAge + delta;
+    f.maxAge = Math.max(0, next);
+    if (f.maxAge !== 0 && f.maxAge < f.minAge) f.maxAge = f.minAge;
+    this.emit("search", null);
+  }
+
+  searchCycleCountry(delta) {
+    const f = this.state.ui.transferSearch.filters;
+    const countries = [...new Set(this.state.staticData.leagues.map((l) => l.country))].sort();
+    const opts = [null, ...countries];
+    f.country = opts[(opts.indexOf(f.country) + delta + opts.length) % opts.length];
+    f.leagueId = null; f.teamId = null;
+    this.emit("search", null);
+  }
+
+  searchCycleLeague(delta) {
+    const f = this.state.ui.transferSearch.filters;
+    const leagues = this.state.staticData.leagues
+      .filter((l) => !f.country || l.country === f.country)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const opts = [null, ...leagues.map((l) => l.id)];
+    f.leagueId = opts[(opts.indexOf(f.leagueId) + delta + opts.length) % opts.length];
+    f.teamId = null;
+    this.emit("search", null);
+  }
+
+  searchCycleTeam(delta) {
+    const f = this.state.ui.transferSearch.filters;
+    if (!f.leagueId) return;
+    const clubs = this.state.staticData.clubs
+      .filter((c) => this.state.clubLeague.get(c.id) === f.leagueId)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const opts = [null, ...clubs.map((c) => c.id)];
+    f.teamId = opts[(opts.indexOf(f.teamId) + delta + opts.length) % opts.length];
+    this.emit("search", null);
+  }
+
+  searchResetFilters() {
+    const s = this.state.ui.transferSearch;
+    s.filters = { name: "", area: "ALL", role: "ANY", nationId: null, status: "ANY", minAge: 0, maxAge: 0, country: null, leagueId: null, teamId: null };
+    this.emit("search", null);
+  }
+
+  searchSubmitFilters() {
+    const s = this.state.ui.transferSearch;
+    s.stage = "results";
+    s.resultsTab = "ALL";
+    s.selectedPlayerId = null;
+    s.reportPage = 0;
+    this.emit("search", null);
+  }
+
+  searchBackFromResults() {
+    const s = this.state.ui.transferSearch;
+    if (s.actionMenuOpen) { s.actionMenuOpen = false; this.emit("search", null); return; }
+    s.stage = "filters";
+    this.emit("search", null);
+  }
+
+  searchSetResultsTab(tab) {
+    const s = this.state.ui.transferSearch;
+    s.resultsTab = tab;
+    s.selectedPlayerId = null;
+    s.reportPage = 0;
+    this.emit("search", null);
+  }
+
+  searchSelectResult(playerId) {
+    const s = this.state.ui.transferSearch;
+    s.selectedPlayerId = playerId;
+    s.reportPage = 0;
+    this.emit("search", null);
+  }
+
+  searchCycleReportPage(delta, pageCount) {
+    const s = this.state.ui.transferSearch;
+    s.reportPage = (s.reportPage + delta + pageCount) % pageCount;
+    this.emit("search", null);
+  }
+
+  searchOpenActionMenu() {
+    const s = this.state.ui.transferSearch;
+    if (s.selectedPlayerId == null) return;
+    s.actionMenuOpen = true;
+    // Row 0 ("Ask <scout> to Scout...") is disabled whenever no idle scout
+    // exists (ui/searchui.js's buildActionRows) — default the gold-selected
+    // cursor to row 1 ("Add to My Shortlist", always enabled) rather than
+    // landing on a disabled row with nothing (A) can do.
+    s.actionMenuIndex = gtnEngine.cheapestIdleScout(this.state) ? 0 : 1;
+    this.emit("search", null);
+  }
+
+  searchCloseActionMenu() {
+    this.state.ui.transferSearch.actionMenuOpen = false;
+    this.emit("search", null);
+  }
+
+  searchActionMenuFocus(index) {
+    this.state.ui.transferSearch.actionMenuIndex = index;
+    this.emit("search", null);
+  }
+
+  /** Shared by both Search Results and My Shortlist's action menus —
+   * `action` is one of ask-scout/toggle-shortlist/enquire/approach-buy/
+   * approach-loan/sign-free-agent (see ui/searchui.js's buildActionRows).
+   * ask-scout's only failure mode (no idle scout) is already reflected as a
+   * disabled, unclickable row before this is ever reached (buildActionRows'
+   * own idleScout check), so its result isn't surfaced further here. */
+  performPlayerAction(action, playerId) {
+    if (playerId == null) return;
+    switch (action) {
+      case "ask-scout": gtnEngine.startPlayerScout(this.state, playerId); break;
+      case "toggle-shortlist": this.toggleShortlistPlayer(playerId); return; // emits its own events
+      case "enquire": enquiryEngine.submitEnquiry(this.state, playerId); break;
+      case "approach-buy": this.startBid(playerId); return; // opens the negotiation overlay itself
+      case "approach-loan": this.startLoanBid(playerId, "season"); return;
+      case "sign-free-agent": this.startFreeAgentApproach(playerId); return;
+      default: return;
+    }
+    this.emit("search", null);
+    this.emit("shortlist", null);
+  }
+
+  /* ----- F3: My Shortlist ----- */
+
+  toggleShortlistPlayer(playerId) {
+    const list = this.state.transfers.shortlist;
+    const st = this.state.ui.shortlist;
+    const idx = list.findIndex((s) => s.playerId === playerId);
+    if (idx >= 0) {
+      list.splice(idx, 1);
+      // Keep the My Shortlist screen's own selection sane even when a
+      // player is removed from *outside* it (Search Results/Shortlist's own
+      // action menu both call this) — renderMyShortlist reads
+      // selectedPlayerId unconditionally whenever it re-renders, which
+      // happens on every "shortlist" emit regardless of which overlay is
+      // currently open (core/router.js's store.on("shortlist", ...)).
+      if (st.selectedPlayerId === playerId) st.selectedPlayerId = list.length ? list[0].playerId : null;
+    } else {
+      list.push({ playerId, dateAdded: this.state.calendar.today });
+      if (st.selectedPlayerId == null) st.selectedPlayerId = playerId;
+    }
+    this.emit("search", null);
+    this.emit("shortlist", null);
+  }
+
+  openMyShortlist() {
+    const st = this.state.ui.shortlist;
+    const list = this.state.transfers.shortlist;
+    st.selectedPlayerId = list.length ? list[0].playerId : null;
+    st.actionMenuOpen = false;
+    this.openOverlay("shortlist");
+  }
+
+  selectShortlistPlayer(playerId) {
+    this.state.ui.shortlist.selectedPlayerId = playerId;
+    this.emit("shortlist", null);
+  }
+
+  sortShortlist() {
+    const st = this.state.ui.shortlist;
+    st.sortDir = st.sortDir === "asc" ? "desc" : "asc";
+    this.emit("shortlist", null);
+  }
+
+  shortlistOpenActionMenu() {
+    const st = this.state.ui.shortlist;
+    if (st.selectedPlayerId == null) return;
+    st.actionMenuOpen = true;
+    st.actionMenuIndex = gtnEngine.cheapestIdleScout(this.state) ? 0 : 1;
+    this.emit("shortlist", null);
+  }
+
+  shortlistCloseActionMenu() {
+    this.state.ui.shortlist.actionMenuOpen = false;
+    this.emit("shortlist", null);
+  }
+
+  shortlistActionMenuFocus(index) {
+    this.state.ui.shortlist.actionMenuIndex = index;
+    this.emit("shortlist", null);
+  }
+
+  /* ----- M7/F3: Negotiation (fee talks -> contract talks, loans, free-agent
    * pre-contract approaches) — engine/negotiation.js + engine/freeagents.js
    * own the actual state machine; these methods just call into it and emit
    * "negotiation" for ui/transfersui.js to re-render from. ----- */
 
   startBid(playerId) {
     negotiation.startFeeNegotiation(this.state, playerId);
+    this.state.ui.negotiation.editingFeeOffer = false;
+    this.state.ui.transferSearch.actionMenuOpen = false;
+    this.state.ui.shortlist.actionMenuOpen = false;
     this.openOverlay("negotiation");
   }
 
   startLoanBid(playerId, loanLength) {
     negotiation.startLoanNegotiation(this.state, playerId, loanLength);
+    this.state.ui.transferSearch.actionMenuOpen = false;
+    this.state.ui.shortlist.actionMenuOpen = false;
     this.openOverlay("negotiation");
   }
 
   startFreeAgentApproach(playerId) {
     freeagents.startApproach(this.state, playerId);
+    this.state.ui.transferSearch.actionMenuOpen = false;
+    this.state.ui.shortlist.actionMenuOpen = false;
     this.openOverlay("negotiation");
+  }
+
+  /** [LT][RT] "BUY/LOAN" toggle (ms_APPROACH_TRANSFER_OFFER_SCREEN.png /
+   * ms_APPROACH_LOAN_OFFER_SCREEN.png share one dossier, just a different
+   * right-page form) — only live while still editing (pre-submission);
+   * discards whatever's been typed into the form being left, same as
+   * picking a different Approach action from scratch would. */
+  negoToggleOfferMode() {
+    const n = this.state.transfers.negotiation;
+    if (!n) return;
+    if (n.dealType === "transfer" && n.phase === "fee") negotiation.startLoanNegotiation(this.state, n.playerId, n.loanLength);
+    else if (n.dealType === "loan" && n.phase === "loan") negotiation.startFeeNegotiation(this.state, n.playerId);
+    else return;
+    this.emit("negotiation", null);
+  }
+
+  /** "(X) Reset" footer prompt on the Approach — Transfer/Loan Offer dossier
+   * — re-initializes the current mode's negotiation from scratch (discards
+   * the fee/exchange or loan terms typed so far), same "start fresh" shape
+   * negoToggleOfferMode already uses when switching modes. */
+  negoResetOffer() {
+    const n = this.state.transfers.negotiation;
+    if (!n) return;
+    if (n.dealType === "transfer" && n.phase === "fee") negotiation.startFeeNegotiation(this.state, n.playerId);
+    else if (n.dealType === "loan" && n.phase === "loan") negotiation.startLoanNegotiation(this.state, n.playerId, "season");
+    this.emit("negotiation", null);
   }
 
   negoAdjustFeeOffer(deltaPct) {
     negotiation.adjustFeeOffer(this.state, deltaPct);
+    this.emit("negotiation", null);
+  }
+
+  negoStartEditFeeOffer() {
+    this.state.ui.negotiation.editingFeeOffer = true;
+    this.emit("negotiation", null);
+  }
+
+  negoCommitFeeOfferDirect(value) {
+    const n = this.state.transfers.negotiation;
+    if (n) n.feeOffer = Math.max(0, Math.round(Number(value) || 0));
+    this.state.ui.negotiation.editingFeeOffer = false;
+    this.emit("negotiation", null);
+  }
+
+  negoOpenExchangePicker() {
+    this.state.ui.transferSearch.exchangePickerOpen = true;
+    this.emit("negotiation", null);
+  }
+
+  negoCloseExchangePicker() {
+    this.state.ui.transferSearch.exchangePickerOpen = false;
+    this.emit("negotiation", null);
+  }
+
+  negoSetExchangePlayer(playerId) {
+    negotiation.setExchangePlayer(this.state, playerId);
+    this.state.ui.transferSearch.exchangePickerOpen = false;
+    this.emit("negotiation", null);
+  }
+
+  negoClearExchangePlayer() {
+    negotiation.clearExchangePlayer(this.state);
     this.emit("negotiation", null);
   }
 
@@ -2414,6 +2753,37 @@ export class Store {
     this.emit("advance", null);
   }
 
+  /* ----- F3: loan-only dossier fields (Approach — Loan Offer) ----- */
+
+  negoAdjustLoanBonus(deltaPct) {
+    negotiation.adjustLoanBonusPerGoal(this.state, deltaPct);
+    this.emit("negotiation", null);
+  }
+
+  negoCycleLoanLength() {
+    negotiation.cycleLoanLength(this.state);
+    this.emit("negotiation", null);
+  }
+
+  negoAdjustLoanFutureFee(deltaAbs) {
+    negotiation.adjustLoanFutureFee(this.state, deltaAbs);
+    this.emit("negotiation", null);
+  }
+
+  negoClearLoanFutureFee() {
+    negotiation.clearLoanFutureFee(this.state);
+    this.emit("negotiation", null);
+  }
+
+  negoSubmitLoanOffer() {
+    negotiation.submitLoanOffer(this.state);
+    this.emit("negotiation", null);
+    this.emit("advance", null);
+  }
+
+  /* ----- F3: CONTRACT NEGOTIATION panel fields (shared by F3's own transfer/
+   * free-agent contract-talks phase and F6's future renewal flow) ----- */
+
   negoAdjustContractWage(deltaPct) {
     negotiation.adjustNegotiationContractWage(this.state, deltaPct);
     this.emit("negotiation", null);
@@ -2421,6 +2791,16 @@ export class Store {
 
   negoAdjustContractYears(delta) {
     negotiation.adjustNegotiationContractYears(this.state, delta);
+    this.emit("negotiation", null);
+  }
+
+  negoAdjustContractBonus(deltaPct) {
+    negotiation.adjustNegotiationContractBonus(this.state, deltaPct);
+    this.emit("negotiation", null);
+  }
+
+  negoAdjustSigningFee(deltaAbs) {
+    negotiation.adjustNegotiationSigningFee(this.state, deltaAbs);
     this.emit("negotiation", null);
   }
 

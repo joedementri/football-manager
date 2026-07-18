@@ -1,174 +1,216 @@
-// ui/transfersui.js — M7's Transfers overlays: Search Players, Negotiation
-// (fee talks -> contract talks, loans, free-agent pre-contract approaches),
-// Sell/Loan List, and Request Funds. Pure render-from-state, same contract
-// as every other ui/*.js module (see ui/contractsui.js's header) — every
-// control here calls a core/store.js method and re-renders off the event
-// core/router.js subscribes to.
-//
-// No REFERENCE_PICS screenshot covers these sub-screens (only the Transfers
-// hub tile grid was captured) — authored fresh from the existing overlay/
-// stepper/list-detail conventions (ui/contractsui.js, ui/jobsui.js), same
-// footing as ui/matchday.js's own header note on this.
+// ui/transfersui.js — Transfers overlays. F3 (fable-plans/plan2.md) rebuilt
+// Negotiation entirely: Approach — Transfer/Loan Offer (§B2 paper dossier,
+// ms_APPROACH_TRANSFER_OFFER_SCREEN.png / ms_APPROACH_LOAN_OFFER_SCREEN.png —
+// one dossier, [LT][RT] toggles which right-page form shows) and Contract
+// Negotiation (§B1 fx-panel, ms_CONTRACTS_SCREEN_CONTRACT_NEGOTIATION.png —
+// read early per F3.6's own build note since F3 is the milestone that first
+// needs this shared component; F6 reuses it unchanged for renewals). Search
+// Players moved out entirely to ui/searchui.js (F3 rebuilt it as PLAYER
+// SEARCH -> SEARCH RESULTS -> action menu, replacing the old filter-form/
+// list-row screen this file used to own). Sell/Loan List and Request Funds
+// are untouched — still pending their own F4/F6 fidelity passes.
 
 import { money } from "../core/format.js";
-import { positionInfo, AREAS } from "../config/positions.js";
-import { eligibleFreeAgentTargets } from "../engine/freeagents.js";
+import { positionInfo } from "../config/positions.js";
 import { MAX_COUNTER_OFFERS } from "../config/transferai.js";
-import { fuzzyDisplay } from "./gtnui.js";
+import { seasonStart } from "../config/calendar.js";
+import { SQUAD_ROLE_DISPLAY, SQUAD_ROLE_CYCLE } from "../config/contract.js";
+import { computeWantedFee } from "../engine/teamdecision.js";
+import { computeSigningAsk } from "../engine/playerdecision.js";
+import { ENQUIRY_RANGE_PCT } from "../engine/enquiry.js";
+import { formWord, moraleWord } from "./searchui.js";
+import { fxInputRow, glyphPill, actionPrompt, fxTable, posBar } from "./panelkit.js";
 
 function prompt(glyphClass, glyphLabel, action, label) {
   return `<span class="prompt" data-action="${action}"><span class="btn-glyph ${glyphClass}">${glyphLabel}</span> ${label}</span>`;
 }
 
-const ROLE_TIERS = ["prospect", "rotation", "important", "crucial"];
-function roleLabel(role) {
-  return role.charAt(0).toUpperCase() + role.slice(1);
+/** Real Years/Months remaining on a contract (not a placeholder) — the same
+ * `seasonStart(endYear)` boundary engine/contracts.js's own expiry-warning
+ * check (`checkContractExpiryWarnings`) uses, just expressed as a calendar
+ * Y/M breakdown instead of a day count (ms_APPROACH_TRANSFER_OFFER_SCREEN.png/
+ * ms_CONTRACTS_SCREEN_CONTRACT_NEGOTIATION.png both show "Years: n, Months: n"). */
+function remainingContractYM(state, endYear) {
+  const today = state.calendar.today;
+  const expiry = seasonStart(endYear);
+  let months = (expiry.getFullYear() - today.getFullYear()) * 12 + (expiry.getMonth() - today.getMonth());
+  if (expiry.getDate() < today.getDate()) months -= 1;
+  months = Math.max(0, months);
+  return { years: Math.floor(months / 12), months: months % 12 };
 }
 
 /* ============================================================================
- * Search Players
+ * Shared: PLAYER INFO paper (left page of the Approach Offer dossier)
  * ========================================================================== */
 
-/** World-wide search pool, filtered by the Search Players form. Capped at 60
- * results, sorted by *true* overall — filtering/sorting always uses the real
- * number (the engine always knows it), only the OVR column's *display*
- * degrades to engine/gtn.js's fuzzy range for a player the user hasn't fully
- * scouted (M8: "Un-scouted players in Search show ranges too — scouting is
- * the only way to see true numbers"). */
-export function computeSearchResults(state) {
-  const f = state.ui.transferSearch;
-  let pool = f.freeAgentsOnly
-    ? eligibleFreeAgentTargets(state)
-    : state.players.filter((p) => p.clubId !== state.club.id);
-  if (f.area !== "ALL") pool = pool.filter((p) => positionInfo(p.position).area === f.area);
-  if (f.minOverall > 0) pool = pool.filter((p) => p.overall >= f.minOverall);
-  if (f.maxValue > 0) pool = pool.filter((p) => p.value <= f.maxValue);
-  return pool.slice().sort((a, b) => b.overall - a.overall).slice(0, 60);
-}
-
-function renderSearchFilters(state) {
-  const f = state.ui.transferSearch;
-  const el = document.getElementById("sr-filters");
-  const areaButtons = ["ALL", ...AREAS].map((a) => (
-    `<button type="button" class="sr-area-btn${f.area === a ? " is-sel" : ""}" data-action="set-area" data-value="${a}">${a}</button>`
-  )).join("");
-  el.innerHTML =
-    `<div class="sr-filter-row">` +
-      `<div class="sr-filter">` +
-        `<span class="sr-filter__label">Position</span>` +
-        `<div class="sr-areapicker">${areaButtons}</div>` +
-      `</div>` +
-      `<div class="sr-filter">` +
-        `<span class="sr-filter__label">Min Overall</span>` +
-        `<button class="ct-stepper" type="button" data-action="minovr-down">&minus;</button>` +
-        `<span class="sr-filter__val">${f.minOverall || "Any"}</span>` +
-        `<button class="ct-stepper" type="button" data-action="minovr-up">+</button>` +
-      `</div>` +
-      `<div class="sr-filter">` +
-        `<span class="sr-filter__label">Max Value</span>` +
-        `<button class="ct-stepper" type="button" data-action="maxvalue-down">&minus;</button>` +
-        `<span class="sr-filter__val">${f.maxValue > 0 ? money(f.maxValue) : "Any"}</span>` +
-        `<button class="ct-stepper" type="button" data-action="maxvalue-up">+</button>` +
-      `</div>` +
-      `<button type="button" class="sr-toggle${f.freeAgentsOnly ? " is-on" : ""}" data-action="toggle-freeagents">Free Agents Only</button>` +
-    `</div>`;
-}
-
-function renderSearchResults(state) {
-  const el = document.getElementById("sr-results");
-  const results = computeSearchResults(state);
-  const selectedId = state.ui.transferSearch.selectedPlayerId;
-
-  const rows = results.map((p) => {
-    const club = state.clubsById.get(p.clubId);
-    const sel = p.id === selectedId ? " is-sel" : "";
-    return (
-      `<div class="sr-row${sel}" data-player="${p.id}">` +
-        `<span class="flag" data-flag="${p.nationId}"></span>` +
-        `<span class="sr-row__name">${p.commonName}</span>` +
-        `<span class="sr-row__pos">${p.position}</span>` +
-        `<span class="sr-row__age num">${p.age}</span>` +
-        `<span class="sr-row__ovr num gtn-fuzzy">${fuzzyDisplay(p.scouting.ovrRange, p.scouting.level)}</span>` +
-        `<span class="sr-row__value num">${money(p.value)}</span>` +
-        `<svg class="crest crest--xs"><use href="#crest-${club.id}"></use></svg>` +
-      `</div>`
-    );
-  }).join("");
-
-  el.innerHTML =
-    `<div class="sr-results__count">${results.length} player${results.length === 1 ? "" : "s"} found</div>` +
-    `<div class="sr-results__rows">${rows || `<div class="empty"><span class="lbl">No players match these filters</span></div>`}</div>`;
-}
-
-function renderSearchFooter(state) {
-  const footer = document.getElementById("footer-search");
-  const f = state.ui.transferSearch;
-  let html = "";
-  if (f.selectedPlayerId != null) {
-    html += f.freeAgentsOnly
-      ? prompt("a", "A", "approach", "Approach")
-      : prompt("a", "A", "bid", "Bid") + prompt("x", "X", "loan", "Loan");
-  }
-  html += prompt("b", "B", "back", "Back");
-  footer.innerHTML = html;
-}
-
-export function renderSearch(state) {
-  renderSearchFilters(state);
-  renderSearchResults(state);
-  renderSearchFooter(state);
-}
-
-/* ============================================================================
- * Negotiation
- * ========================================================================== */
-
-function renderFeePhase(state, n) {
-  const waitingBanner = n.phase === "fee-waiting"
-    ? `<div class="ng-waiting">Offer submitted — awaiting a response from the club…</div>` : "";
-  const counterBanner = n.lastFeeResponse === "countered"
-    ? `<div class="ng-banner ng-banner--counter">The club has come back with a counter-offer of ${money(n.counterFee)} (round ${n.round}/${MAX_COUNTER_OFFERS}).</div>` : "";
-  const over = n.feeOffer > state.finances.transferBudget;
+function playerInfoPaperHtml(state, player, club) {
+  const rem = remainingContractYM(state, player.contract.endYear);
+  const area = positionInfo(player.position).area;
   return (
-    counterBanner + waitingBanner +
-    `<div class="ng-offer">` +
-      `<div class="ng-offer__row">` +
-        `<span class="ng-offer__label">Transfer Fee</span>` +
-        `<button class="ct-stepper" type="button" data-action="fee-down">&minus;</button>` +
-        `<span class="ng-offer__val">${money(n.feeOffer)}</span>` +
-        `<button class="ct-stepper" type="button" data-action="fee-up">+</button>` +
+    `<div class="fx-paper apo-left">` +
+      `<div class="fx-paper__title">PLAYER INFO</div>` +
+      `<div class="apo-namebanner">${player.firstName} ${player.lastName}</div>` +
+      `<div class="apo-clubbar">${club.name}</div>` +
+      `<div class="apo-ovrtable">` +
+        `<div class="apo-ovrtable__head"><span>OVR</span><span>POS</span><span>AGE</span></div>` +
+        `<div class="apo-ovrtable__row"><span>${player.overall}</span><span>${posBar(area)}${player.position}</span><span>${player.age}</span></div>` +
       `</div>` +
-    `</div>` +
-    `<div class="ng-budget${over ? " ng-budget--over" : ""}">Transfer Budget: ${money(state.finances.transferBudget)}${over ? " — insufficient funds" : ""}</div>`
+      `<div class="apo-row"><span class="k">VALUE</span><span class="v">${money(player.value)}</span></div>` +
+      `<div class="apo-row apo-row--gold"><span class="k">FORM</span><span class="v">${formWord(player.form)}</span></div>` +
+      `<div class="apo-row apo-row--gold"><span class="k">MORALE</span><span class="v">${moraleWord(player.morale)}</span></div>` +
+      `<div class="apo-section">CURRENT CONTRACT</div>` +
+      `<div class="apo-row"><span class="k">Rem. Contract</span><span class="v">Years: ${rem.years}, Months: ${rem.months}</span></div>` +
+      `<div class="apo-row"><span class="k">Salary (Per Week)</span><span class="v">${money(player.contract.wage)}</span></div>` +
+      `<div class="apo-row"><span class="k">Bonus Per Goal</span><span class="v">${player.contract.bonusPerGoal || 0}%</span></div>` +
+      `<div class="apo-row"><span class="k">Squad Role</span><span class="v">${SQUAD_ROLE_DISPLAY[player.contract.squadRole] || "Do Not Specify"}</span></div>` +
+    `</div>`
   );
 }
 
-function renderContractPhase(state, n) {
-  const player = state.playersById.get(n.playerId);
-  const waitingBanner = (n.phase === "contract-waiting" || n.phase === "approach-waiting")
-    ? `<div class="ng-waiting">Terms sent — awaiting a response…</div>` : "";
-  const freeAgentNote = n.dealType === "free-agent"
-    ? `<div class="ng-note">Pre-contract talks — ${player.commonName} will join for free the moment his current deal expires.</div>` : "";
+/* ============================================================================
+ * Approach — Transfer/Loan Offer (one dossier, [LT][RT] toggles the mode)
+ * ========================================================================== */
+
+function transferOfferRightHtml(state, n, player, club) {
+  const wantedFee = computeWantedFee({ player, buyingClub: state.club, sellingClub: club, state });
+  const lo = Math.round(wantedFee * (1 - ENQUIRY_RANGE_PCT / 100));
+  const hi = Math.round(wantedFee * (1 + ENQUIRY_RANGE_PCT / 100));
+  const exchangePlayer = n.exchangePlayerId != null ? state.playersById.get(n.exchangePlayerId) : null;
+  const rejectedNote = n.exchangeRejectedNote
+    ? `<div class="apo-note apo-note--warn">${club.name} didn't need that player and turned down the exchange — the offer went cash-only.</div>` : "";
+  const over = n.feeOffer > state.finances.transferBudget;
+  const editingFee = state.ui.negotiation.editingFeeOffer;
+
   return (
-    waitingBanner + freeAgentNote +
-    `<div class="ng-offer">` +
-      `<div class="ng-offer__row">` +
-        `<span class="ng-offer__label">Weekly Wage</span>` +
-        `<button class="ct-stepper" type="button" data-action="wage-down">&minus;</button>` +
-        `<span class="ng-offer__val">${money(n.contractOffer.wage)}</span>` +
-        `<button class="ct-stepper" type="button" data-action="wage-up">+</button>` +
+    `<div class="fx-paper apo-right">` +
+      `<div class="fx-paper__title">TRANSFER OFFER</div>` +
+      `<div class="apo-cec">` +
+        `<div class="apo-cec__head">Chief Executive Comments:</div>` +
+        `<div class="apo-cec__body">${player.commonName} is one of the key players in his role and plays for a good club. ` +
+          `He's probably going for a sum between ${money(lo)} and ${money(hi)} at this point.</div>` +
       `</div>` +
-      `<div class="ng-offer__row">` +
-        `<span class="ng-offer__label">Contract Length</span>` +
-        `<button class="ct-stepper" type="button" data-action="years-down">&minus;</button>` +
-        `<span class="ng-offer__val">${n.contractOffer.years} yr${n.contractOffer.years === 1 ? "" : "s"}</span>` +
-        `<button class="ct-stepper" type="button" data-action="years-up">+</button>` +
+      `<div class="apo-toggle" data-action="offer-mode-toggle">${glyphPill("lt")}${glyphPill("rt")} BUY</div>` +
+      `<div class="apo-row"><span class="k">Rem. Transfer Budget</span><span class="v${over ? " apo-over" : ""}">${money(state.finances.transferBudget)}</span></div>` +
+      `<div class="apo-row"><span class="k">Rem. Wage Budget</span><span class="v">${money(state.finances.wageCeiling)}</span></div>` +
+      (editingFee
+        ? `<div class="fx-input-row apo-inputrow"><span>Offered Transfer Sum:</span><input type="number" min="0" step="1000" class="apo-directinput" id="apo-fee-input" value="${n.feeOffer}"></div>`
+        : fxInputRow({ label: "Offered Transfer Sum:", value: money(n.feeOffer), action: "fee" })) +
+      `<div class="apo-row apo-clickable" data-action="exchange-open"><span class="k">And/Or Player:</span><span class="v">${exchangePlayer ? exchangePlayer.commonName : "Select Player"}</span></div>` +
+      rejectedNote +
+      `<div class="apo-submit" data-action="submit-fee">SUBMIT OFFER</div>` +
+      signaturesHtml() +
+    `</div>`
+  );
+}
+
+function loanOfferRightHtml(state, n) {
+  return (
+    `<div class="fx-paper apo-right">` +
+      `<div class="fx-paper__title">TRANSFER OFFER</div>` +
+      `<div class="apo-cec">` +
+        `<div class="apo-cec__head">Chief Executive Comments:</div>` +
+        `<div class="apo-cec__body">I have nothing to add on this loan offer.</div>` +
       `</div>` +
-      `<div class="ng-offer__row">` +
-        `<span class="ng-offer__label">Squad Role</span>` +
-        `<button class="ct-stepper" type="button" data-action="role-down">&minus;</button>` +
-        `<span class="ng-offer__val">${roleLabel(n.promisedRole)}</span>` +
-        `<button class="ct-stepper" type="button" data-action="role-up">+</button>` +
+      `<div class="apo-toggle" data-action="offer-mode-toggle">${glyphPill("lt")}${glyphPill("rt")} LOAN</div>` +
+      `<div class="apo-row"><span class="k">Rem. Transfer Budget</span><span class="v">${money(state.finances.transferBudget)}</span></div>` +
+      `<div class="apo-row"><span class="k">Rem. Wage Budget</span><span class="v">${money(state.finances.wageCeiling)}</span></div>` +
+      `<div class="apo-row apo-editable" data-action="loan-bonus"><span class="k">Bonus Per Goal</span><span class="apo-steppers"><button type="button" class="fx-stepper" data-action="loan-bonus-down">&#9668;</button><button type="button" class="fx-stepper" data-action="loan-bonus-up">&#9658;</button></span><span class="v">${n.loanBonusPerGoal}%</span></div>` +
+      `<div class="apo-row apo-clickable" data-action="loan-length-toggle"><span class="k">Loan Length</span><span class="v">${n.loanLength === "short" ? "Short Loan" : "Season Loan"}</span></div>` +
+      `<div class="apo-row apo-editable" data-action="loan-futurefee"><span class="k">Future Fee</span><span class="apo-steppers"><button type="button" class="fx-stepper" data-action="loan-futurefee-down">&#9668;</button><button type="button" class="fx-stepper" data-action="loan-futurefee-up">&#9658;</button></span><span class="v">${n.loanFutureFee == null ? "Not Set" : money(n.loanFutureFee)}</span></div>` +
+      `<div class="apo-submit" data-action="submit-loan">SUBMIT OFFER</div>` +
+      signaturesHtml() +
+    `</div>`
+  );
+}
+
+function signaturesHtml() {
+  const squiggle = `<svg viewBox="0 0 90 30" xmlns="http://www.w3.org/2000/svg"><path d="M4 22c6-14 10-14 14-4s8 10 12-2 8-12 12-2 8 10 12-2 8-10 12 0" fill="none" stroke="#2b2822" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+  return (
+    `<div class="fx-paper__signatures">` +
+      `<div class="fx-paper__sig">${squiggle}<div class="fx-paper__sig-label">Chief Executive</div></div>` +
+      `<div class="fx-paper__sig"><div class="fx-paper__sig-label">Manager</div></div>` +
+    `</div>`
+  );
+}
+
+function exchangePickerHtml(state) {
+  const roster = state.squad.roster;
+  const table = fxTable({
+    columns: [{ key: "pos", label: "Pos" }, { key: "name", label: "Name" }, { key: "value", label: "Value", numeric: true }],
+    rows: roster,
+    cellHtml: (col, p) => {
+      if (col.key === "pos") return `${posBar(positionInfo(p.position).area)}${p.position}`;
+      if (col.key === "value") return money(p.value);
+      return p.commonName;
+    },
+  });
+  return (
+    `<div class="apo-exchangepicker">` +
+      `<div class="apo-exchangepicker__title">Select Player</div>` +
+      `<div class="apo-exchangepicker__body">${table}</div>` +
+      actionPrompt("b", "exchange-close", "Back") +
+    `</div>`
+  );
+}
+
+/* ============================================================================
+ * CONTRACT NEGOTIATION (shared by F3's own transfer/free-agent contract-talks
+ * phase and F6's future renewal flow — ms_CONTRACTS_SCREEN_CONTRACT_
+ * NEGOTIATION.png)
+ * ========================================================================== */
+
+function contractNegotiationHtml(state, n) {
+  const player = state.playersById.get(n.playerId);
+  const sellingClub = state.clubsById.get(n.sourceClubId);
+  const ask = computeSigningAsk({ player, sourceClub: sellingClub, destClub: state.club, state });
+  const area = positionInfo(player.position).area;
+  const roleLabel = SQUAD_ROLE_DISPLAY[n.promisedRole] || "Do Not Specify";
+
+  return (
+    `<div class="fx-panel cn-panel">` +
+      `<div class="fx-panel__titlebar"><span class="fx-panel__title">CONTRACT NEGOTIATION</span></div>` +
+      `<div class="fx-panel__body cn-body">` +
+        `<div class="cn-head">` +
+          `<div class="cn-head__left">` +
+            `<div class="cn-head__name">${player.firstName}<br>${player.lastName}</div>` +
+            `<div class="cn-head__ovr">${player.overall}<span>OVR</span></div>` +
+            `<div class="cn-head__pos">${posBar(area)}${player.position}</div>` +
+          `</div>` +
+          `<span class="avatar cn-head__portrait"></span>` +
+          `<div class="cn-head__budgets">` +
+            `<div><span class="k">Transfer Budget</span><span class="v">${money(state.finances.transferBudget)}</span></div>` +
+            `<div><span class="k">Rem. Wage Budget (per Week)</span><span class="v">${money(state.finances.wageCeiling)}</span></div>` +
+          `</div>` +
+        `</div>` +
+        `<div class="cn-cols">` +
+          `<div class="cn-col">` +
+            `<div class="cn-col__head">New Contract Details</div>` +
+            `<div class="cn-demands">` +
+              `<div class="cn-demands__title">Player Demands:</div>` +
+              `<div class="apo-row"><span class="k">Length</span><span class="v">${n.contractOffer.years} Year(s)</span></div>` +
+              `<div class="apo-row"><span class="k">Salary (Per Week)</span><span class="v">${money(ask.wage)}</span></div>` +
+            `</div>` +
+            `<div class="apo-row apo-editable" data-action="contract-years"><span class="k">Additional Years</span><span class="apo-steppers"><button type="button" class="fx-stepper" data-action="contract-years-down">&#9668;</button><button type="button" class="fx-stepper" data-action="contract-years-up">&#9658;</button></span><span class="v">${n.contractOffer.years} Year(s)</span></div>` +
+            `<div class="apo-row apo-editable" data-action="contract-wage"><span class="k">Salary (Per Week)</span><span class="apo-steppers"><button type="button" class="fx-stepper" data-action="contract-wage-down">&#9668;</button><button type="button" class="fx-stepper" data-action="contract-wage-up">&#9658;</button></span><span class="v">${money(n.contractOffer.wage)}</span></div>` +
+            `<div class="apo-row apo-editable" data-action="contract-bonus"><span class="k">Bonus Per Goal</span><span class="apo-steppers"><button type="button" class="fx-stepper" data-action="contract-bonus-down">&#9668;</button><button type="button" class="fx-stepper" data-action="contract-bonus-up">&#9658;</button></span><span class="v">${n.contractOffer.bonusPerGoal || 0}%</span></div>` +
+            `<div class="apo-row apo-clickable" data-action="contract-role"><span class="k">Squad Role:</span><span class="v">${roleLabel}</span></div>` +
+            `<div class="apo-row apo-editable" data-action="contract-signing"><span class="k">Signing On Fee</span><span class="apo-steppers"><button type="button" class="fx-stepper" data-action="contract-signing-down">&#9668;</button><button type="button" class="fx-stepper" data-action="contract-signing-up">&#9658;</button></span><span class="v">${money(n.contractOffer.signingOnFee || 0)}</span></div>` +
+            signaturesHtml() +
+          `</div>` +
+          `<div class="cn-col">` +
+            `<div class="cn-col__head">CURRENT CONTRACT</div>` +
+            `<div class="cn-col__crestrow"><span>${player.lastName}</span><svg class="crest crest--sm"><use href="#crest-${sellingClub.id}"></use></svg></div>` +
+            `<div class="apo-row"><span class="k">Appearances</span><span class="v">0</span></div>` +
+            `<div class="apo-row"><span class="k">Goals</span><span class="v">0</span></div>` +
+            `<div class="apo-row"><span class="k">Rem. Contract</span><span class="v">${(() => { const r = remainingContractYM(state, player.contract.endYear); return `Years: ${r.years}, Months: ${r.months}`; })()}</span></div>` +
+            `<div class="apo-row"><span class="k">Salary (Per Week)</span><span class="v">${money(player.contract.wage)}</span></div>` +
+            `<div class="apo-row"><span class="k">Bonus Per Goal</span><span class="v">${player.contract.bonusPerGoal || 0}%</span></div>` +
+            `<div class="apo-row"><span class="k">Squad Role</span><span class="v">${SQUAD_ROLE_DISPLAY[player.contract.squadRole] || "Do Not Specify"}</span></div>` +
+            `<div class="apo-section">Estimated Worth</div>` +
+            `<div class="apo-row"><span class="v apo-worth">${money(player.value)}</span></div>` +
+            signaturesHtml() +
+          `</div>` +
+        `</div>` +
       `</div>` +
     `</div>`
   );
@@ -188,43 +230,54 @@ export function renderNegotiation(state) {
 
   const player = state.playersById.get(n.playerId);
   const club = state.clubsById.get(n.sourceClubId);
-  const header =
-    `<div class="ng-head">` +
-      `<svg class="crest crest--sm"><use href="#crest-${club.id}"></use></svg>` +
-      `<div class="ng-head__name">${player.commonName}</div>` +
-      `<div class="ng-head__sub">${player.position} &middot; Age ${player.age} &middot; OVR ${player.overall} &middot; ${club.name}</div>` +
-      `<div class="ng-head__value">Value: ${money(player.value)}</div>` +
-    `</div>`;
 
-  if (n.phase === "fee" || n.phase === "fee-waiting") {
-    container.innerHTML = header + renderFeePhase(state, n);
-    footer.innerHTML = n.phase === "fee-waiting"
-      ? prompt("b", "B", "back", "Back")
-      : prompt("a", "A", "submit-fee", "Submit Offer") + prompt("b", "B", "back", "Cancel");
+  if (n.phase === "fee") {
+    container.innerHTML = state.ui.transferSearch.exchangePickerOpen
+      ? exchangePickerHtml(state)
+      : playerInfoPaperHtml(state, player, club) + transferOfferRightHtml(state, n, player, club);
+    footer.innerHTML = state.ui.transferSearch.exchangePickerOpen
+      ? ""
+      : (actionPrompt("x", "reset-fee", "Reset") + actionPrompt("b", "back", "Cancel") + actionPrompt("rs", "player-bio", "Player Bio"));
+    if (state.ui.negotiation.editingFeeOffer) {
+      const input = document.getElementById("apo-fee-input");
+      if (input) { input.focus(); input.select(); }
+    }
+    return;
+  }
+  if (n.phase === "loan") {
+    container.innerHTML = playerInfoPaperHtml(state, player, club) + loanOfferRightHtml(state, n);
+    footer.innerHTML = actionPrompt("x", "reset-fee", "Reset") + actionPrompt("b", "back", "Cancel") + actionPrompt("rs", "player-bio", "Player Bio");
+    return;
+  }
+  if (n.phase === "fee-waiting" || n.phase === "loan-waiting") {
+    const counterBanner = n.lastFeeResponse === "countered"
+      ? `<div class="ng-banner ng-banner--counter">The club has come back with a counter-offer of ${money(n.counterFee)} (round ${n.round}/${MAX_COUNTER_OFFERS}).</div>` : "";
+    container.innerHTML = counterBanner + `<div class="ng-waiting">Offer submitted — awaiting a response from the club…</div>`;
+    footer.innerHTML = actionPrompt("b", "back", "Back");
     return;
   }
   if (n.phase === "contract" || n.phase === "contract-waiting" || n.phase === "approach-waiting") {
-    container.innerHTML = header + renderContractPhase(state, n);
-    footer.innerHTML = n.phase === "contract"
-      ? prompt("a", "A", "submit-contract", "Send Terms") + prompt("b", "B", "back", "Cancel")
-      : prompt("b", "B", "back", "Back");
-    return;
-  }
-  if (n.phase === "loan-waiting") {
-    container.innerHTML = header + `<div class="ng-waiting">Loan request sent — awaiting a response…</div>`;
-    footer.innerHTML = prompt("b", "B", "back", "Back");
+    if (n.phase !== "contract") {
+      const freeAgentNote = n.dealType === "free-agent"
+        ? `<div class="ng-note">Pre-contract talks — ${player.commonName} will join for free the moment his current deal expires.</div>` : "";
+      container.innerHTML = freeAgentNote + `<div class="ng-waiting">Terms sent — awaiting a response…</div>`;
+      footer.innerHTML = actionPrompt("b", "back", "Back");
+      return;
+    }
+    container.innerHTML = contractNegotiationHtml(state, n);
+    footer.innerHTML = actionPrompt("a", "submit-contract", "Offer New Contract") + actionPrompt("b", "back", "Back");
     return;
   }
   if (n.phase === "completed") {
     const msg = n.dealType === "loan" ? `${player.commonName} has joined on loan.`
       : n.dealType === "free-agent" ? `${player.commonName} has agreed to join on a free transfer once his contract expires.`
       : `${player.commonName} has signed for the club!`;
-    container.innerHTML = header + `<div class="ng-result ng-result--accepted">${msg}</div>`;
+    container.innerHTML = `<div class="ng-result ng-result--accepted">${msg}</div>`;
     footer.innerHTML = prompt("b", "B", "back", "Close");
     return;
   }
   // 'rejected'
-  container.innerHTML = header + `<div class="ng-result ng-result--rejected">The ${dealNoun(n.dealType)} talks have fallen through.</div>`;
+  container.innerHTML = `<div class="ng-result ng-result--rejected">The ${dealNoun(n.dealType)} talks have fallen through.</div>`;
   footer.innerHTML = prompt("b", "B", "back", "Close");
 }
 
