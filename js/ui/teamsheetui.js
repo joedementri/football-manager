@@ -164,15 +164,20 @@ function renderJersey(state, ts, entry, index, forceRing = null) {
   const player = state.playersById.get(entry.playerId);
   if (!player) return "";
   const cap = entry.captain ? `<span class="jersey__cap">C</span>` : "";
-  // F2: forceRing (ui/formationsui.js) overrides the SQUAD tab's own
-  // armed/focus ring for the FORMATIONS tab's pitch preview — "focus" (gold)
-  // while just browsing a player (Instructions before selecting them,
-  // Positioning), "armed" (teal) once Instructions is actually editing that
-  // player's categories — same gold/teal semantics ms_TEAM_SHEET_VIEW_
-  // SELECT_PLAYER.png established for the SQUAD tab, reused per plan2-
-  // decisions.md F2's own [PIC-GUESS] note on this exact distinction.
-  const cls = forceRing != null ? ` is-${forceRing}` : ringClass(ts, "xi", index);
-  const swap = showSwapIcon(ts, "xi", index) ? SWAP_ICON : "";
+  // F2: forceRing (ui/formationsui.js, via renderPitchPanel's own override
+  // mode below) overrides the SQUAD tab's own armed/focus ring for the
+  // FORMATIONS tab's pitch preview — "focus" (gold) while just browsing a
+  // player (Instructions before selecting them, Positioning), "armed" (teal)
+  // once Instructions is actually editing that player's categories, "none"
+  // (F2-fixes) for every other jersey once override mode is on — same
+  // gold/teal semantics ms_TEAM_SHEET_VIEW_SELECT_PLAYER.png established for
+  // the SQUAD tab, reused per plan2-decisions.md F2's own [PIC-GUESS] note.
+  const cls = forceRing != null ? (forceRing === "none" ? "" : ` is-${forceRing}`) : ringClass(ts, "xi", index);
+  // F2-fixes: showSwapIcon reads ts.armed/ts.focus, which are SQUAD-tab-only
+  // concepts (swap-arming a slot) — without this guard, whatever ts.focus/
+  // armed happened to be left at from the SQUAD tab could paint a stray swap
+  // icon onto the FORMATIONS tab's own read-only pitch preview too.
+  const swap = ts.tab === "squad" && showSwapIcon(ts, "xi", index) ? SWAP_ICON : "";
   const cap3 = jerseyCaption(state, ts, entry, player);
   const dotHtml = ts.changeView === 1 ? "" : (cap3.dot || "");
   const arrowHtml = ts.changeView === 1 ? cap3.arrow : "";
@@ -188,16 +193,30 @@ function renderJersey(state, ts, entry, index, forceRing = null) {
 
 // Exported for F2's FORMATIONS/ROLES/TACTICS tabs (ui/formationsui.js,
 // ui/rolestacticsui.js) — all show the same read-only pitch preview of the
-// active sheet's current XI. `highlight` ({index, kind:'focus'|'armed'} or
-// null) lets Formations > Edit force one jersey's ring independent of the
-// SQUAD tab's own armed/focus state (which stays whatever it last was,
-// unused here).
-export function renderPitchPanel(state, ts, highlight = null) {
-  const jerseys = state.squad.lineup.map((entry, i) => (
-    renderJersey(state, ts, entry, i, highlight && highlight.index === i ? highlight.kind : null)
-  )).join("");
+// active sheet's current XI. `highlight` has 3 states: `null` (default) is
+// the SQUAD tab's own contract — every jersey falls back to ts.focus/armed;
+// `false` (F2-fixes) is FORMATIONS' plain grid/EDIT menu — no pic there
+// shows a ring on anyone, so every jersey is explicitly forced to none
+// rather than falling back to whatever ts.focus happens to be parked at
+// (previously always index 0's default, or wherever the user last left the
+// SQUAD tab — either way a stray gold ring that had nothing to do with
+// FORMATIONS); `{index, kind:'focus'|'armed'}` (Instructions/Positioning)
+// forces a ring on exactly that one slot and explicitly *none* on every
+// other slot — before this fix, every non-matching jersey also fell back to
+// ts.focus/armed, so a second, unrelated ring could appear alongside the
+// intended one whenever ts.focus didn't happen to coincide with it.
+// `showCrest` (F2-fixes): FORMATIONS' own grid/Customise screens don't show
+// the crest banner in any reference pic — omitting it there also frees up
+// the flex column so the pitch itself reaches the top of the panel instead
+// of losing ~70px to a banner + a squeezed pitch.
+export function renderPitchPanel(state, ts, highlight = null, showCrest = true) {
+  const overrideMode = highlight !== null;
+  const jerseys = state.squad.lineup.map((entry, i) => {
+    const forceRing = overrideMode ? ((highlight && highlight.index === i) ? highlight.kind : "none") : null;
+    return renderJersey(state, ts, entry, i, forceRing);
+  }).join("");
   return (
-    `<div class="sqts-crestbanner"><svg class="crest"><use href="#crest-${state.club.id}"></use></svg></div>` +
+    (showCrest ? `<div class="sqts-crestbanner"><svg class="crest"><use href="#crest-${state.club.id}"></use></svg></div>` : "") +
     `<div class="pitch sqts-pitch">` +
       `<div class="pitch__surface"></div>` +
       jerseys +

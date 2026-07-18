@@ -6,7 +6,7 @@
 // teamSheetPos* mutators (core/router.js wires the DOM events).
 
 import { positionInfo } from "../config/positions.js";
-import { gridCells, gridPage, GRID_PAGE_SIZE } from "../config/formations.js";
+import { gridCells, GRID_PAGE_SIZE } from "../config/formations.js";
 import { INSTRUCTION_GROUPS, instructionGroupFor } from "../config/instructions.js";
 import { teamMedallion, teamStars } from "./panelkit.js";
 import { renderPitchPanel, renderPlayerAttrPanel } from "./teamsheetui.js";
@@ -37,14 +37,19 @@ export function renderTeamMedallion(state) {
 
 /* ============================== FORMATIONS grid =========================== */
 
+// F2-fixes: windowed off ts.formationsScrollRow (a row index, independent of
+// the keyboard/click cursor) rather than gridPage's fixed 6-cell page
+// boundaries — lets mouse-wheel scroll (core/router.js) reveal cells between
+// page boundaries, matching the pics' own scrollbar (a continuous list, not
+// shoulder-button-paged pages — see config/formations.js's own header note).
 function renderGridCells(state) {
   const ts = state.ui.teamSheet;
   const clubName = state.club.name;
-  const page = Math.floor(ts.formationsCursor / GRID_PAGE_SIZE);
-  const startIdx = page * GRID_PAGE_SIZE;
-  const windowCells = gridPage(clubName, page);
+  const startIdx = ts.formationsScrollRow * 3;
+  const allCells = gridCells(clubName);
+  const windowCells = allCells.slice(startIdx, startIdx + GRID_PAGE_SIZE);
   const activeKey = `${state.squad.formationLabel}|${state.squad.formationStyle}`;
-  return windowCells.map((cell, i) => {
+  const cellsHtml = windowCells.map((cell, i) => {
     const idx = startIdx + i;
     const isCursor = idx === ts.formationsCursor;
     const isActive = `${cell.name}|${cell.style}` === activeKey;
@@ -56,16 +61,32 @@ function renderGridCells(state) {
       `</div>`
     );
   }).join("");
+  const totalRows = Math.ceil(allCells.length / 3);
+  const maxScrollRow = Math.max(1, totalRows - 2);
+  const thumbPct = Math.min(100, (2 / totalRows) * 100);
+  const topPct = Math.min(100 - thumbPct, (ts.formationsScrollRow / maxScrollRow) * (100 - thumbPct));
+  const scrollbar = `<div class="fm-grid-scrollbar"><div class="fm-grid-scrollbar__thumb" style="top:${topPct}%;height:${thumbPct}%"></div></div>`;
+  return `<div class="fm-grid-row"><div class="fm-grid">${cellsHtml}</div>${scrollbar}</div>`;
 }
 
+// F2-fixes round 2: the owner reported the overlay approach (below) cut off
+// the field — the GK sits at y:92% of the pitch box, close enough to the
+// bottom edge that *no* overlay height avoids covering it while the pitch is
+// full-height; the reference pic's own list panel does exactly that (the
+// GK's name is genuinely half-hidden there), but the owner wants nothing
+// ever hidden, which wins over pixel fidelity to that specific pic detail.
+// Back to a plain in-flow flex sibling (pitch above, panel below, no
+// overlap) — same shape as the original F2 build, just without the crest
+// banner (still dropped: no pic shows one here, and it's still dead weight
+// once nothing overlaps the pitch).
 function renderFormationsGrid(state) {
   const ts = state.ui.teamSheet;
   return {
     left:
-      `<div class="sqts-pitchpanel fm-pitchpanel">${renderPitchPanel(state, ts)}</div>` +
+      `<div class="sqts-pitchpanel fm-pitchpanel">${renderPitchPanel(state, ts, false, false)}</div>` +
       `<div class="fm-gridpanel">` +
         `<div class="fm-gridpanel__title">FORMATIONS</div>` +
-        `<div class="fm-grid">${renderGridCells(state)}</div>` +
+        renderGridCells(state) +
       `</div>`,
     right: renderTeamMedallion(state),
   };
@@ -87,7 +108,7 @@ function renderCustomiseMenu(state) {
   )).join("");
   return {
     left:
-      `<div class="sqts-pitchpanel fm-pitchpanel fm-pitchpanel--tall">${renderPitchPanel(state, ts)}</div>` +
+      `<div class="sqts-pitchpanel fm-pitchpanel">${renderPitchPanel(state, ts, false, false)}</div>` +
       `<div class="fm-gridpanel">` +
         `<div class="fm-gridpanel__title">EDIT FORMATION</div>` +
         `<div class="fm-menu">${cardsHtml}</div>` +
@@ -118,9 +139,14 @@ function renderInstructionsCategoryCards(state, entry) {
           `<button type="button" class="cnav next" data-action="instr-cycle-next">&rsaquo;</button>` +
         `</div>`
       : `<div class="dots fm-instcard__dots">${dots}</div>`;
+    // F2-fixes: only badge a category once its pick has actually been
+    // changed away from cat.defaultIndex — "the currently selected [i.e.
+    // deliberately set, non-default] value for that player" per the owner's
+    // own framing, not a decorative badge on every card regardless of state.
+    const isCustomized = curIdx !== cat.defaultIndex;
     return (
       `<div class="fm-instcard${isSel ? " is-sel" : ""}" data-action="instr-cat" data-index="${i}">` +
-        `<span class="fm-instcard__check">&#10003;</span>` +
+        (isCustomized ? `<span class="fm-instcard__check">&#10003;</span>` : "") +
         `<div class="fm-instcard__title">${cat.title}</div>` +
         `<div class="fm-instcard__value">${valueLabel}</div>` +
         pager +
@@ -169,7 +195,7 @@ function renderInstructionsPage(state) {
 
   return {
     left:
-      `<div class="sqts-pitchpanel fm-pitchpanel fm-pitchpanel--tall">${renderPitchPanel(state, ts, highlight)}</div>` +
+      `<div class="sqts-pitchpanel fm-pitchpanel">${renderPitchPanel(state, ts, highlight, false)}</div>` +
       `<div class="fm-gridpanel">${bottomLeft}</div>`,
     right,
   };
@@ -184,7 +210,7 @@ function renderPositioningPage(state) {
   const right = entry ? renderPlayerAttrPanel(state, state.playersById.get(entry.playerId), ts.attrPage) : "";
   return {
     left:
-      `<div class="sqts-pitchpanel fm-pitchpanel fm-pitchpanel--tall" data-role="pos-pitch">${renderPitchPanel(state, ts, highlight)}</div>` +
+      `<div class="sqts-pitchpanel fm-pitchpanel" data-role="pos-pitch">${renderPitchPanel(state, ts, highlight, false)}</div>` +
       `<div class="fm-gridpanel">` +
         `<div class="fm-gridpanel__title">ADJUST POSITION ON PITCH</div>` +
         `<div class="fm-blurb">` +

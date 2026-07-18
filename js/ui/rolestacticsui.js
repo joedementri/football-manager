@@ -11,6 +11,7 @@ import { positionInfo } from "../config/positions.js";
 import { TACTICS, tacticById } from "../config/tactics.js";
 import { posDot, fxTable } from "./panelkit.js";
 import { renderTeamMedallion } from "./formationsui.js";
+import { renderPlayerAttrPanel } from "./teamsheetui.js";
 
 /* ============================== TACTICS tab ================================ */
 
@@ -108,16 +109,25 @@ function renderRolesGrid(state) {
   };
 }
 
+// F2-fixes: hovering (or arrow-navigating) a row now outlines it gold and
+// swaps the right pane over to that player's own §B4 attribute panel (with
+// its usual prev/next carousel) — same "browsing shows a player" convention
+// the SQUAD tab's own pitch/drawer already use. With nothing focused yet
+// (picker just opened on an empty roster — shouldn't happen in practice)
+// the team medallion is the fallback.
 function renderRolesPicker(state) {
+  const ts = state.ui.teamSheet;
   const roster = state.squad.roster;
   const table = fxTable({
     columns: [{ key: "pos", label: "Pos" }, { key: "name", label: "Name" }, { key: "ovr", label: "OVR", numeric: true }],
     rows: roster.map((p) => ({ id: p.id, pos: p.position, name: p.commonName, ovr: p.overall, area: positionInfo(p.position).area })),
     cellHtml: (col, row) => (col.key === "pos" ? `${posDot(row.area)}${row.pos}` : row[col.key]),
+    rowClass: (row) => (row.id === ts.rolesPickerFocusId ? "is-focus" : ""),
   });
+  const focusPlayer = ts.rolesPickerFocusId != null ? state.playersById.get(ts.rolesPickerFocusId) : null;
   return {
     left: `<div class="fm-gridpanel__title">SELECT PLAYER</div><div class="fm-pickerbody">${table}</div>`,
-    right: renderTeamMedallion(state),
+    right: focusPlayer ? renderPlayerAttrPanel(state, focusPlayer, ts.attrPage) : renderTeamMedallion(state),
   };
 }
 

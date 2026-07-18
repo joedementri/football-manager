@@ -570,14 +570,23 @@ export function initRouter(store) {
   // and Positioning states — mousemove there moves instrFocusIndex/
   // posFocusIndex instead of the SQUAD tab's own ts.focus.
   sqtsBodyEl.addEventListener("mousemove", (e) => {
-    const el = e.target.closest("[data-zone]");
-    if (!el) return;
     const ts = store.state.ui.teamSheet;
-    if (ts.tab === "squad") { store.teamSheetFocus(el.dataset.zone, Number(el.dataset.index)); return; }
-    if (ts.tab === "formations" && ts.customiseMode === "instructions" && ts.instrEditingIndex == null) {
-      store.teamSheetInstrFocus(Number(el.dataset.index));
-    } else if (ts.tab === "formations" && ts.customiseMode === "positioning" && !posDrag) {
-      store.teamSheetPosFocus(Number(el.dataset.index));
+    const el = e.target.closest("[data-zone]");
+    if (el) {
+      if (ts.tab === "squad") { store.teamSheetFocus(el.dataset.zone, Number(el.dataset.index)); return; }
+      if (ts.tab === "formations" && ts.customiseMode === "instructions" && ts.instrEditingIndex == null) {
+        store.teamSheetInstrFocus(Number(el.dataset.index));
+      } else if (ts.tab === "formations" && ts.customiseMode === "positioning" && !posDrag) {
+        store.teamSheetPosFocus(Number(el.dataset.index));
+      }
+      return;
+    }
+    // F2-fixes: ROLES tab's SELECT PLAYER picker — hovering a roster row
+    // drives its gold outline + the right pane's attribute panel, same
+    // "hover moves the focus ring" convention as the pitch/drawer above.
+    if (ts.tab === "roles" && ts.rolesPickerOpen) {
+      const row = e.target.closest("[data-row-id]");
+      if (row && row.dataset.rowId !== "") store.teamSheetRolesPickerFocus(Number(row.dataset.rowId));
     }
   });
   sqtsBodyEl.addEventListener("click", (e) => {
@@ -608,10 +617,16 @@ export function initRouter(store) {
     if (e.target.closest('[data-action="customise-formation"]')) { store.teamSheetOpenCustomise(); return; }
     const menuCell = e.target.closest('[data-action="customise-menu-cell"]');
     if (menuCell) { store.teamSheetCustomiseMenuFocus(Number(menuCell.dataset.index)); store.teamSheetCustomiseMenuSelect(); return; }
-    const catCell = e.target.closest('[data-action="instr-cat"]');
-    if (catCell) { store.teamSheetInstrCategoryFocus(Number(catCell.dataset.index)); return; }
+    // F2-fixes: the ‹/› cycle buttons are *nested inside* the selected card's
+    // own [data-action="instr-cat"] div, so e.target.closest("[data-action=
+    // instr-cat]") also matches a click on either button (closest() walks up
+    // through ancestors) — checking the more specific nested buttons first is
+    // what makes a click actually reach teamSheetInstrCycleOption instead of
+    // being swallowed by the category-focus branch below on every click.
     if (e.target.closest('[data-action="instr-cycle-prev"]')) { store.teamSheetInstrCycleOption(-1); return; }
     if (e.target.closest('[data-action="instr-cycle-next"]')) { store.teamSheetInstrCycleOption(1); return; }
+    const catCell = e.target.closest('[data-action="instr-cat"]');
+    if (catCell) { store.teamSheetInstrCategoryFocus(Number(catCell.dataset.index)); return; }
     if (e.target.closest('[data-action="instr-reset-all"]')) { store.teamSheetInstrResetAll(); return; }
     if (e.target.closest('[data-action="pos-reset"]')) { store.teamSheetPosReset(); return; }
     // "(Y) Change Role" (Positioning footer): pic-exact prompt, no pic shows
@@ -658,6 +673,19 @@ export function initRouter(store) {
     if (dxPct || dyPct) store.teamSheetPosNudge(dxPct, dyPct);
   });
   document.addEventListener("mouseup", () => { posDrag = null; });
+
+  // F2-fixes: mouse-wheel scroll over the FORMATIONS grid — the pics show a
+  // scrollbar (config/formations.js's own header note), but nothing wired an
+  // actual wheel listener, and the window was hard-pinned to fixed 6-cell
+  // pages besides. Store.teamSheetFormationsScroll moves the window only
+  // (not the cursor), same as scrolling any list without changing selection.
+  sqtsBodyEl.addEventListener("wheel", (e) => {
+    const ts = store.state.ui.teamSheet;
+    if (ts.tab !== "formations" || ts.customiseMode) return;
+    if (!e.target.closest(".fm-grid-row")) return;
+    e.preventDefault();
+    store.teamSheetFormationsScroll(e.deltaY > 0 ? 1 : -1);
+  }, { passive: false });
 
   footerTeamsheet.addEventListener("click", (e) => {
     const el = e.target.closest("[data-action]");
@@ -1176,6 +1204,18 @@ export function initRouter(store) {
       if (e.key === "ArrowRight") { store.teamSheetRolesFocus((ts.rolesCursor + 1) % 6); return; }
       if (e.key === "ArrowUp" || e.key === "ArrowDown") { store.teamSheetRolesFocus((ts.rolesCursor + 3) % 6); return; }
       if (e.key === "Enter" || e.key === "a" || e.key === "A") { store.teamSheetRolesOpenPicker(); return; }
+    }
+    // F2-fixes: the SELECT PLAYER picker itself had no keyboard navigation
+    // at all — same "keyboard support exists, full mouse covers pixel-
+    // precise nav" footing as every other F2 tab, walking the roster in
+    // whatever order ui/rolestacticsui.js's renderRolesPicker rendered it.
+    if (store.state.ui.overlay === "teamsheet" && store.state.ui.teamSheet.tab === "roles" && store.state.ui.teamSheet.rolesPickerOpen) {
+      const ts = store.state.ui.teamSheet;
+      const roster = store.state.squad.roster;
+      const idx = roster.findIndex((p) => p.id === ts.rolesPickerFocusId);
+      if (e.key === "ArrowDown") { const n = roster[Math.min(roster.length - 1, idx + 1)]; if (n) store.teamSheetRolesPickerFocus(n.id); return; }
+      if (e.key === "ArrowUp") { const n = roster[Math.max(0, idx - 1)]; if (n) store.teamSheetRolesPickerFocus(n.id); return; }
+      if (e.key === "Enter" || e.key === "a" || e.key === "A") { if (ts.rolesPickerFocusId != null) store.teamSheetRolesPick(ts.rolesPickerFocusId); return; }
     }
     switch (e.key) {
       case "ArrowLeft": store.page(-1); break;

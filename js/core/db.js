@@ -512,6 +512,16 @@ export function serializeSave(state) {
     // M11 Player Roles: captaincy + designated penalty taker.
     squadCaptainId: state.squad.captainId ?? null,
     squadPenaltyTakerId: state.squad.penaltyTakerId ?? null,
+    // F2-fixes: the 4 new ROLES tab fields (core/store.js's ROLE_FIELDS)
+    // were never added here when F2 introduced them — core/store.js's
+    // hydrateFromSave already read saved.squadLeftCornerId etc. (its own
+    // "F2: a pre-F2 save has none of these" fallback comment), but nothing
+    // ever wrote them into the saved blob, so they silently reverted to
+    // null on every reload regardless of autosave firing correctly.
+    squadLeftCornerId: state.squad.leftCornerId ?? null,
+    squadRightCornerId: state.squad.rightCornerId ?? null,
+    squadShortFreeKickId: state.squad.shortFreeKickId ?? null,
+    squadLongFreeKickId: state.squad.longFreeKickId ?? null,
     inbox: state.inbox.emails.map(serializeEmail),
     // Match results (M4): fixtures themselves regenerate deterministically
     // from the seed (engine/calendar.js), but *results* can't — a live user
@@ -582,6 +592,10 @@ export function deserializeSave(saved) {
     squadTacticId: saved.squadTacticId || null,
     squadCaptainId: saved.squadCaptainId ?? null,
     squadPenaltyTakerId: saved.squadPenaltyTakerId ?? null,
+    squadLeftCornerId: saved.squadLeftCornerId ?? null,
+    squadRightCornerId: saved.squadRightCornerId ?? null,
+    squadShortFreeKickId: saved.squadShortFreeKickId ?? null,
+    squadLongFreeKickId: saved.squadLongFreeKickId ?? null,
     inbox: (saved.inbox || []).map(deserializeEmail),
     results: new Map(saved.results || []),
     clubLeague: new Map(saved.clubLeague || []),

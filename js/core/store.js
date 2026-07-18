@@ -373,6 +373,11 @@ function createUiDefaults(today) {
       // state); posFocusIndex is Player Positioning's own separate cursor
       // (no "armed" concept there — arrows nudge whoever's focused).
       formationsCursor: 0,
+      // F2-fixes: row index (0-based, 3 cols/row) of the FORMATIONS grid's
+      // top visible row — decoupled from formationsCursor so mouse-wheel
+      // scrolling (core/router.js's own wheel listener) can move the window
+      // without also moving the keyboard/click cursor.
+      formationsScrollRow: 0,
       customiseMode: null,
       customiseMenuCursor: 0,
       instrFocusIndex: 0,
@@ -384,6 +389,9 @@ function createUiDefaults(today) {
       // F2: ROLES tab (3x2 PLAYER ROLES grid + its squad-list picker).
       rolesCursor: 0,
       rolesPickerOpen: false,
+      // F2-fixes: hovered/focused roster row inside the picker (playerId, or
+      // null) — drives the picker's right-pane player attribute panel.
+      rolesPickerFocusId: null,
     },
 
     // M11 (ui/statsui.js): Season ▸ Team Stats — L1/R1 cycles `leagueIndex`
@@ -1667,6 +1675,7 @@ export class Store {
       suggested: null,
       attrPage: 0,
       formationsCursor: 0,
+      formationsScrollRow: 0,
       customiseMode: null,
       customiseMenuCursor: 0,
       instrFocusIndex: 0,
@@ -1676,6 +1685,7 @@ export class Store {
       tacticsCursor: 0,
       rolesCursor: 0,
       rolesPickerOpen: false,
+      rolesPickerFocusId: null,
     };
     if (tab === "tactics") {
       const i = TACTICS.findIndex((t) => t.id === this.state.squad.tacticId);
@@ -1747,11 +1757,32 @@ export class Store {
     this.emit("teamsheet", null);
   }
 
-  /** delta: ±1 (Left/Right) or ±3 (Up/Down, the grid's own column count). */
+  /** delta: ±1 (Left/Right) or ±3 (Up/Down, the grid's own column count).
+   * Auto-scrolls formationsScrollRow to keep the cursor's row inside the
+   * 2-row visible window (F2-fixes: previously the window only ever jumped
+   * in whole 6-cell pages, so arrow-key paging past cell 5 skipped straight
+   * to cell 6-11 with nothing in between). */
   teamSheetFormationsMove(delta) {
     const ts = this.state.ui.teamSheet;
     const total = FORMATIONS.length + 1; // +1 for the "<Club>/Default Formation" pseudo-cell
     ts.formationsCursor = Math.max(0, Math.min(total - 1, ts.formationsCursor + delta));
+    const cursorRow = Math.floor(ts.formationsCursor / 3);
+    if (cursorRow < ts.formationsScrollRow) ts.formationsScrollRow = cursorRow;
+    else if (cursorRow > ts.formationsScrollRow + 1) ts.formationsScrollRow = cursorRow - 1;
+    this.emit("teamsheet", null);
+  }
+
+  /** Mouse-wheel scroll (core/router.js): moves the grid's visible window by
+   * one row without touching formationsCursor — a real user can scroll past
+   * the cursor's row to preview formations before clicking one, same as any
+   * scrollable list (F2-fixes: no wheel support existed at all before this,
+   * and the window was hard-pinned to 6-cell page boundaries). */
+  teamSheetFormationsScroll(dir) {
+    const ts = this.state.ui.teamSheet;
+    const total = FORMATIONS.length + 1;
+    const totalRows = Math.ceil(total / 3);
+    const maxScrollRow = Math.max(0, totalRows - 2);
+    ts.formationsScrollRow = Math.max(0, Math.min(maxScrollRow, ts.formationsScrollRow + (dir > 0 ? 1 : -1)));
     this.emit("teamsheet", null);
   }
 
@@ -1802,10 +1833,18 @@ export class Store {
     this.emit("teamsheet", null);
   }
 
+  /** F2-fixes: entering Instructions/Positioning always starts the pitch
+   * ring fresh at slot 0 rather than wherever a *previous* visit last left
+   * instrFocusIndex/posFocusIndex/attrPage — without this reset, the gold
+   * ring (and right-panel attribute page) stayed stuck on whichever player
+   * was last edited, which read as a stale/broken cursor. */
   teamSheetCustomiseMenuSelect() {
     const ts = this.state.ui.teamSheet;
     ts.customiseMode = ts.customiseMenuCursor === 0 ? "instructions" : "positioning";
     ts.instrEditingIndex = null;
+    ts.instrFocusIndex = 0;
+    ts.posFocusIndex = 0;
+    ts.attrPage = 0;
     this.emit("teamsheet", null);
   }
 
@@ -1891,15 +1930,19 @@ export class Store {
     this.emit("teamsheet", null);
   }
 
-  /** (X) Reset Changes: unlike Instructions' Reset All, this pic's footer
-   * label has no "All" — scoped to the focused player only. */
+  /** (X) Reset Changes: owner correction (plan2-decisions.md F2-fixes) —
+   * overrides this milestone's original per-player [JUDGMENT CALL] reading
+   * of the pic's footer label. Resets the whole XI back to the active
+   * formation's default layout (every slot's baseX/baseY, seeded by
+   * applyFormation/seedFormationBaseline whenever a formation is applied),
+   * not just the focused player. */
   teamSheetPosReset() {
     const ts = this.state.ui.teamSheet;
     if (ts.customiseMode !== "positioning") return;
-    const entry = this.state.squad.lineup[ts.posFocusIndex];
-    if (!entry) return;
-    if (entry.baseX != null) entry.x = entry.baseX;
-    if (entry.baseY != null) entry.y = entry.baseY;
+    for (const entry of this.state.squad.lineup) {
+      if (entry.baseX != null) entry.x = entry.baseX;
+      if (entry.baseY != null) entry.y = entry.baseY;
+    }
     this.emit("teamsheet", null);
   }
 
@@ -1927,19 +1970,45 @@ export class Store {
     this.emit("teamsheet", null);
   }
 
+  /** F2-fixes: seeds rolesPickerFocusId at whoever already holds this role
+   * (falling back to the roster's first player) so the picker's right pane
+   * shows a player's attributes immediately on open, matching the SQUAD
+   * tab's own "always something focused" convention. */
   teamSheetRolesOpenPicker() {
-    this.state.ui.teamSheet.rolesPickerOpen = true;
+    const ts = this.state.ui.teamSheet;
+    ts.rolesPickerOpen = true;
+    const field = ROLE_FIELDS[ts.rolesCursor];
+    const curId = field ? this.state.squad[field] : null;
+    const roster = this.state.squad.roster;
+    ts.rolesPickerFocusId = curId != null ? curId : (roster.length ? roster[0].id : null);
+    ts.attrPage = 0;
     this.emit("teamsheet", null);
   }
 
   teamSheetRolesClosePicker() {
-    this.state.ui.teamSheet.rolesPickerOpen = false;
+    const ts = this.state.ui.teamSheet;
+    ts.rolesPickerOpen = false;
+    ts.rolesPickerFocusId = null;
+    this.emit("teamsheet", null);
+  }
+
+  /** F2-fixes: mouse-hover (or Up/Down) over a picker row — mirrors
+   * teamSheetFocus's same-value no-op guard (its own header explains why:
+   * re-rendering under a stationary mouse would otherwise re-fire mousemove
+   * forever). Drives both the row's gold outline and the right-pane
+   * attribute panel (teamSheetChangeAttrPage's own "roles" branch). */
+  teamSheetRolesPickerFocus(playerId) {
+    const ts = this.state.ui.teamSheet;
+    if (!ts.rolesPickerOpen || ts.rolesPickerFocusId === playerId) return;
+    ts.rolesPickerFocusId = playerId;
     this.emit("teamsheet", null);
   }
 
   /** Assigns `playerId` to whichever of the 6 PLAYER ROLES grid cells is
    * currently focused (order matches the pic's 3x2 reading order: Captain,
-   * Left Corner, Right Corner, Short Free Kick, Penalties, Long Free Kick). */
+   * Left Corner, Right Corner, Short Free Kick, Penalties, Long Free Kick).
+   * Closing the picker (back to the grid) also drops back to the team
+   * medallion right-panel — see ui/rolestacticsui.js's renderRolesTab. */
   teamSheetRolesPick(playerId) {
     const ts = this.state.ui.teamSheet;
     const field = ROLE_FIELDS[ts.rolesCursor];
@@ -1948,6 +2017,7 @@ export class Store {
     else if (field === "penaltyTakerId") this.setPenaltyTaker(playerId);
     else this.state.squad[field] = playerId;
     ts.rolesPickerOpen = false;
+    ts.rolesPickerFocusId = null;
     this.emit("teamsheet", null);
   }
 
@@ -2105,6 +2175,12 @@ export class Store {
       if (ts.instrEditingIndex != null) { ts.instrEditingIndex = null; this.emit("teamsheet", null); return; }
       if (ts.customiseMode === "instructions" || ts.customiseMode === "positioning") {
         ts.customiseMode = "menu";
+        // F2-fixes: same "clear the stale cursor" reasoning as
+        // teamSheetCustomiseMenuSelect's own comment — leaving either screen
+        // shouldn't leave a gold ring parked on a player for the *next* visit.
+        ts.instrFocusIndex = 0;
+        ts.posFocusIndex = 0;
+        ts.attrPage = 0;
         this.emit("teamsheet", null);
         return;
       }
@@ -2160,6 +2236,8 @@ export class Store {
     } else if (ts.tab === "formations" && ts.customiseMode === "positioning") {
       const entry = this.state.squad.lineup[ts.posFocusIndex];
       player = entry ? this.state.playersById.get(entry.playerId) : null;
+    } else if (ts.tab === "roles" && ts.rolesPickerOpen) {
+      player = ts.rolesPickerFocusId != null ? this.state.playersById.get(ts.rolesPickerFocusId) : null;
     } else {
       return;
     }

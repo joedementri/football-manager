@@ -18,12 +18,22 @@
 
 /* ---------------------------- left stack: pitch + panel ------------------- */
 .sqts-left { flex-direction: column; }
-.fm-pitchpanel { flex: 1 1 55%; min-height: 0; }
-.fm-pitchpanel--tall { flex: 1 1 70%; }
+/* F2-fixes round 2: back to plain in-flow flex siblings (pitch above, panel
+   below, never overlapping) — the round-1 "overlay the bottom of the pitch"
+   treatment matched the reference pic's own cropped-goalkeeper look, but the
+   GK sits at y:92% of the pitch box (right at its bottom edge), so *no*
+   overlay height avoids covering him while the pitch is full-height. Owner
+   reported the field still reading as "cut off" and wants nothing ever
+   hidden — that wins over matching the pic's own crop. Crest banner stays
+   dropped (no pic shows one here, and it's still dead weight now that
+   nothing overlaps the pitch) — recovers real room vs. the original F2
+   build's 55/45 split, so the pitch gets more than it used to even though
+   this is an in-flow layout again, not an overlay. */
+.fm-pitchpanel { flex: 1 1 65%; min-height: 0; }
 .fm-gridpanel {
-  flex: 1 1 45%; min-height: 0;
+  flex: 1 1 35%; min-height: 0;
   display: flex; flex-direction: column;
-  border-radius: 7px; overflow: hidden; margin-top: 12px;
+  border-radius: 7px; overflow: hidden; margin-top: 10px;
   background: rgba(17, 20, 24, 0.97);
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 16px rgba(0,0,0,0.35);
 }
@@ -35,9 +45,21 @@
 }
 
 /* ---------------------------- FORMATIONS grid ------------------------------ */
+.fm-grid-row { flex: 1 1 auto; min-height: 0; display: flex; }
 .fm-grid {
   flex: 1 1 auto; min-height: 0;
   display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr);
+}
+/* F2-fixes: a thin scroll-position indicator matching the FORMATIONS_PAGE
+   pics' own scrollbar track — purely decorative feedback for wheel-scroll
+   (js/core/router.js's own wheel listener drives the actual scrolling). */
+.fm-grid-scrollbar {
+  flex: 0 0 auto; width: 5px; margin: 6px 4px 6px 0;
+  background: rgba(255,255,255,0.08); border-radius: 3px; position: relative;
+}
+.fm-grid-scrollbar__thumb {
+  position: absolute; left: 0; right: 0;
+  background: rgba(255,255,255,0.45); border-radius: 3px;
 }
 .fm-cell {
   position: relative;
@@ -193,5 +215,19 @@ i.fm-dpad__right { right: 0; top: 15px; border-left-color: currentColor; }
 
 .fm-pickerbody { flex: 1 1 auto; overflow-y: auto; padding: 8px 14px; }
 .fm-pickerbody .fx-table { width: 100%; }
+/* F2-fixes: hovered/keyboard-focused picker row — a ring (not a fill, which
+   "is-sel" already owns elsewhere) so it reads as "browsing", the same gold-
+   ring-vs-gold-fill distinction the pitch jerseys use throughout Team Sheet. */
+.fm-pickerbody .fx-table tbody tr.is-focus { outline: 2px solid var(--gold); outline-offset: -2px; }
 
 .fm-empty { color: var(--ink-dim); font-family: var(--font-ui); font-size: 15px; text-align: center; padding: 40px 0; }
+
+/* ---------------------------- Injury List overlay --------------------------- */
+/* F2-fixes: every other overlay in this codebase defines its own display:none
+   default + .is-active{display:block} toggle in its dedicated CSS file —
+   this one never got added, so #injurylist-overlay rendered as a plain
+   (visible) block the moment its innerHTML was populated and stayed visible
+   after core/router.js removed "is-active", regardless of which screen was
+   active underneath, until a full page reload reset the DOM. */
+#injurylist-overlay { display: none; }
+#injurylist-overlay.is-active { display: block; }

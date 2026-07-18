@@ -78,7 +78,11 @@ function baseSlots(groups) {
   }
   lines.push({ codes: attCodes(attCount), y: ys[n - 1] });
 
-  const slots = [{ pos: "GK", x: 50, y: 92, gk: true }];
+  // F2-fixes round 2: y nudged 92 -> 86, kept in sync with gen/squad.js's
+  // own XI_TEMPLATE GK y — see that file's header for the full reasoning
+  // (clearance for the fixed-pixel jersey element's own height, not
+  // proportional to the pitch box).
+  const slots = [{ pos: "GK", x: 50, y: 86, gk: true }];
   for (const line of lines) {
     const xs = X_BY_COUNT[line.codes.length];
     line.codes.forEach((code, i) => slots.push({ pos: code, x: xs[i], y: line.y }));

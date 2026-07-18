@@ -73,8 +73,18 @@ function assignKitNumbers(rng, players) {
   }
 }
 
+// F2-fixes round 2: GK y nudged 92 -> 86 — [TUNED] cosmetic-only (no engine/
+// sim code reads entry.x/y, confirmed by grep before this change), purely so
+// the fixed-pixel-size jersey element (css/screens.css's .jersey is 96px
+// wide with a roughly-64px-tall content box, not itself proportional to the
+// pitch box's height) has enough clearance below its own anchor point to
+// never render partially outside Team Sheet's FORMATIONS panels, whose
+// pitch box is shorter than the SQUAD tab's own (no crest banner + no
+// Substitutes/Reserves drawer bar there to borrow slack from). Kept in sync
+// with config/formations.js's own baseSlots() GK y — see that file's header
+// for why the two must always match.
 const XI_TEMPLATE = [
-  { slot: "GK", x: 50, y: 92, gk: true },
+  { slot: "GK", x: 50, y: 86, gk: true },
   { slot: "LB", x: 15, y: 72 },
   { slot: "LCB", x: 39, y: 75 },
   { slot: "RCB", x: 61, y: 75 },

@@ -251,6 +251,20 @@ function wireAutosave(store) {
     if (!db.isSupported() || !store.state.settings.autosave) return;
     db.saveGame(AUTOSAVE_SLOT, store.state);
   });
+
+  // F2-fixes: Team Sheet edits (formation changes, Player Instructions,
+  // Positioning nudges, Roles/captain/set-piece assignments, in-game
+  // Tactics) only ever emit "teamsheet" — the advance-only autosave above
+  // never observed them, so any of those edits was silently lost on refresh
+  // unless the user happened to Advance a day afterwards. Debounced (most
+  // "teamsheet" emits are just mouse-hover focus moves, not real edits, and
+  // a drag fires dozens of them a second) so this doesn't hammer IndexedDB.
+  let teamsheetSaveTimer = null;
+  store.on("teamsheet", () => {
+    if (!db.isSupported() || !store.state.settings.autosave) return;
+    clearTimeout(teamsheetSaveTimer);
+    teamsheetSaveTimer = setTimeout(() => db.saveGame(AUTOSAVE_SLOT, store.state), 800);
+  });
 }
 
 // M5 additions: nations + cups are now fetched here too (not just leagues/

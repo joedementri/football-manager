@@ -83,7 +83,7 @@ import { roundLabel, resolvePenaltyShootout } from "../js/engine/comps/knockoutu
 import { NT_JOB_REP_THRESHOLD, refreshNtJobMarket, acceptNtJob } from "../js/engine/ntjobs.js";
 import { attrBand, teamStars } from "../js/ui/panelkit.js";
 import { isTransferWindowOpen } from "../js/config/calendar.js";
-import { attrPageDefs, formArrow, fitnessBand } from "../js/ui/teamsheetui.js";
+import { attrPageDefs, formArrow, fitnessBand, renderPitchPanel } from "../js/ui/teamsheetui.js";
 import { isSimilarPosition, suggestedSubScore, positionFitScore } from "../js/config/managerai.js";
 import { pickDefaultBench, reservesOf } from "../js/gen/squad.js";
 import {
@@ -1979,6 +1979,24 @@ async function run() {
       fmStore.state.squad.lineup.every((l) => beforeIds.has(l.playerId)));
     assert("applyFormation re-seeds every slot's Player Positioning baseline", fmStore.state.squad.lineup.every((l) => l.baseX === l.x && l.baseY === l.y));
 
+    // FORMATIONS grid scroll (F2-fixes): mouse-wheel scroll moves the
+    // window independent of the keyboard/click cursor, clamped so the last
+    // scroll position still shows a full 2-row window (never scrolls past
+    // the bottom into empty space).
+    fmStore.teamSheetSetTab("formations");
+    assert("formationsScrollRow starts at 0", fmStore.state.ui.teamSheet.formationsScrollRow === 0);
+    fmStore.teamSheetFormationsScroll(1);
+    assert("scrolling down moves the window without touching the cursor",
+      fmStore.state.ui.teamSheet.formationsScrollRow === 1 && fmStore.state.ui.teamSheet.formationsCursor === 0);
+    for (let i = 0; i < 30; i++) fmStore.teamSheetFormationsScroll(1); // scroll way past the end
+    const totalRows = Math.ceil((34) / 3); // 34 = 33 catalogue entries + the Default Formation pseudo-cell
+    assert("scrolling clamps at totalRows-2 so the window never runs past the last row", fmStore.state.ui.teamSheet.formationsScrollRow === totalRows - 2);
+    fmStore.teamSheetFormationsFocus(0);
+    fmStore.state.ui.teamSheet.formationsScrollRow = 0;
+    fmStore.teamSheetFormationsMove(3); // ArrowDown from cell 0 -> cell 3 (row 1)
+    fmStore.teamSheetFormationsMove(3); // -> cell 6 (row 2, now below the 2-row window)
+    assert("arrow-key paging auto-scrolls the window to keep the cursor visible", fmStore.state.ui.teamSheet.formationsScrollRow === 1);
+
     // Player Instructions: cycling wraps back to the start after a full loop.
     fmStore.teamSheetSetTab("formations");
     fmStore.teamSheetOpenCustomise();
@@ -1998,6 +2016,17 @@ async function run() {
         fmStore.state.squad.instructions[playerId][catKey] === INSTRUCTION_GROUPS.FORWARDS[0].defaultIndex);
       fmStore.teamSheetInstrResetAll();
       assert("Reset All Instructions clears every player's picks team-wide", Object.keys(fmStore.state.squad.instructions).length === 0);
+
+      // F2-fixes: the gold ring used to stay parked on whichever player was
+      // last edited across visits — leaving (and re-entering) Instructions
+      // must reset instrFocusIndex back to slot 0 instead of carrying it over.
+      fmStore.teamSheetBack(); // clears instrEditingIndex, stays in "instructions"
+      fmStore.teamSheetInstrFocus(fmStore.state.squad.lineup.length - 1); // simulate a stale, non-zero cursor
+      fmStore.teamSheetBack(); // "instructions" -> "menu"
+      assert("leaving Instructions back to the EDIT menu resets the stale focus cursor", fmStore.state.ui.teamSheet.instrFocusIndex === 0);
+      fmStore.teamSheetCustomiseMenuFocus(0);
+      fmStore.teamSheetCustomiseMenuSelect(); // -> "instructions" again
+      assert("re-entering Instructions starts the cursor fresh at slot 0", fmStore.state.ui.teamSheet.instrFocusIndex === 0 && fmStore.state.ui.teamSheet.instrEditingIndex === null);
     }
 
     // Player Positioning: nudge clamps to +-8% of the formation baseline.
@@ -2009,12 +2038,21 @@ async function run() {
     fmStore.teamSheetOpenCustomise();
     fmStore.teamSheetCustomiseMenuFocus(1);
     fmStore.teamSheetCustomiseMenuSelect(); // -> "positioning"
+    assert("entering Positioning resets the stale focus/attrPage cursor", fmStore.state.ui.teamSheet.posFocusIndex === 0 && fmStore.state.ui.teamSheet.attrPage === 0);
     fmStore.teamSheetPosFocus(1);
-    const baseX = fmStore.state.squad.lineup[1].baseX;
+    const baseX1 = fmStore.state.squad.lineup[1].baseX;
+    const baseX2 = fmStore.state.squad.lineup[2].baseX;
     for (let i = 0; i < 20; i++) fmStore.teamSheetPosNudge(2, 0); // way more than the clamp allows
-    assert("Player Positioning's x nudge clamps at baseline+8%", fmStore.state.squad.lineup[1].x <= baseX + 8 + 1e-9);
+    assert("Player Positioning's x nudge clamps at baseline+8%", fmStore.state.squad.lineup[1].x <= baseX1 + 8 + 1e-9);
+    fmStore.teamSheetPosFocus(2);
+    for (let i = 0; i < 20; i++) fmStore.teamSheetPosNudge(2, 0);
+    // F2-fixes: owner correction — Reset Changes now restores the *whole*
+    // XI's baseline layout, not just whichever player is currently focused
+    // (plan2-decisions.md F2-fixes overrides this milestone's original
+    // per-player [JUDGMENT CALL] reading of the footer label).
     fmStore.teamSheetPosReset();
-    assert("Reset Changes restores the focused player's baseline x/y", fmStore.state.squad.lineup[1].x === baseX);
+    assert("Reset Changes restores every slot's baseline x, not just the focused one",
+      fmStore.state.squad.lineup[1].x === baseX1 && fmStore.state.squad.lineup[2].x === baseX2);
 
     // TACTICS tab: selecting a D-pad cell applies that preset (existing M11 setTactic, just re-skinned).
     fmStore.teamSheetSetTab("tactics");
@@ -2028,9 +2066,19 @@ async function run() {
     const someOutfielder = fmStore.state.squad.roster.find((p) => positionInfo(p.position).area !== "GK");
     fmStore.teamSheetRolesFocus(1); // Left Corner
     fmStore.teamSheetRolesOpenPicker();
+    // F2-fixes: the picker now seeds a focused roster row on open (falls
+    // back to roster[0] when nothing already holds this role) and lets
+    // mouse-hover/Up/Down move that focus, driving the right pane's
+    // attribute panel — same-id calls are a no-op (mousemove-under-a-
+    // stationary-pointer guard, same reasoning as teamSheetFocus).
+    assert("opening the picker seeds a focused roster row (falls back to roster[0])",
+      fmStore.state.ui.teamSheet.rolesPickerFocusId === fmStore.state.squad.roster[0].id);
+    fmStore.teamSheetRolesPickerFocus(someOutfielder.id);
+    assert("hovering a picker row moves rolesPickerFocusId", fmStore.state.ui.teamSheet.rolesPickerFocusId === someOutfielder.id);
     fmStore.teamSheetRolesPick(someOutfielder.id);
     assert("ROLES grid cell 1 (Left Corner) assigns squad.leftCornerId", fmStore.state.squad.leftCornerId === someOutfielder.id);
     assert("picking a role closes the picker", fmStore.state.ui.teamSheet.rolesPickerOpen === false);
+    assert("picking a role also clears rolesPickerFocusId", fmStore.state.ui.teamSheet.rolesPickerFocusId === null);
     fmStore.teamSheetRolesFocus(0); // Captain
     fmStore.teamSheetRolesOpenPicker();
     fmStore.teamSheetRolesPick(someOutfielder.id);
@@ -2038,6 +2086,60 @@ async function run() {
     assert("setCaptain still re-marks the lineup's 'C' badge when the captain is in the XI",
       !fmStore.state.squad.lineup.some((l) => l.playerId === someOutfielder.id) ||
       fmStore.state.squad.lineup.find((l) => l.playerId === someOutfielder.id).captain === true);
+  }
+
+  group("ui/teamsheetui.js — renderPitchPanel highlight override mode (F2-fixes)");
+  {
+    // Regression test for the exact bug the owner reported: a leftover
+    // SQUAD-tab ts.focus/armed value used to leak through onto the
+    // FORMATIONS tab's own pitch preview, either as a stray ring on a plain
+    // grid/menu screen that should show none at all, or as a *second*,
+    // unrelated ring alongside Instructions/Positioning's own intentional
+    // one whenever ts.focus didn't happen to coincide with it.
+    const rpClub = world.clubs.find((c) => c.id !== "manchester-united") || world.clubs[3];
+    const rpLeague = world.leagues.find((l) => l.id === rpClub.leagueId);
+    const rpState = createCareerState({ managerName: "Ring Test", club: rpClub, league: rpLeague, world, seasonStartYear: 2014 });
+    const rpStore = new Store(rpState);
+    rpStore.openTeamSheet(null, "formations");
+    // simulate a leftover SQUAD-tab focus pointing at a *different* slot
+    // than whatever FORMATIONS is about to highlight (or not highlight at all).
+    rpStore.state.ui.teamSheet.focus = { zone: "xi", index: 5 };
+
+    const gridHtml = renderPitchPanel(rpState, rpStore.state.ui.teamSheet, false, false);
+    assert("highlight=false (plain FORMATIONS grid/EDIT menu) shows no ring at all, even with a stale ts.focus set",
+      gridHtml.indexOf("is-focus") === -1 && gridHtml.indexOf("is-armed") === -1);
+
+    const instrHtml = renderPitchPanel(rpState, rpStore.state.ui.teamSheet, { index: 0, kind: "focus" }, false);
+    const focusMatches = instrHtml.match(/is-focus/g) || [];
+    assert("highlight={index:0} shows exactly one ring (the intended slot), not a second one from stale ts.focus",
+      focusMatches.length === 1);
+  }
+
+  group("core/db.js — F2 ROLES fields round-trip (F2-fixes)");
+  {
+    // Regression test for the exact bug the owner reported: core/store.js's
+    // hydrateFromSave already read saved.squadLeftCornerId/RightCornerId/
+    // ShortFreeKickId/LongFreeKickId (its own "F2: a pre-F2 save has none of
+    // these" fallback comment), but serializeSave/deserializeSave never
+    // actually produced/consumed those 4 fields — so every ROLES tab
+    // assignment except Captain/Penalty Taker (which *were* wired) silently
+    // reverted to null on every reload, autosave notwithstanding.
+    const rtClub = world.clubs.find((c) => c.id !== "manchester-united") || world.clubs[3];
+    const rtLeague = world.leagues.find((l) => l.id === rtClub.leagueId);
+    const rtState = createCareerState({ managerName: "Round Trip", club: rtClub, league: rtLeague, world, seasonStartYear: 2014 });
+    const rtOutfielder = rtState.squad.roster.find((p) => positionInfo(p.position).area !== "GK");
+    rtState.squad.leftCornerId = rtOutfielder.id;
+    rtState.squad.rightCornerId = rtOutfielder.id;
+    rtState.squad.shortFreeKickId = rtOutfielder.id;
+    rtState.squad.longFreeKickId = rtOutfielder.id;
+    rtState.results = new Map();
+    rtState.cups = new Map();
+    rtState.jobMarket = { vacancies: [] };
+    const rtRoundTripped = deserializeSave(serializeSave(rtState));
+    assert("leftCornerId survives a save/load round-trip", rtRoundTripped.squadLeftCornerId === rtOutfielder.id);
+    assert("rightCornerId survives a save/load round-trip", rtRoundTripped.squadRightCornerId === rtOutfielder.id);
+    assert("shortFreeKickId survives a save/load round-trip", rtRoundTripped.squadShortFreeKickId === rtOutfielder.id);
+    assert("longFreeKickId survives a save/load round-trip", rtRoundTripped.squadLongFreeKickId === rtOutfielder.id);
   }
 
   render();

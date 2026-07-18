@@ -408,3 +408,183 @@ stepper, Kit Changes log) + new Injury List screen, then the §A5.4 regression (
 from July 1, all 5 hubs revisited) — zero console/page errors throughout the entire session. Two
 real CSS bugs (both logged above as [ENGINE FIX]) were caught and fixed during this pass and would
 not have been visible from a static code read.
+
+## F2-fixes — 2026-07-17
+
+Owner played the built F2 milestone and reported 9 concrete bugs/gaps. All 9 fixed in this pass;
+none required a new §A3 stop-and-ask (each had a single unambiguous correct behavior once
+diagnosed). Logged here as its own dated section per §A6.
+
+- [ENGINE FIX] **Player Instructions carousel appeared "stuck on default."** Root cause:
+  `core/router.js`'s click handler checked `e.target.closest('[data-action="instr-cat"]')` *before*
+  checking `[data-action="instr-cycle-prev/next"]` — the ‹/› cycle buttons are nested *inside* the
+  selected card's own `data-action="instr-cat"` div, so `.closest()` matched the ancestor first and
+  returned early on every click on either button, before the click ever reached
+  `teamSheetInstrCycleOption`. Keyboard (R) worked the whole time (a separate code path), which is
+  why this wasn't caught in the original QA pass — that pass drove the keyboard path, not a real
+  mouse click on the chevrons. Fixed by reordering the two more-specific checks first. Verified via
+  a real Playwright mouse `.click()` on the rendered ‹/› button (not a direct store-method call).
+- [JUDGMENT CALL] The instruction category's green checkmark badge (`.fm-instcard__check`) was
+  unconditionally rendered on *every* card regardless of state, which made it decorative noise, not
+  the "currently selected [i.e. deliberately set, non-default] value" the owner described. Changed
+  to only render when that category's pick differs from `cat.defaultIndex` — now genuinely means
+  "this player has a non-default instruction here."
+- **Stale gold-ring cursor.** `instrFocusIndex`/`posFocusIndex`/`attrPage` were never reset on
+  entering or leaving Instructions/Positioning, so the ring (and right-panel attribute page)
+  stayed parked on whichever player was last edited across visits. Fixed by resetting all three to
+  0 in both `teamSheetCustomiseMenuSelect()` (entering) and `teamSheetBack()`'s
+  instructions/positioning → menu branch (leaving).
+- [OWNER CORRECTION] **Player Positioning's "(X) Reset Changes"** originally read the pic's
+  unqualified footer label ("Reset Changes", vs. Instructions' "Reset **All** Instructions") as
+  scoped to the focused player only — the owner corrected this: it should reset the *whole* XI back
+  to the active formation's default layout. `teamSheetPosReset()` now loops every `squad.lineup`
+  entry back to its own `baseX`/`baseY` instead of just `lineup[posFocusIndex]`. (The per-slot
+  baseline itself was always "stored somewhere" correctly — `entry.baseX/baseY`, seeded by
+  `applyFormation`/`seedFormationBaseline` — the bug was only in what Reset touched.)
+- **FORMATIONS grid: only 6 of 33 formations reachable by mouse, no scrollbar.** All 33 catalogue
+  entries were always present in `config/formations.js` (unchanged) — the bug was entirely in
+  `ui/formationsui.js`'s windowing + `core/router.js`'s missing input wiring: the visible 6-cell
+  window was hard-pinned to `gridPage()`'s fixed page boundaries (arrow-key paging *did* technically
+  reach every cell, but jumped straight from cell 5 to cell 6 with nothing between, and there was no
+  mouse-wheel listener at all, so a mouse-only user had no way to see cells 6-33). Reworked to a
+  `formationsScrollRow` (row index, independent of the click/keyboard cursor) that arrow-key paging
+  now auto-scrolls to keep the cursor in view, plus a new `wheel` listener
+  (`teamSheetFormationsScroll`) that scrolls the window on its own — and a thin visual scrollbar
+  matching the pics' own scroll-thumb affordance (`ms_TEAM_SHEET_VIEW_FORMATIONS_PAGE_1.png` shows
+  one, not shoulder-button page dots).
+- **Formations/Customise screens showed a crest banner and a cramped pitch.** No FORMATIONS/EDIT/
+  INSTRUCTIONS/POSITIONING pic shows a crest banner (that's SQUAD-tab-only) — F2's original build
+  reused `renderPitchPanel()` unconditionally, which always drew one, and additionally laid the
+  FORMATIONS list out as a flex sibling *below* the pitch (`flex: 1 1 45%` vs `55%`), squeezing it.
+  Fixed both: `renderPitchPanel()` gained a `showCrest` param (false on all 4 formationsui.js call
+  sites); the list panel (`fm-gridpanel`) now nests *inside* the pitch panel as a `position:
+  absolute`-pinned overlay (`.fm-gridpanel--overlay`), the same treatment
+  `css/teamsheet.css`'s `.sqts-drawer--open` already uses for the SQUAD tab's own Substitutes/
+  Reserves drawer — the pitch itself is now full-height, with the overlay floating on top.
+  [TUNED] overlay height (29%) measured directly off `ms_TEAM_SHEET_VIEW_FORMATIONS_PAGE_1.png`
+  (DEF row fully visible above it, only the GK's name clipped, matching "Gersheck" there).
+- **ROLES picker had no hover feedback and always showed the team medallion.** Added
+  `rolesPickerFocusId` (seeded to whichever player already holds the role, or `roster[0]`) driven
+  by mouse-hover (`core/router.js`'s `mousemove`) and Up/Down keys; the picker's right pane now
+  shows that player's own §B4 attribute panel (with its usual prev/next carousel, reusing the
+  existing `attrpage-*` wiring) instead of the medallion, and the hovered row gets a gold *outline*
+  (`.fm-pickerbody tr.is-focus`, distinct from `.is-sel`'s gold *fill* used elsewhere) rather than a
+  fill, matching the pitch jerseys' own ring-vs-fill "browsing vs. selected" convention. Closing the
+  picker (pick made) already correctly fell back to the team medallion — that part needed no fix.
+- [ENGINE FIX] **Injury List overlay persisted over every other screen after closing, until a full
+  reload.** Every other overlay in this codebase defines its own `#foo-overlay { display: none; }`
+  / `.is-active { display: block; }` pair in its dedicated CSS file — `css/formations.css` (which
+  owns `ui/injurylistui.js`'s markup, per its own file header) never got one. `#injurylist-overlay`
+  therefore rendered as a plain (visible) block the instant `renderInjuryList` populated its inner
+  `#injurylist-body`, and removing `.is-active` on close did nothing since there was no rule making
+  `.is-active`'s *absence* mean hidden. Fixed by adding the missing pair.
+- **Formation/Instructions/Positioning/Roles/Tactics edits didn't survive a page refresh.** Two
+  separate bugs stacked here:
+  1. `main.js`'s `wireAutosave()` only listened for the `"advance"` event (fired once a day, on
+     Central's own Advance tile) — every Team Sheet mutator instead emits `"teamsheet"`, which
+     autosave never observed, so *any* Team Sheet edit was lost on refresh unless the user happened
+     to advance a day afterwards. Fixed by also listening on `"teamsheet"`, debounced 800ms (most
+     `"teamsheet"` emits are just mouse-hover focus moves or a mid-drag nudge, not real edits worth
+     a separate IndexedDB write each).
+  2. Even with (1) fixed, the 4 new ROLES fields specifically (`leftCornerId`/`rightCornerId`/
+     `shortFreeKickId`/`longFreeKickId`) still came back `null` after a reload. `core/store.js`'s
+     `hydrateFromSave` already read `saved.squadLeftCornerId` etc. (this milestone's own "F2: a
+     pre-F2 save has none of these" fallback comment shows the intent was always there), but
+     `core/db.js`'s `serializeSave`/`deserializeSave` — which do a manual field-by-field allowlist,
+     not a generic deep clone — were never actually extended to produce/consume those 4 fields
+     alongside the pre-existing `squadCaptainId`/`squadPenaltyTakerId`. A genuine gap left over from
+     F2's own original implementation, not something this fixes pass introduced. Formation changes
+     and Player Instructions were never affected by this second bug (both live inside
+     `squad.sheets`, which *is* serialized wholesale via `squadSheets`).
+
+Testing: extended `dev/tests.js` with 13 more assertions (stale-cursor reset on enter/leave,
+formationsScrollRow scroll/clamp/auto-scroll behavior, Reset Changes now covering the whole XI, the
+ROLES picker's focus-seeding/hover-move/clear-on-pick, and a dedicated
+`serializeSave`/`deserializeSave` round-trip for all 4 ROLES fields) — 475/475 total, all green.
+Manual QA via a fresh headless Playwright session covering all 9 items above individually (each
+verified against both live store state *and* a real rendered screenshot/real mouse event, not just
+a direct store-method call) plus a dedicated reload test (apply a formation + assign a role, wait
+past the debounce, `page.reload()`, confirm both survived) and the full §A5.4 regression (new game
+as Portsmouth, advance 12 days past a match day, all 5 hubs) — zero console/page errors throughout.
+
+### Follow-up — same day, 2 more owner reports
+
+- [ENGINE FIX] **"Gold select is still present when going into Instructions/Positioning."**
+  `renderPitchPanel(state, ts, highlight)`'s `highlight` contract had a gap: passing `null` (the
+  FORMATIONS grid's and EDIT menu's own calls) fell back to the SQUAD tab's own `ts.focus`/`ts.armed`
+  state for *every* jersey — and critically, so did every *non-matching* jersey when an explicit
+  `{index, kind}` highlight object *was* passed (Instructions/Positioning), since the per-jersey
+  fallback (`highlight && highlight.index === i ? highlight.kind : null`) only overrode the one
+  matching slot and left every other slot's `forceRing` as `null`, which itself falls back to
+  `ts.focus`/`armed` again. Net effect: (a) the plain FORMATIONS grid/EDIT menu screens — which no
+  reference pic shows any ring on — always showed a stray gold ring on whichever slot `ts.focus`
+  defaults to (index 0, or wherever the user last left the SQUAD tab), and (b) Instructions/
+  Positioning could show a *second*, unrelated ring on top of the intended one whenever `ts.focus`
+  didn't happen to coincide with `instrFocusIndex`/`posFocusIndex`. Confirmed via direct DOM
+  inspection (`document.querySelectorAll('.is-focus, .is-armed')`) with `ts.focus` deliberately set
+  away from the highlighted slot before this fix, and again after. Fixed by giving `highlight` a
+  real 3-way contract: `null` = SQUAD tab's own fallback behavior (unchanged), `false` = override
+  mode with no match anywhere (used by the grid/EDIT menu — forces every jersey to no ring), an
+  `{index, kind}` object = override mode where the matching slot gets the ring and *every other*
+  slot is explicitly forced to none (no more fallback leak). `showSwapIcon` (a SQUAD-tab-only
+  concept — swap-arming a slot) got the same `ts.tab === "squad"` guard for the same reason, even
+  though no report named it specifically — same latent leak, same fix shape.
+- **"In Edit Formation, the field doesn't reach the top of the tile, bottom rows cut off."**
+  Investigated via precise `getBoundingClientRect()` measurement (not just eyeballing screenshots)
+  of `.fm-pitchpanel`/`.sqts-pitch`/`.fm-gridpanel--overlay` across all 4 FORMATIONS states (grid,
+  EDIT menu, Instructions, Positioning): all four measured byte-identical (`top:196/197`,
+  `height:464-466px`, matching `#sqts-body` exactly) — the crest-removal/overlay fix from the
+  earlier pass is structurally correct and already reaches the top on every one of these screens.
+  Could not reproduce a sizing difference specific to "Edit Formation." The stray gold-ring bug
+  directly above (a glowing ring sitting right where the GK's jersey gets clipped by the overlay
+  boundary) is the most likely explanation for what read as a rendering glitch — logging this as
+  [DEFERRED, not dropped]: if it's still visible after the ring fix lands, it needs a screenshot to
+  diagnose further, since measurement alone couldn't surface a distinct bug here.
+
+Testing: 2 more `dev/tests.js` assertions (`renderPitchPanel`'s highlight override mode, both the
+"no ring anywhere" and "exactly one ring, no leaked second one" cases, with a deliberately stale
+`ts.focus` set in both) — 477/477 total, all green. Re-ran the full manual QA/regression pass
+above unchanged; screenshotted the EDIT menu again post-fix to confirm zero rings render.
+
+### Follow-up #2 — same day, "field still cut off"
+
+Owner reported the field was *still* cut off by the panel below on FORMATIONS/EDIT/Instructions/
+Positioning, even after the crest-removal + full-height pitch fix. Investigated with precise
+`getBoundingClientRect()` measurement of the actual jersey element vs. its containing panel:
+
+- [OWNER CORRECTION] The round-1 fix's `.fm-gridpanel--overlay` (a `position:absolute` panel
+  pinned over the *bottom* of a full-height pitch, deliberately matching
+  `ms_TEAM_SHEET_VIEW_FORMATIONS_PAGE_1.png`'s own look — that pic's GK, "Gersheck," is genuinely
+  half-hidden behind its FORMATIONS list) was working exactly as designed, but the owner doesn't
+  want *any* player ever hidden, pic fidelity notwithstanding. Reverted to a plain in-flow flex
+  layout — pitch panel above, list/menu/cards panel below, siblings, never overlapping — same shape
+  as the original (pre-this-fixes-pass) F2 build, just without the crest banner (still dropped:
+  still dead weight now that nothing overlaps the pitch, and no pic shows one on any of these 4
+  screens regardless). `.fm-pitchpanel`/`.fm-gridpanel` flex-basis: 65%/35% (was the original F2
+  build's 55%/45%, but that was against a pitch box that also had to fit a ~70px crest banner —
+  with the banner gone, 65/35 nets a *bigger* pitch than the original ever had, while still leaving
+  the panel below usable).
+- [ENGINE FIX] Even at a generous flex split, the goalkeeper's jersey (`css/screens.css`'s
+  `.jersey` — a **fixed** 96px-wide element, not sized proportionally to its container) was still
+  getting its bottom ~8px clipped by `.fm-pitchpanel`'s own `overflow:hidden` — its `top:92%`
+  anchor point, centered via `transform:translate(-50%,-50%)`, needed the pitch box to be
+  ≈400px tall for the fixed-height jersey element to fit entirely within it, which no flex split
+  narrow enough to leave the panel below any real room could reach. In the SQUAD tab, this never
+  surfaced because that screen's pitch/crest-banner/drawer-bar all share *one* combined
+  `overflow:hidden` box (466px total) rather than the pitch being its own separately-clipped
+  sibling, so the same jersey had slack to spare there by coincidence, not by design. Root-caused
+  via `getBoundingClientRect()` comparison of the SQUAD tab's (fully visible) GK jersey against the
+  FORMATIONS tab's (clipped) one — not something a static code read or a coarse screenshot glance
+  would have caught. Fixed by nudging the GK's `y` coordinate from 92 to 86 in both
+  `config/formations.js`'s `baseSlots()` and `gen/squad.js`'s `XI_TEMPLATE` (kept in sync per that
+  pair's existing documented parity contract) — confirmed via grep that no engine/sim code reads
+  `entry.x`/`entry.y` at all (purely a Team Sheet display coordinate), so this is cosmetic-only and
+  safe. Re-verified `.fm-pitchpanel`'s GK-jersey-bottom now sits ~10px clear of the panel edge, and
+  the SQUAD tab's own GK (also affected by the shared XI_TEMPLATE value) still renders with room to
+  spare.
+
+Testing: full `dev/tests.js` suite re-run unchanged (no new assertions needed — this was a pure
+layout/coordinate fix with no new store-level behavior) — 477/477 still green. Re-verified via
+`getBoundingClientRect()` (GK-bottom-vs-panel-bottom clearance, now positive on all 4 screens) and
+fresh screenshots of all 4 FORMATIONS states plus the SQUAD tab, then the full manual QA + §A5.4
+regression pass once more — zero console/page errors throughout.
