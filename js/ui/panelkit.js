@@ -55,15 +55,24 @@ export function posBar(area) {
 const GLYPH_LABEL = {
   a: "A", b: "B", x: "X", y: "Y",
   lb: "LB", rb: "RB", lt: "LT", rt: "RT", ls: "LS", rs: "RS",
+  // F3-fixes: the Start/Menu button — owner's own description ("a vertical
+  // tall rectangle with rounded edges", not a lettered pill) rather than a
+  // pic-sourced glyph; css/chrome.css draws the shape, so no text label.
+  menu: "",
 };
 
+function glyphText(cls, label) {
+  if (label != null) return label;
+  return cls in GLYPH_LABEL ? GLYPH_LABEL[cls] : cls.toUpperCase();
+}
+
 export function glyphPill(cls, label) {
-  return `<span class="btn-glyph ${cls}">${label != null ? label : (GLYPH_LABEL[cls] || cls.toUpperCase())}</span>`;
+  return `<span class="btn-glyph ${cls}">${glyphText(cls, label)}</span>`;
 }
 
 /** Footer/action-row prompt: glyph pill + label, wired via [data-action]. */
 export function actionPrompt(cls, action, label) {
-  return `<span class="prompt" data-action="${action}"><span class="btn-glyph ${cls}">${GLYPH_LABEL[cls] || cls.toUpperCase()}</span> ${label}</span>`;
+  return `<span class="prompt" data-action="${action}"><span class="btn-glyph ${cls}">${glyphText(cls)}</span> ${label}</span>`;
 }
 
 /* ============================== §B1 centered dark panel =================== */

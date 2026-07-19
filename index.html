@@ -478,7 +478,7 @@
           <div class="tile__title">Global Transfer<br>Network</div>
           <div class="tile__desc">Find players worldwide by building your transfer network</div>
         </div>
-        <div class="tile is-gold tr-fin">
+        <div class="tile tr-fin">
           <div class="tile__title">Finances</div>
           <div class="fin-line">Remaining Transfer Budget: <b>&pound;401,500</b></div>
           <div class="fin-line">Weekly Wage Budget: <b>&pound;16,750</b></div>
@@ -748,6 +748,14 @@
            renderFilters/renderResults). -->
       <div id="search-overlay">
         <div class="sx-body" id="search-body"><!-- built by ui/searchui.js --></div>
+        <!-- F3-fixes: PLAYER NAME / NATIONALITY keyboard-overlay search
+             (ms_SEARCH_PLAYERS_SCREEN_EXAMPLE_PLAYER_NAME_SEARCH.png) — direct
+             children of #search-overlay, not nested inside .sx-body, so the
+             .fx-panel they render (js/ui/searchui.js) positions against
+             #stage like every other overlay's own .fx-panel, not doubly
+             offset inside .sx-body's own position:absolute box. -->
+        <div id="sx-namesearch"></div>
+        <div id="sx-natsearch"></div>
       </div>
 
       <!-- =====================  MY SHORTLIST OVERLAY  ================= -->

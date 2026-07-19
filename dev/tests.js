@@ -100,7 +100,8 @@ import { SQUAD_ROLE_DISPLAY, SQUAD_ROLE_CYCLE } from "../js/config/contract.js";
 import { computeTeamDecisionScore } from "../js/engine/teamdecision.js";
 import { ENQUIRY_REFUSE_THRESHOLD, ENQUIRY_RANGE_PCT, submitEnquiry } from "../js/engine/enquiry.js";
 import { startPlayerScout, cheapestIdleScout, scoutReportStatus } from "../js/engine/gtn.js";
-import { computeSearchResults, buildActionRows } from "../js/ui/searchui.js";
+import { computeSearchResults, buildActionRows, computeNameSearchResults, computeNationSearchResults } from "../js/ui/searchui.js";
+import { cmToFtIn } from "../js/ui/playerbio.js";
 import { EXCHANGE_PLAYER_VALUE_PCT } from "../js/engine/negotiation.js";
 
 const groups = []; // [{ title, results: [{name, pass, detail}] }]
@@ -2432,6 +2433,143 @@ async function run() {
       dbRoundTripped.transferShortlist.length === 1 &&
       dbRoundTripped.transferShortlist[0].playerId === dbState.squad.roster[0].id &&
       dbRoundTripped.transferShortlist[0].dateAdded.getTime() === dbState.calendar.today.getTime());
+  }
+
+  group("ui/playerbio.js — cmToFtIn (F3-fixes: no more '5\\'12\"')");
+  {
+    // 182cm = 71.6535in — the old formula rounded feet and inches
+    // independently, so round(71.6535 % 12) = round(11.6535) = 12,
+    // producing the literal string "5'12\"" instead of carrying into a
+    // 6th foot. Rounding the total inches first avoids it.
+    assert(`cmToFtIn(182) reads "6'0\\"" not the old bug's "5'12\\"" (got ${cmToFtIn(182)})`, cmToFtIn(182) === "6'0\"");
+    assert(`cmToFtIn(180) reads "5'11\\"" (got ${cmToFtIn(180)})`, cmToFtIn(180) === "5'11\"");
+    assert(`cmToFtIn(193) reads "6'4\\"" (got ${cmToFtIn(193)})`, cmToFtIn(193) === "6'4\"");
+  }
+
+  group("js/core/store.js — PLAYER SEARCH F3-fixes: cyclical MIN/MAX AGE, per-tile reset, COUNTRY/LEAGUE/TEAM cascade+disable");
+  {
+    const asClub = world.clubs.find((c) => c.id !== "manchester-united") || world.clubs[9];
+    const asLeague = world.leagues.find((l) => l.id === asClub.leagueId);
+    const asState = createCareerState({ managerName: "Age Search Test", club: asClub, league: asLeague, world, seasonStartYear: 2014 });
+    const asStore = new Store(asState);
+    // searchResetFilters() below swaps in a brand-new filters object each
+    // time (`s.filters = {...}`), so `f` is re-read after every call rather
+    // than aliased once — otherwise later assertions would check a stale,
+    // detached object.
+    let f = asState.ui.transferSearch.filters;
+
+    assert("MIN AGE starts at Any (0)", f.minAge === 0);
+    asStore.searchAdjustMinAge(1);
+    assert(`MIN AGE steps Any -> 16 going up (got ${f.minAge})`, f.minAge === 16);
+    asStore.searchAdjustMinAge(-1);
+    assert(`MIN AGE steps 16 -> Any going back down (got ${f.minAge})`, f.minAge === 0);
+    asStore.searchAdjustMinAge(-1);
+    assert(`MIN AGE wraps Any -> 50 going down (cyclical, got ${f.minAge})`, f.minAge === 50);
+    asStore.searchAdjustMinAge(1);
+    assert(`MIN AGE wraps 50 -> Any going up (cyclical, got ${f.minAge})`, f.minAge === 0);
+
+    // min<=max guard: MAX AGE=20 bounds MIN AGE's own cycle to Any..20, so
+    // stepping MIN AGE up from 20 wraps to Any instead of spilling to 21.
+    asStore.searchResetFilters();
+    f = asState.ui.transferSearch.filters;
+    asStore.searchAdjustMaxAge(1); // Any -> 16
+    for (let i = 0; i < 4; i++) asStore.searchAdjustMaxAge(1); // 16 -> 20
+    assert(`MAX AGE reached 20 via 5 steps up from Any (got ${f.maxAge})`, f.maxAge === 20);
+    for (let i = 0; i < 5; i++) asStore.searchAdjustMinAge(1); // Any -> 16 -> ... -> 20
+    assert(`MIN AGE reached 20 (bounded by MAX AGE=20, got ${f.minAge})`, f.minAge === 20);
+    asStore.searchAdjustMinAge(1);
+    assert(`MIN AGE wraps 20 -> Any rather than exceeding MAX AGE=20 (got ${f.minAge})`, f.minAge === 0);
+
+    // Per-tile (X) reset (F3-fixes) — as opposed to searchResetFilters()
+    // above, which clears all 8 at once.
+    asStore.searchResetFilters();
+    f = asState.ui.transferSearch.filters;
+    f.name = "Zidane"; f.area = "MID"; f.role = "CM"; f.nationId = "france"; f.status = "LISTED";
+    f.minAge = 20; f.maxAge = 30; f.country = "England"; f.leagueId = asLeague.id; f.teamId = asClub.id;
+    asStore.searchResetTile(0);
+    assert("searchResetTile(0) clears PLAYER NAME only", f.name === "" && f.area === "MID" && f.country === "England");
+    asStore.searchResetTile(1);
+    assert("searchResetTile(1) clears both POSITION and ROLE", f.area === "ALL" && f.role === "ANY");
+    asStore.searchResetTile(4);
+    assert("searchResetTile(4) clears both MIN AGE and MAX AGE", f.minAge === 0 && f.maxAge === 0);
+    asStore.searchResetTile(6);
+    assert("searchResetTile(6) clears LEAGUE and cascades to TEAM, but leaves COUNTRY", f.leagueId === null && f.teamId === null && f.country === "England");
+
+    // COUNTRY/LEAGUE/TEAM cascade + disabled-until-parent-chosen guards.
+    asStore.searchResetFilters();
+    f = asState.ui.transferSearch.filters;
+    asStore.searchCycleLeague(1);
+    assert("LEAGUE is a no-op until COUNTRY is set", f.leagueId === null);
+    asStore.searchCycleTeam(1);
+    assert("TEAM is a no-op until COUNTRY+LEAGUE are set", f.teamId === null);
+    asStore.searchCycleCountry(1);
+    const firstCountry = f.country;
+    assert("COUNTRY's first cycled-to option is a real country, not Any again", !!firstCountry);
+    asStore.searchCycleTeam(1);
+    assert("TEAM is still a no-op with only COUNTRY set (LEAGUE still Any)", f.teamId === null);
+    asStore.searchCycleLeague(1);
+    assert("LEAGUE now cycles once COUNTRY is set", f.leagueId !== null);
+    const leagueAfterFirstCycle = f.leagueId;
+    asStore.searchCycleTeam(1);
+    assert("TEAM now cycles once COUNTRY+LEAGUE are set", f.teamId !== null);
+    asStore.searchCycleCountry(1);
+    assert("changing COUNTRY cascades LEAGUE back to Any", f.leagueId === null);
+    assert("changing COUNTRY cascades TEAM back to Any", f.teamId === null);
+    assert("(sanity) the league cycled-to before the country change was a real id", !!leagueAfterFirstCycle);
+  }
+
+  group("ui/searchui.js — PLAYER NAME / NATIONALITY keyboard-overlay search (F3-fixes)");
+  {
+    const nsClub = world.clubs.find((c) => c.id !== "manchester-united") || world.clubs[11];
+    const nsLeague = world.leagues.find((l) => l.id === nsClub.leagueId);
+    const nsState = createCareerState({ managerName: "Name Search Test", club: nsClub, league: nsLeague, world, seasonStartYear: 2014 });
+    const nsStore = new Store(nsState);
+    const ns = nsState.ui.transferSearch.nameSearch;
+
+    assert("computeNameSearchResults returns nothing below the 2-char minimum", computeNameSearchResults(nsState).length === 0);
+    ns.committedQuery = "z";
+    assert("a 1-char committedQuery still returns nothing (2-char minimum)", computeNameSearchResults(nsState).length === 0);
+
+    const target = nsState.players.find((p) => p.lastName.length >= 3);
+    ns.committedQuery = target.lastName.slice(0, 3);
+    const nameResults = computeNameSearchResults(nsState);
+    assert(`a real last-name substring finds that player among the results (${nameResults.length} results)`,
+      nameResults.some((p) => p.id === target.id));
+    const alphabetical = nameResults.slice().sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
+    assert("results are already in alphabetical (by full name) order",
+      nameResults.every((p, i) => p.id === alphabetical[i].id));
+
+    // Selecting a result templates all 8 filter tiles off that player and
+    // auto-runs the search (plan2-decisions.md F3-fixes' own reading of
+    // "the y button action").
+    const templatePlayer = nsState.players.find((p) => p.clubId != null);
+    nsStore.searchOpenNameSearch();
+    nsStore.searchApplyNameResult(templatePlayer.id);
+    const tf = nsState.ui.transferSearch.filters;
+    const tLeagueId = nsState.clubLeague.get(templatePlayer.clubId);
+    const tLeague = nsState.staticData.leagues.find((l) => l.id === tLeagueId);
+    assert("searchApplyNameResult fills PLAYER NAME", tf.name === templatePlayer.commonName);
+    assert("searchApplyNameResult fills POSITION/ROLE from the player's own position", tf.area === positionInfo(templatePlayer.position).area && tf.role === templatePlayer.position);
+    assert("searchApplyNameResult fills NATIONALITY", tf.nationId === templatePlayer.nationId);
+    assert("searchApplyNameResult fills MIN/MAX AGE to the player's exact age", tf.minAge === templatePlayer.age && tf.maxAge === templatePlayer.age);
+    assert("searchApplyNameResult fills COUNTRY/LEAGUE/TEAM from the player's own club", tf.country === tLeague.country && tf.leagueId === tLeagueId && tf.teamId === templatePlayer.clubId);
+    assert("searchApplyNameResult closes the PLAYER NAME overlay", nsState.ui.transferSearch.nameSearch.open === false);
+    assert("searchApplyNameResult auto-runs the search (jumps to SEARCH RESULTS)", nsState.ui.transferSearch.stage === "results");
+
+    // NATIONALITY: pre-filled before typing, filters live, no auto-search.
+    assert("computeNationSearchResults is pre-filled with every nation before any typing", computeNationSearchResults(nsState).length === nsState.staticData.nations.length);
+    nsState.ui.transferSearch.nationSearch.query = "Fra";
+    const natResults = computeNationSearchResults(nsState);
+    assert(`NATIONALITY filters live as characters are typed ('Fra': ${natResults.length} of ${nsState.staticData.nations.length})`,
+      natResults.length > 0 && natResults.length < nsState.staticData.nations.length && natResults.every((n) => n.name.toLowerCase().includes("fra")));
+
+    nsStore.searchResetFilters();
+    nsState.ui.transferSearch.stage = "filters"; // searchApplyNameResult above already jumped to "results"
+    nsStore.searchOpenNationSearch();
+    nsStore.searchApplyNationResult("brazil");
+    assert("searchApplyNationResult fills only NATIONALITY", nsState.ui.transferSearch.filters.nationId === "brazil");
+    assert("searchApplyNationResult closes its own overlay", nsState.ui.transferSearch.nationSearch.open === false);
+    assert("searchApplyNationResult does NOT auto-run the search (stays on filters)", nsState.ui.transferSearch.stage === "filters");
   }
 
   render();

@@ -387,8 +387,16 @@
 .tr-sell { grid-area: sell; }
 .tr-gtn { grid-area: gtn; }
 .tr-fin { grid-area: fin; }
-.tr-fin .fin-line { font-family: var(--font-ui); font-size: 15px; margin-top: 6px; color: rgba(42,36,16,0.9); }
-.tr-fin .fin-line b { font-family: var(--font-cond); }
+/* Owner override (fable-plans/plan2-decisions.md F3-fixes): every Transfers
+   hub tile gets the same subtle gold outline on hover, including tr-search
+   (whose outer .tile never carried .is-link, only its inner carousel .cpage
+   did) and tr-fin (which the reference pic shows going solid gold on hover —
+   owner explicitly asked for the plain outline instead, see ledger). */
+.screen--transfers.is-active > .tile:hover {
+  box-shadow: 0 0 0 1px rgba(242,193,78,0.55), 0 4px 16px rgba(0,0,0,0.4);
+}
+.tr-fin .fin-line { font-family: var(--font-ui); font-size: 15px; margin-top: 6px; color: var(--ink-dim); }
+.tr-fin .fin-line b { font-family: var(--font-cond); color: var(--ink); }
 
 /* ===========================  OFFICE  =================================== */
 .screen--office.is-active {

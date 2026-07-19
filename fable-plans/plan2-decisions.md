@@ -589,6 +589,113 @@ layout/coordinate fix with no new store-level behavior) — 477/477 still green.
 fresh screenshots of all 4 FORMATIONS states plus the SQUAD tab, then the full manual QA + §A5.4
 regression pass once more — zero console/page errors throughout.
 
+## F3-fixes — 2026-07-19
+
+Owner played the built F3 milestone and reported a punch list of bugs/gaps, the bulk of it a full
+rebuild of PLAYER SEARCH's 8 filter tiles. Logged here as its own dated section per §A6.
+
+- [ENGINE FIX] **Height displayed as e.g. "5'12\"".** `ui/playerbio.js`'s `cmToFtIn()` rounded feet
+  and inches independently — `round(totalIn % 12)` can itself round up to `12`, carrying an inch
+  into a 6th foot that was never applied to the foot count (182cm: `totalIn=71.65in`, `71.65%12=
+  11.65`, `round(11.65)=12` ⇒ `"5'12\""`). Fixed by rounding the *total* inches once, then deriving
+  feet/inches from that single integer. Swept all 14,544 players in a generated world through the
+  real function afterward (Playwright, dynamic `import()`) — zero remaining `'12"` instances.
+  Shared by every screen that shows height (Player Bio, Team Sheet, PLAYER SEARCH's own report
+  header), so one fix covers all of them.
+- [OWNER CORRECTION] **TRANSFERS hub tile hover.** `ms_TRANSFERS_SCREEN_FINANCES_HOVER.png` shows
+  FINANCES flipping solid gold on hover (`.hub-tile--gold-hover`'s own treatment, F0) — owner
+  explicitly asked for the same plain gold *outline* every other tile gets instead, not a full-gold
+  swap. Also fixed a real gap the pic-fidelity pass never caught: the SEARCH PLAYERS tile's outer
+  `.tile` never carried `.is-link` (only its inner carousel `.cpage` did), so hovering anywhere on
+  it outside the carousel dots showed no feedback at all. One new rule
+  (`.screen--transfers.is-active > .tile:hover`) covers both — every Transfers tile now gets the
+  same `box-shadow` outline regardless of `.is-link`/`.is-gold`, and FINANCES lost `.is-gold`
+  entirely (now a plain dark tile like the rest).
+- [PLAN-TEXT/PIC ADDITION] **PLAYER NAME / NATIONALITY keyboard-overlay search**
+  (`ms_SEARCH_PLAYERS_SCREEN_EXAMPLE_PLAYER_NAME_SEARCH.png`, new pic this pass — read in full per
+  §A1 before building). Replaced the old inline-text-input PLAYER NAME tile with a full `.fx-panel`
+  overlay: 3-row QWERTY grid (no space/punctuation key — the pic shows none, so typing is
+  letters-only; logged as a deliberate scope limit, not an oversight), live textbox, and a
+  POS/PLAYER/AGE results table. Both PS "(X) Select" and its Xbox "(A) Select" read the *highlighted
+  keyboard letter*, not a literal on-screen button — confirmed by re-reading the pic's own caption.
+  NATIONALITY reuses the identical component (title "NATIONALITY SEARCH" — not pic-shown, this
+  screen's own title only) but pre-fills its ~50-row nation list before any typing and filters live,
+  no debounce/minimum-length (unlike PLAYER NAME's explicit "at least 2 letters" + debounce spec).
+  - [JUDGMENT CALL] "search... every player in the database" was read literally —
+    `computeNameSearchResults` does *not* exclude the user's own club (unlike `computeSearchResults`,
+    which is a transfer-target pool). Selecting one of your own players still works as a template
+    fill (see below); this is a deliberate broadening, not a mistake.
+  - Selecting a PLAYER NAME result fills all 8 tiles from that player's own profile (name, position,
+    role, nationality, min=max=their exact age, country/league/team from their own club) and
+    auto-runs the search (`searchSubmitFilters()`), matching "(y) Search For Players." Selecting a
+    NATIONALITY result fills only that one tile and does **not** auto-search, per spec.
+  - (B)/Escape and "click outside the panel" both close either overlay without applying anything —
+    implemented as a plain `!e.target.closest(".fx-panel")` check on the wrapper's own click
+    listener, no separate scrim-vs-panel bookkeeping needed.
+  - No hidden `<input>` element this time (F3's own approach for the old inline PLAYER NAME field) —
+    every keystroke, real keyboard or on-screen key click, is just "append this letter to the
+    overlay's own query state," read directly off `core/router.js`'s existing global `keydown`
+    handler. Simpler than F3's original `focusout`/`stopPropagation` dance, and the debounce timer
+    (350ms, `[TUNED]` — "a slight debounce" has no numeric spec anywhere) lives there too.
+- **PLAYER SEARCH state persistence.** Turned out to already work — `openTransferSearch()`/
+  `searchSubmitFilters()`/`searchBackFromResults()` never touched `state.ui.transferSearch.filters`,
+  so a search already survived navigating away and back within the same session. Verified this
+  holds with the rebuilt tiles too; no code change was needed here beyond the new reset split below.
+- **(X) Reset now scoped per-tile; new Start/Menu "Reset All."** `searchResetTile(tile)` clears just
+  the focused tile (dual tiles POSITION/ROLE and MIN/MAX AGE reset both their stacked rows as one
+  unit — they read as a single tile visually even though each row focuses independently).
+  `searchResetFilters()` (unchanged) is now reached only via the new Start/Menu prompt.
+  [OWNER SPEC] The Start/Menu glyph itself ("a vertical tall rectangle with rounded edges") is the
+  owner's own description, not a pic-sourced glyph — added as `.btn-glyph.menu` in `chrome.css`
+  alongside the existing lettered/shoulder glyphs, with no text label (`glyphPill`/`actionPrompt`'s
+  glyph-label fallback had to change from a truthy check to an `in`-check first, since an empty
+  string is falsy and was silently falling back to "MENU" text).
+- **POSITION/ROLE (and every other tile) centering.** The owner only explicitly flagged POSITION/
+  ROLE, but a fresh read of `ms_SEARCH_PLAYERS_SCREEN.png` shows every tile's label/icon/value
+  centered, not just that one — applied `text-align: center` across the whole `.sx-tile`/
+  `.sx-tile__row` family rather than special-casing two fields.
+- [PLAN-TEXT/PIC ADDITION] **TRANSFER STATUS SVG icons.** No reference pic (this one or any earlier
+  F3 pic) shows an icon on this tile at all — owner asked for one per status directly, so this is a
+  deliberate addition beyond pic fidelity, not a fidelity fix. Five small monochrome
+  `currentColor`-stroked SVGs (circle/price-tag/loop-arrows/clock/person for Any/Listed/Loan/
+  Expiring/Free), same "inherits the tile's own text colour" trick `posBar`/`posDot` already use.
+- **MIN/MAX AGE: cyclical [Any, 16..50] with carousel arrows.** Old range was Any + 15-45 (the old
+  `searchAdjustMaxAge`'s own `0 -> 15` jump was itself a latent bug, never reachable from MIN AGE's
+  side); now both fields share one `ageOptionList(lower, upper)` helper, each bounded by the other's
+  current value so min<=max can never be violated (MAX AGE=20 limits MIN AGE's own option list to
+  Any..20, so stepping MIN AGE past 20 wraps to Any instead of spilling past MAX AGE) — the owner's
+  "keep the same logic as now so no weird overlaps" instruction, just expressed as a shared cyclical
+  list instead of ad-hoc clamping. Prev/next `.cnav` buttons added to each stacked row (reusing the
+  exact carousel-arrow look already used by the report pager and hub carousels), replacing the old
+  plain click-to-cycle-by-one.
+- **COUNTRY/LEAGUE/TEAM: same carousel arrows + centered flag/crest, cascade + disabled-until-parent
+  guards.** COUNTRY was already correctly scoped to "countries with a league in our data" and
+  already cyclical with Any first (`[...new Set(leagues.map(l => l.country))]`) — only its tile
+  markup changed (flag icon, centered, arrows). LEAGUE/TEAM gained real no-op guards
+  (`if (!f.country) return` / `if (!f.country || !f.leagueId) return`) so their arrows can't cycle
+  while grayed out — previously TEAM alone guarded on `f.leagueId`, LEAGUE had no guard at all.
+  TEAM's centered icon is the real club crest (`#crest-<id>`, same sprite every other screen already
+  uses) once set, a plain shield placeholder otherwise; LEAGUE always shows a ball-in-shield
+  placeholder — [SCOPE DECISION] no per-league logo exists anywhere in `data/leagues.json`, so
+  there's nothing to swap in even once a league is chosen.
+  - COUNTRY's flag icon needed a new lookup (`nationIdForCountry`): `data/leagues.json`'s `country`
+    field is a display string ("England"), but `css/flags.css`'s `data-flag` sprite is keyed by
+    `data/nations.json`'s own `id` ("england"). Checked every one of the 21 league countries against
+    `nations.json` — all 21 match a `name` field exactly, so this is a plain `name`-lookup, not a
+    hand-authored map.
+
+Testing: extended `dev/tests.js` with a new group covering `cmToFtIn`'s fixed rounding, the
+cyclical MIN/MAX AGE option lists (including the min<=max bound), per-tile reset (all 8 tiles),
+the COUNTRY→LEAGUE→TEAM cascade + disabled guards, and both keyboard-overlay search functions
+(2-char minimum + alphabetical order for PLAYER NAME, pre-filled + live-filtered for NATIONALITY,
+and `searchApplyNameResult`/`searchApplyNationResult`'s own tile-filling + auto-search-or-not
+behavior) — 575/575 green. Manually verified the full flow in headless Chrome (Playwright, no other
+browser available in this environment): both keyboard overlays end-to-end (type, 2-char minimum,
+debounce, select, template-fill, auto-search-or-not), all four carousel-arrow tiles including the
+disabled-until-parent states, per-tile reset vs. reset-all, and the Transfers hub hover fix on both
+FINANCES and SEARCH PLAYERS — zero console errors. Re-ran the full §A5.4 regression (new game as
+Portsmouth, advance 10 days incl. auto-simmed matchdays, open all 5 hubs) — also clean.
+
 ## F3 — 2026-07-18
 
 Transfers: PLAYER SEARCH filter tiles → SEARCH RESULTS (tabs/cards/report + action menu) → My

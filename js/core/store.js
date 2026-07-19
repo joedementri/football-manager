@@ -48,6 +48,17 @@ import { INSTRUCTION_GROUPS, instructionGroupFor, defaultInstructionsFor } from 
 
 export const SCREENS = ["central", "squad", "transfers", "office", "season"];
 
+// F3-fixes (fable-plans/plan2-decisions.md): PLAYER SEARCH's MIN/MAX AGE
+// tiles cycle through [Any, lowerBound..upperBound] — Any always sorts
+// first so it's reachable by wrapping either direction.
+const AGE_MIN = 16;
+const AGE_MAX = 50;
+function ageOptionList(lowerBound, upperBound) {
+  const opts = [0];
+  for (let a = lowerBound; a <= upperBound; a++) opts.push(a);
+  return opts;
+}
+
 /* ----- News page content (Central › News drill-down), moved verbatim from
    the old js/navigation.js NEWS_DATA. ------------------------------------ */
 const NEWS_DATA = {
@@ -289,7 +300,17 @@ function createUiDefaults(today) {
         minAge: 0, maxAge: 0, country: null, leagueId: null, teamId: null,
       },
       filterTile: 0, filterSub: 0, // 8-tile grid cursor; filterSub picks the stacked row inside tiles 1 (position/role) and 4 (min/max age)
-      nameEditing: false,
+      // F3-fixes (fable-plans/plan2-decisions.md): PLAYER NAME / NATIONALITY
+      // both open a full keyboard-overlay search (ms_SEARCH_PLAYERS_SCREEN_
+      // EXAMPLE_PLAYER_NAME_SEARCH.png) instead of the old inline-text-input
+      // swap. `query` is what's shown in the textbox/typed live; `committedQuery`
+      // is what results are actually computed from — PLAYER NAME debounces the
+      // gap between the two (router.js's timer), NATIONALITY doesn't (its own
+      // spec: filters live, no minimum length). `resultsFocus` toggles keyboard
+      //-grid navigation vs. results-table row navigation; `cursorRow/Col` is
+      // the highlighted on-screen keyboard letter.
+      nameSearch: { open: false, query: "", committedQuery: "", cursorRow: 0, cursorCol: 0, resultsFocus: false, resultIndex: 0 },
+      nationSearch: { open: false, query: "", cursorRow: 0, cursorCol: 0, resultsFocus: false, resultIndex: 0 },
       resultsTab: "ALL", // ALL/ATT/MID/DEF/GK
       selectedPlayerId: null,
       reportPage: 0, // 0..2 RS pager (Summary/Physical/Technical)
@@ -2403,7 +2424,8 @@ export class Store {
     s.selectedPlayerId = null;
     s.actionMenuOpen = false;
     s.exchangePickerOpen = false;
-    s.nameEditing = false;
+    s.nameSearch.open = false;
+    s.nationSearch.open = false;
     this.openOverlay("search");
   }
 
@@ -2414,15 +2436,146 @@ export class Store {
     this.emit("search", null);
   }
 
-  searchStartEditName() {
-    this.state.ui.transferSearch.nameEditing = true;
+  /* ----- F3-fixes: PLAYER NAME keyboard-overlay search
+   * (ms_SEARCH_PLAYERS_SCREEN_EXAMPLE_PLAYER_NAME_SEARCH.png) — QWERTY grid
+   * + live textbox + debounced (router.js) results table of every player in
+   * the database, first or last name, alphabetical, 2-char minimum. ----- */
+
+  searchOpenNameSearch() {
+    const s = this.state.ui.transferSearch;
+    s.nameSearch = { open: true, query: "", committedQuery: "", cursorRow: 0, cursorCol: 0, resultsFocus: false, resultIndex: 0 };
     this.emit("search", null);
   }
 
-  searchCommitName(value) {
+  searchCloseNameSearch() {
+    this.state.ui.transferSearch.nameSearch.open = false;
+    this.emit("search", null);
+  }
+
+  searchNameCursorMove(dRow, dCol) {
+    const n = this.state.ui.transferSearch.nameSearch;
+    const rowLens = [10, 9, 7];
+    n.cursorRow = Math.max(0, Math.min(2, n.cursorRow + dRow));
+    n.cursorCol = Math.max(0, Math.min(rowLens[n.cursorRow] - 1, n.cursorCol + dCol));
+    this.emit("search", null);
+  }
+
+  searchNameType(letter) {
+    const n = this.state.ui.transferSearch.nameSearch;
+    if (n.query.length < 40) n.query += letter;
+    n.resultsFocus = false;
+    this.emit("search", null);
+  }
+
+  searchNameBackspace() {
+    const n = this.state.ui.transferSearch.nameSearch;
+    n.query = n.query.slice(0, -1);
+    n.resultsFocus = false;
+    this.emit("search", null);
+  }
+
+  /** Called by router.js's debounce timer once typing settles. */
+  searchNameCommitQuery() {
+    const n = this.state.ui.transferSearch.nameSearch;
+    n.committedQuery = n.query;
+    n.resultIndex = 0;
+    this.emit("search", null);
+  }
+
+  searchNameSetResultsFocus(on) {
+    const n = this.state.ui.transferSearch.nameSearch;
+    n.resultsFocus = on;
+    if (on) n.resultIndex = 0;
+    this.emit("search", null);
+  }
+
+  searchNameMoveResult(delta, count) {
+    const n = this.state.ui.transferSearch.nameSearch;
+    if (count <= 0) return;
+    n.resultIndex = Math.max(0, Math.min(count - 1, n.resultIndex + delta));
+    this.emit("search", null);
+  }
+
+  /** Selecting a result fills all 8 PLAYER SEARCH tiles from that player's
+   * own profile, closes the overlay, and auto-runs the search (§ "the y
+   * button action") — plan2-decisions.md F3-fixes. */
+  searchApplyNameResult(playerId) {
+    const player = this.state.playersById.get(playerId);
+    if (!player) return;
+    const f = this.state.ui.transferSearch.filters;
+    f.name = player.commonName;
+    f.area = positionInfo(player.position).area;
+    f.role = player.position;
+    f.nationId = player.nationId;
+    f.minAge = player.age;
+    f.maxAge = player.age;
+    const leagueId = player.clubId != null ? this.state.clubLeague.get(player.clubId) : null;
+    const league = leagueId ? this.state.staticData.leagues.find((l) => l.id === leagueId) : null;
+    f.country = league ? league.country : null;
+    f.leagueId = leagueId || null;
+    f.teamId = player.clubId != null ? player.clubId : null;
+    this.state.ui.transferSearch.nameSearch.open = false;
+    this.searchSubmitFilters();
+  }
+
+  /* ----- F3-fixes: NATIONALITY keyboard-overlay search — same keyboard
+   * grid, but the results table is the (short, ~50-entry) nation list,
+   * pre-filled before any typing and filtered live (no debounce, no
+   * minimum length); selecting a nation just fills the one tile, no
+   * auto-search. ----- */
+
+  searchOpenNationSearch() {
     const s = this.state.ui.transferSearch;
-    s.filters.name = (value || "").trim();
-    s.nameEditing = false;
+    s.nationSearch = { open: true, query: "", cursorRow: 0, cursorCol: 0, resultsFocus: false, resultIndex: 0 };
+    this.emit("search", null);
+  }
+
+  searchCloseNationSearch() {
+    this.state.ui.transferSearch.nationSearch.open = false;
+    this.emit("search", null);
+  }
+
+  searchNationCursorMove(dRow, dCol) {
+    const n = this.state.ui.transferSearch.nationSearch;
+    const rowLens = [10, 9, 7];
+    n.cursorRow = Math.max(0, Math.min(2, n.cursorRow + dRow));
+    n.cursorCol = Math.max(0, Math.min(rowLens[n.cursorRow] - 1, n.cursorCol + dCol));
+    this.emit("search", null);
+  }
+
+  searchNationType(letter) {
+    const n = this.state.ui.transferSearch.nationSearch;
+    if (n.query.length < 40) n.query += letter;
+    n.resultIndex = 0;
+    n.resultsFocus = false;
+    this.emit("search", null);
+  }
+
+  searchNationBackspace() {
+    const n = this.state.ui.transferSearch.nationSearch;
+    n.query = n.query.slice(0, -1);
+    n.resultIndex = 0;
+    n.resultsFocus = false;
+    this.emit("search", null);
+  }
+
+  searchNationSetResultsFocus(on) {
+    const n = this.state.ui.transferSearch.nationSearch;
+    n.resultsFocus = on;
+    if (on) n.resultIndex = 0;
+    this.emit("search", null);
+  }
+
+  searchNationMoveResult(delta, count) {
+    const n = this.state.ui.transferSearch.nationSearch;
+    if (count <= 0) return;
+    n.resultIndex = Math.max(0, Math.min(count - 1, n.resultIndex + delta));
+    this.emit("search", null);
+  }
+
+  searchApplyNationResult(nationId) {
+    this.state.ui.transferSearch.filters.nationId = nationId;
+    this.state.ui.transferSearch.nationSearch.open = false;
     this.emit("search", null);
   }
 
@@ -2442,14 +2595,6 @@ export class Store {
     this.emit("search", null);
   }
 
-  searchCycleNationality(delta) {
-    const f = this.state.ui.transferSearch.filters;
-    const nations = this.state.staticData.nations.slice().sort((a, b) => a.name.localeCompare(b.name));
-    const opts = [null, ...nations.map((n) => n.id)];
-    f.nationId = opts[(opts.indexOf(f.nationId) + delta + opts.length) % opts.length];
-    this.emit("search", null);
-  }
-
   searchCycleStatus(delta) {
     const f = this.state.ui.transferSearch.filters;
     const opts = ["ANY", "LISTED", "LOAN", "EXPIRING", "FREE"];
@@ -2457,20 +2602,33 @@ export class Store {
     this.emit("search", null);
   }
 
+  /** MIN/MAX AGE: cyclical [Any, 16..50] list, each end bounded by the other
+   * field so min can never exceed max (F3-fixes: "keep the same logic as
+   * now so no weird overlaps" — same min<=max guarantee the old stepper
+   * clamping gave, just expressed as a shared cyclical option list so
+   * stepping past 50 or back below 16 wraps around through Any instead of
+   * clamping dead at an edge). */
   searchAdjustMinAge(delta) {
     const f = this.state.ui.transferSearch.filters;
-    f.minAge = Math.max(0, Math.min(f.maxAge || 45, f.minAge + delta * 1));
+    const upper = f.maxAge || AGE_MAX;
+    const opts = ageOptionList(AGE_MIN, upper);
+    const idx = opts.indexOf(f.minAge);
+    f.minAge = opts[((idx === -1 ? 0 : idx) + delta + opts.length) % opts.length];
     this.emit("search", null);
   }
 
   searchAdjustMaxAge(delta) {
     const f = this.state.ui.transferSearch.filters;
-    const next = f.maxAge === 0 && delta > 0 ? 15 : f.maxAge + delta;
-    f.maxAge = Math.max(0, next);
-    if (f.maxAge !== 0 && f.maxAge < f.minAge) f.maxAge = f.minAge;
+    const lower = f.minAge || AGE_MIN;
+    const opts = ageOptionList(lower, AGE_MAX);
+    const idx = opts.indexOf(f.maxAge);
+    f.maxAge = opts[((idx === -1 ? 0 : idx) + delta + opts.length) % opts.length];
     this.emit("search", null);
   }
 
+  /** COUNTRY: cyclical [Any, ...countries with a league in our data]. Setting
+   * Any (or any other country) cascades LEAGUE/TEAM back to Any too, so a
+   * stale league/team from a different country can never linger. */
   searchCycleCountry(delta) {
     const f = this.state.ui.transferSearch.filters;
     const countries = [...new Set(this.state.staticData.leagues.map((l) => l.country))].sort();
@@ -2480,10 +2638,13 @@ export class Store {
     this.emit("search", null);
   }
 
+  /** LEAGUE: disabled/no-op until a COUNTRY is chosen; options are that
+   * country's leagues only. */
   searchCycleLeague(delta) {
     const f = this.state.ui.transferSearch.filters;
+    if (!f.country) return;
     const leagues = this.state.staticData.leagues
-      .filter((l) => !f.country || l.country === f.country)
+      .filter((l) => l.country === f.country)
       .sort((a, b) => a.name.localeCompare(b.name));
     const opts = [null, ...leagues.map((l) => l.id)];
     f.leagueId = opts[(opts.indexOf(f.leagueId) + delta + opts.length) % opts.length];
@@ -2491,9 +2652,10 @@ export class Store {
     this.emit("search", null);
   }
 
+  /** TEAM: disabled/no-op until COUNTRY + LEAGUE are both chosen. */
   searchCycleTeam(delta) {
     const f = this.state.ui.transferSearch.filters;
-    if (!f.leagueId) return;
+    if (!f.country || !f.leagueId) return;
     const clubs = this.state.staticData.clubs
       .filter((c) => this.state.clubLeague.get(c.id) === f.leagueId)
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -2505,6 +2667,26 @@ export class Store {
   searchResetFilters() {
     const s = this.state.ui.transferSearch;
     s.filters = { name: "", area: "ALL", role: "ANY", nationId: null, status: "ANY", minAge: 0, maxAge: 0, country: null, leagueId: null, teamId: null };
+    this.emit("search", null);
+  }
+
+  /** Per-tile (X) reset (F3-fixes) — as opposed to the Start/Menu prompt's
+   * searchResetFilters() above, which clears all 8 at once. Dual tiles
+   * (POSITION/ROLE, MIN/MAX AGE) reset as one unit, matching how the 8 tiles
+   * read visually even though each stacked row focuses independently. */
+  searchResetTile(tile) {
+    const f = this.state.ui.transferSearch.filters;
+    switch (tile) {
+      case 0: f.name = ""; break;
+      case 1: f.area = "ALL"; f.role = "ANY"; break;
+      case 2: f.nationId = null; break;
+      case 3: f.status = "ANY"; break;
+      case 4: f.minAge = 0; f.maxAge = 0; break;
+      case 5: f.country = null; f.leagueId = null; f.teamId = null; break;
+      case 6: f.leagueId = null; f.teamId = null; break;
+      case 7: f.teamId = null; break;
+      default: return;
+    }
     this.emit("search", null);
   }
 

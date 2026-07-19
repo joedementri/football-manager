@@ -24,9 +24,12 @@ const ATTR_LABELS = {
 // Exported for reuse by ui/teamsheetui.js (F1's Player Information page —
 // ms_TEAM_SHEET_VIEW_PLAYER_INFORMATION.png shows the same ft'in" height).
 export function cmToFtIn(cm) {
-  const totalIn = cm / 2.54;
+  // Rounding feet and inches separately can carry an inch over into "12"
+  // (e.g. 71.6in -> 5' + round(11.6)="12" -> "5'12\""); rounding the total
+  // inches first, then splitting, avoids that.
+  const totalIn = Math.round(cm / 2.54);
   const ft = Math.floor(totalIn / 12);
-  const inch = Math.round(totalIn % 12);
+  const inch = totalIn % 12;
   return `${ft}'${inch}"`;
 }
 

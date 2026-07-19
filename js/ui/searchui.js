@@ -16,7 +16,7 @@ import { cmToFtIn } from "./playerbio.js";
 import { SUMMARY_GROUPS } from "../config/summary.js";
 import { scoutReportStatus, cheapestIdleScout } from "../engine/gtn.js";
 import {
-  attrChip, posBar, glyphPill, actionPrompt, fxActionList, fxTable,
+  attrChip, posBar, glyphPill, actionPrompt, fxActionList, fxTable, fxPanel,
 } from "./panelkit.js";
 
 /* ============================================================================
@@ -213,6 +213,51 @@ function statusLabel(status) {
   return { ANY: "Any", LISTED: "Transfer Listed", LOAN: "Loan Listed", EXPIRING: "Contract Expiring", FREE: "Free Agents" }[status];
 }
 
+/** LEAGUE's `country` field is a display string ("England"); NATIONALITY's
+ * flag sprite (css/flags.css) is keyed by data/nations.json's own `id`
+ * ("england") — every league country in data/leagues.json matches a
+ * nations.json `name` 1:1 (F3-fixes ledger), so this just looks that up. */
+function nationIdForCountry(state, countryName) {
+  if (!countryName) return null;
+  const nation = state.staticData.nations.find((n) => n.name === countryName);
+  return nation ? nation.id : null;
+}
+
+// F3-fixes: PLAYER SEARCH's own icon set — none of these are pic-sourced
+// (ms_SEARCH_PLAYERS_SCREEN.png only shows the flag-on-a-pole placeholder
+// for NATIONALITY/COUNTRY and the ball-in-shield placeholder for LEAGUE/
+// TEAM; TRANSFER STATUS has no icon in any reference pic at all) — owner
+// asked for a small SVG per status option directly, a deliberate addition
+// beyond pic fidelity (plan2-decisions.md F3-fixes). All monochrome,
+// currentColor-stroked so they pick up the tile's normal/focused text colour
+// automatically, same trick as posBar/posDot in panelkit.js.
+const FLAG_PLACEHOLDER_ICON = (
+  `<svg class="sx-tile__icon" viewBox="0 0 32 28" fill="none" stroke="currentColor" stroke-width="1.5">` +
+    `<path d="M9 26V2"/>` +
+    `<path d="M9 4c4-2 7 2 11 0 1.5-.7 3-.2 3 .8v9c0 1-1.5 1.5-3 .8-4-2-7-2-11 0z"/>` +
+    `<g fill="currentColor" stroke="none"><circle cx="3" cy="4" r="1"/><circle cx="1" cy="8" r="1"/><circle cx="4" cy="11" r="1"/></g>` +
+  `</svg>`
+);
+const LEAGUE_PLACEHOLDER_ICON = (
+  `<svg class="sx-tile__icon" viewBox="0 0 28 32" fill="none" stroke="currentColor" stroke-width="1.5">` +
+    `<path d="M14 2 25 6v10c0 8-5.5 12.5-11 14C8.5 28.5 3 24 3 16V6z"/>` +
+    `<circle cx="14" cy="15" r="6" stroke-width="1.3"/>` +
+    `<path d="M14 10.5 17 13l-1.2 3.6h-3.6L11 13z" fill="currentColor" stroke="none"/>` +
+  `</svg>`
+);
+const TEAM_PLACEHOLDER_ICON = (
+  `<svg class="sx-tile__icon" viewBox="0 0 28 32" fill="none" stroke="currentColor" stroke-width="1.5">` +
+    `<path d="M14 2 25 6v10c0 8-5.5 12.5-11 14C8.5 28.5 3 24 3 16V6z"/>` +
+  `</svg>`
+);
+const STATUS_ICONS = {
+  ANY: `<svg class="sx-tile__icon sx-tile__icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8.5"/></svg>`,
+  LISTED: `<svg class="sx-tile__icon sx-tile__icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12.5 3.5 20 11l-8.5 8.5L3 11V3.5z"/><circle cx="8" cy="7.5" r="1.1" fill="currentColor" stroke="none"/></svg>`,
+  LOAN: `<svg class="sx-tile__icon sx-tile__icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 8a8 8 0 0 1 14-4.5M20 8V3.5M20 8h-4.5"/><path d="M20 16a8 8 0 0 1-14 4.5M4 16v4.5M4 16h4.5"/></svg>`,
+  EXPIRING: `<svg class="sx-tile__icon sx-tile__icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg>`,
+  FREE: `<svg class="sx-tile__icon sx-tile__icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c0-4 3-6.5 6.5-6.5S18.5 16 18.5 20"/></svg>`,
+};
+
 function tileHtml({ tile, sub, focused, subFocused, label, valueHtml, iconHtml, disabled }) {
   const cls = `sx-tile__row${focused && (sub == null || subFocused) ? " is-focus" : ""}`;
   return (
@@ -224,23 +269,50 @@ function tileHtml({ tile, sub, focused, subFocused, label, valueHtml, iconHtml, 
   );
 }
 
+/** One stacked row of a dual tile (MIN/MAX AGE) with its own prev/next
+ * carousel-style arrows either side of the value, instead of the plain
+ * click-to-cycle-by-one every other stacked row uses (F3-fixes). */
+function arrowRowHtml({ tile, sub, focused, label, valueHtml, disabled }) {
+  return (
+    `<div class="sx-tile__row sx-tile__row--arrow${focused ? " is-focus" : ""}${disabled ? " is-disabled" : ""}" data-tile="${tile}" data-sub="${sub}">` +
+      `<div class="sx-tile__label">${label}</div>` +
+      `<div class="sx-tile__arrowline">` +
+        `<button type="button" class="cnav prev" data-action="tile-prev" data-tile="${tile}" data-sub="${sub}"${disabled ? " disabled" : ""}>&lsaquo;</button>` +
+        `<span class="sx-tile__val">${valueHtml}</span>` +
+        `<button type="button" class="cnav next" data-action="tile-next" data-tile="${tile}" data-sub="${sub}"${disabled ? " disabled" : ""}>&rsaquo;</button>` +
+      `</div>` +
+    `</div>`
+  );
+}
+
+/** A whole single-cell tile (COUNTRY/LEAGUE/TEAM) with the same prev/next
+ * arrow line, plus a centered icon above the value (F3-fixes). */
+function arrowTileHtml({ tile, focused, disabled, label, iconHtml, valueHtml }) {
+  return (
+    `<div class="sx-tile sx-tile--arrow${focused ? " is-focus" : ""}${disabled ? " is-disabled" : ""}" data-tile="${tile}">` +
+      `<div class="sx-tile__label">${label}</div>` +
+      (iconHtml ? `<div class="sx-tile__iconwrap">${iconHtml}</div>` : "") +
+      `<div class="sx-tile__arrowline">` +
+        `<button type="button" class="cnav prev" data-action="tile-prev" data-tile="${tile}"${disabled ? " disabled" : ""}>&lsaquo;</button>` +
+        `<span class="sx-tile__val">${valueHtml}</span>` +
+        `<button type="button" class="cnav next" data-action="tile-next" data-tile="${tile}"${disabled ? " disabled" : ""}>&rsaquo;</button>` +
+      `</div>` +
+    `</div>`
+  );
+}
+
 function renderFilters(state) {
   const s = state.ui.transferSearch;
   const f = s.filters;
   const t = s.filterTile;
   const sub = s.filterSub;
 
-  const nameTile = s.nameEditing
-    ? `<div class="sx-tile sx-tile--name is-focus is-editing" data-tile="0">` +
-        `<div class="sx-tile__label">PLAYER NAME</div>` +
-        `<div class="sx-tile__portrait"></div>` +
-        `<input type="text" class="sx-nameinput" id="sx-nameinput" value="${f.name.replace(/"/g, "&quot;")}" placeholder="Any" maxlength="40">` +
-      `</div>`
-    : `<div class="sx-tile sx-tile--name${t === 0 ? " is-focus" : ""}" data-action="filter-activate" data-tile="0">` +
-        `<div class="sx-tile__label">PLAYER NAME</div>` +
-        `<div class="sx-tile__portrait"></div>` +
-        `<div class="sx-tile__val">${f.name || "Any"}</div>` +
-      `</div>`;
+  const nameTile =
+    `<div class="sx-tile sx-tile--name${t === 0 ? " is-focus" : ""}" data-action="filter-activate" data-tile="0">` +
+      `<div class="sx-tile__label">PLAYER NAME</div>` +
+      `<div class="sx-tile__portrait"></div>` +
+      `<div class="sx-tile__val">${f.name || "Any"}</div>` +
+    `</div>`;
 
   const posRoleTile =
     `<div class="sx-tile sx-tile--dual" data-tile="1">` +
@@ -248,42 +320,46 @@ function renderFilters(state) {
       tileHtml({ tile: 1, sub: 1, focused: t === 1, subFocused: sub === 1, label: "ROLE", valueHtml: f.role === "ANY" ? "Any" : f.role }) +
     `</div>`;
 
+  // NATIONALITY: activating opens the keyboard-overlay search (F3-fixes)
+  // instead of L/R-cycling the world nation list in place.
   const natTile =
     `<div class="sx-tile${t === 2 ? " is-focus" : ""}" data-action="filter-activate" data-tile="2">` +
       `<div class="sx-tile__label">NATIONALITY</div>` +
-      (f.nationId ? `<span class="flag sx-tile__flag" data-flag="${f.nationId}"></span>` : `<div class="sx-tile__flagicon">&#9873;</div>`) +
+      `<div class="sx-tile__iconwrap">${f.nationId ? `<span class="flag sx-tile__flag" data-flag="${f.nationId}"></span>` : FLAG_PLACEHOLDER_ICON}</div>` +
       `<div class="sx-tile__val">${nationName(state, f.nationId)}</div>` +
     `</div>`;
 
   const statusTile =
     `<div class="sx-tile${t === 3 ? " is-focus" : ""}" data-action="filter-activate" data-tile="3">` +
       `<div class="sx-tile__label">TRANSFER STATUS</div>` +
+      `<div class="sx-tile__iconwrap">${STATUS_ICONS[f.status]}</div>` +
       `<div class="sx-tile__val">${statusLabel(f.status)}</div>` +
     `</div>`;
 
   const ageTile =
     `<div class="sx-tile sx-tile--dual" data-tile="4">` +
-      tileHtml({ tile: 4, sub: 0, focused: t === 4, subFocused: sub === 0, label: "MIN AGE", valueHtml: f.minAge || "Any" }) +
-      tileHtml({ tile: 4, sub: 1, focused: t === 4, subFocused: sub === 1, label: "MAX AGE", valueHtml: f.maxAge || "Any" }) +
+      arrowRowHtml({ tile: 4, sub: 0, focused: t === 4 && sub === 0, label: "MIN AGE", valueHtml: f.minAge || "Any" }) +
+      arrowRowHtml({ tile: 4, sub: 1, focused: t === 4 && sub === 1, label: "MAX AGE", valueHtml: f.maxAge || "Any" }) +
     `</div>`;
 
-  const countryTile =
-    `<div class="sx-tile${t === 5 ? " is-focus" : ""}" data-action="filter-activate" data-tile="5">` +
-      `<div class="sx-tile__label">COUNTRY</div><div class="sx-tile__val">${f.country || "Any"}</div>` +
-    `</div>`;
+  const countryTile = arrowTileHtml({
+    tile: 5, focused: t === 5, label: "COUNTRY",
+    iconHtml: f.country ? `<span class="flag sx-tile__flag" data-flag="${nationIdForCountry(state, f.country) || ""}"></span>` : FLAG_PLACEHOLDER_ICON,
+    valueHtml: f.country || "Any",
+  });
 
   const league = f.leagueId ? state.staticData.leagues.find((l) => l.id === f.leagueId) : null;
-  const leagueTile =
-    `<div class="sx-tile${t === 6 ? " is-focus" : ""}" data-action="filter-activate" data-tile="6">` +
-      `<div class="sx-tile__label">LEAGUE</div><div class="sx-tile__val">${league ? league.name : "Any"}</div>` +
-    `</div>`;
+  const leagueTile = arrowTileHtml({
+    tile: 6, focused: t === 6, disabled: !f.country, label: "LEAGUE",
+    iconHtml: LEAGUE_PLACEHOLDER_ICON, valueHtml: league ? league.name : "Any",
+  });
 
-  const teamDisabled = !f.leagueId;
   const team = f.teamId ? state.clubsById.get(f.teamId) : null;
-  const teamTile =
-    `<div class="sx-tile${t === 7 ? " is-focus" : ""}${teamDisabled ? " is-disabled" : ""}" data-action="filter-activate" data-tile="7">` +
-      `<div class="sx-tile__label">TEAM</div><div class="sx-tile__val">${team ? team.name : "Any"}</div>` +
-    `</div>`;
+  const teamTile = arrowTileHtml({
+    tile: 7, focused: t === 7, disabled: !f.country || !f.leagueId, label: "TEAM",
+    iconHtml: team ? `<svg class="crest sx-tile__crest"><use href="#crest-${team.id}"></use></svg>` : TEAM_PLACEHOLDER_ICON,
+    valueHtml: team ? team.name : "Any",
+  });
 
   return (
     `<div class="sx-crumb"><span class="crumb-prev">TRANSFERS</span><span class="crumb-sep">&rsaquo;</span><span class="crumb-cur">PLAYER SEARCH</span></div>` +
@@ -294,10 +370,111 @@ function renderFilters(state) {
 function filtersFooterHtml() {
   return (
     actionPrompt("b", "back", "Back") +
-    actionPrompt("x", "reset", "Reset") +
+    actionPrompt("x", "reset-tile", "Reset") +
+    actionPrompt("menu", "reset-all", "Reset All") +
     actionPrompt("y", "search", "Search For Players") +
     actionPrompt("a", "filter-select", "Select")
   );
+}
+
+/* ============================================================================
+ * PLAYER NAME / NATIONALITY keyboard-overlay search
+ * (ms_SEARCH_PLAYERS_SCREEN_EXAMPLE_PLAYER_NAME_SEARCH.png) — F3-fixes.
+ * One shared 3-row QWERTY grid (no space/punctuation keys, matching the
+ * pic exactly) feeding two different results tables: PLAYER NAME searches
+ * every player in the database (debounced, 2-char minimum) and, on pick,
+ * templates all 8 filter tiles off that player; NATIONALITY searches the
+ * ~50-entry nation list (no debounce, no minimum, pre-filled before typing)
+ * and, on pick, fills just the one tile.
+ * ========================================================================== */
+
+export const KB_ROWS = [
+  ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
+  ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
+  ["Z", "X", "C", "V", "B", "N", "M"],
+];
+
+function keyboardHtml(cursorRow, cursorCol, resultsFocus) {
+  return `<div class="sx-kb">` + KB_ROWS.map((row, r) => (
+    `<div class="sx-kb__row">` + row.map((letter, c) => (
+      `<button type="button" class="sx-kb__key${!resultsFocus && r === cursorRow && c === cursorCol ? " is-focus" : ""}" data-action="kb-key" data-letter="${letter}">${letter}</button>`
+    )).join("") + `</div>`
+  )).join("") + `</div>`;
+}
+
+/** Every player in the database (not just transfer targets — F3-fixes'
+ * own reading of "search... every player in the database"), first or last
+ * name substring, alphabetical by full name, 2-char minimum, debounced via
+ * `committedQuery` (router.js owns the timer). */
+export function computeNameSearchResults(state) {
+  const q = state.ui.transferSearch.nameSearch.committedQuery.trim().toLowerCase();
+  if (q.length < 2) return [];
+  return state.players
+    .filter((p) => p.firstName.toLowerCase().includes(q) || p.lastName.toLowerCase().includes(q) || p.commonName.toLowerCase().includes(q))
+    .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`))
+    .slice(0, 200);
+}
+
+/** Pre-filled with every nation, filtered live as `query` grows (no
+ * debounce, no minimum length — a ~50-row list needs neither). */
+export function computeNationSearchResults(state) {
+  const q = state.ui.transferSearch.nationSearch.query.trim().toLowerCase();
+  const nations = state.staticData.nations.slice().sort((a, b) => a.name.localeCompare(b.name));
+  return q ? nations.filter((n) => n.name.toLowerCase().includes(q)) : nations;
+}
+
+function kbNoResultsHtml() {
+  return `<div class="sx-kbsearch__empty">There are no results based on your search parameters.</div>`;
+}
+
+function nameSearchOverlayHtml(state) {
+  const n = state.ui.transferSearch.nameSearch;
+  const showResults = n.committedQuery.trim().length >= 2;
+  const results = showResults ? computeNameSearchResults(state) : [];
+  const tableHtml = !showResults || !results.length
+    ? `<div class="sx-kbsearch__head"><span>POS</span><span>PLAYER</span><span>AGE</span></div>${kbNoResultsHtml()}`
+    : `<div class="sx-kbsearch__head"><span>POS</span><span>PLAYER</span><span>AGE</span></div>` +
+      `<div class="sx-kbsearch__rows">` + results.map((p, i) => (
+        `<div class="sx-kbsearch__row${n.resultsFocus && i === n.resultIndex ? " is-focus" : ""}" data-action="kb-select-player" data-player="${p.id}">` +
+          `<span>${p.position}</span><span>${p.firstName} ${p.lastName}</span><span>${p.age}</span>` +
+        `</div>`
+      )).join("") + `</div>`;
+  const bodyHtml =
+    `<div class="sx-kbsearch">` +
+      `<div class="sx-kbsearch__input">${n.query}<span class="sx-kbsearch__cursor">_</span></div>` +
+      keyboardHtml(n.cursorRow, n.cursorCol, n.resultsFocus) +
+      `<div class="sx-kbsearch__hint" data-action="kb-select">${actionPrompt("a", "kb-select", "Select")}</div>` +
+      `<div class="sx-kbsearch__results">${tableHtml}</div>` +
+    `</div>`;
+  return fxPanel({ title: "PLAYER SEARCH", bodyHtml, extraClass: "sx-kbpanel" });
+}
+
+function nationSearchOverlayHtml(state) {
+  const n = state.ui.transferSearch.nationSearch;
+  const results = computeNationSearchResults(state);
+  const tableHtml = results.length
+    ? `<div class="sx-kbsearch__rows sx-kbsearch__rows--nation">` + results.map((nat, i) => (
+        `<div class="sx-kbsearch__row sx-kbsearch__row--nation${n.resultsFocus && i === n.resultIndex ? " is-focus" : ""}" data-action="kb-select-nation" data-nation="${nat.id}">` +
+          `<span class="flag" data-flag="${nat.id}"></span><span>${nat.name}</span>` +
+        `</div>`
+      )).join("") + `</div>`
+    : kbNoResultsHtml();
+  const bodyHtml =
+    `<div class="sx-kbsearch">` +
+      `<div class="sx-kbsearch__input">${n.query}<span class="sx-kbsearch__cursor">_</span></div>` +
+      keyboardHtml(n.cursorRow, n.cursorCol, n.resultsFocus) +
+      `<div class="sx-kbsearch__hint" data-action="kb-select">${actionPrompt("a", "kb-select", "Select")}</div>` +
+      `<div class="sx-kbsearch__results">${tableHtml}</div>` +
+    `</div>`;
+  return fxPanel({ title: "NATIONALITY SEARCH", bodyHtml, extraClass: "sx-kbpanel" });
+}
+
+function kbScrimHtml(panelHtml, closeAction) {
+  return `<div class="sx-kbscrim" data-action="${closeAction}">${panelHtml}</div>`;
+}
+
+function kbSearchFooterHtml() {
+  return actionPrompt("b", "back", "Back") + actionPrompt("a", "kb-select", "Select");
 }
 
 /* ============================================================================
@@ -371,12 +548,14 @@ export function renderSearch(state) {
   const body = document.getElementById("search-body");
   const footer = document.getElementById("footer-search");
   const s = state.ui.transferSearch;
+  const kbOpen = s.nameSearch.open || s.nationSearch.open;
   body.innerHTML = s.stage === "filters" ? renderFilters(state) : renderResults(state);
-  footer.innerHTML = s.stage === "filters" ? filtersFooterHtml() : resultsFooterHtml(state);
-  if (s.stage === "filters" && s.nameEditing) {
-    const input = document.getElementById("sx-nameinput");
-    if (input) { input.focus(); input.selectionStart = input.selectionEnd = input.value.length; }
-  }
+  footer.innerHTML = kbOpen ? kbSearchFooterHtml() : (s.stage === "filters" ? filtersFooterHtml() : resultsFooterHtml(state));
+
+  const nameEl = document.getElementById("sx-namesearch");
+  if (nameEl) nameEl.innerHTML = s.nameSearch.open ? kbScrimHtml(nameSearchOverlayHtml(state), "namesearch-scrim") : "";
+  const natEl = document.getElementById("sx-natsearch");
+  if (natEl) natEl.innerHTML = s.nationSearch.open ? kbScrimHtml(nationSearchOverlayHtml(state), "natsearch-scrim") : "";
 }
 
 /* ============================================================================

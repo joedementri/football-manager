@@ -47,11 +47,12 @@
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
+  text-align: center;
   cursor: pointer;
   overflow: hidden;
 }
 .sx-tile--dual { padding: 0; justify-content: stretch; }
-.sx-tile--dual .sx-tile__row { flex: 1; padding: 12px 18px; display: flex; flex-direction: column; cursor: pointer; }
+.sx-tile--dual .sx-tile__row { flex: 1; padding: 12px 18px; display: flex; flex-direction: column; text-align: center; cursor: pointer; }
 .sx-tile--dual .sx-tile__row:first-child { border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
 .sx-tile__row.is-focus, .sx-tile.is-focus {
   background: linear-gradient(150deg, var(--gold-bright), var(--gold-deep));
@@ -62,18 +63,33 @@
 .sx-tile__label { font-family: var(--font-cond); font-size: 20px; font-weight: 700; text-transform: uppercase; color: var(--ink); letter-spacing: 0.3px; }
 .sx-tile__val { margin-top: auto; font-family: var(--font-ui); font-size: 15px; color: var(--ink-dim); }
 .sx-tile.is-focus .sx-tile__val, .sx-tile__row.is-focus .sx-tile__val { color: rgba(42, 36, 16, 0.8); }
-.sx-tile--name { align-items: center; text-align: center; justify-content: flex-start; gap: 10px; }
+.sx-tile--name { align-items: center; justify-content: flex-start; gap: 10px; }
 .sx-tile__portrait {
   width: 84px; height: 84px; border-radius: 4px; margin: 6px auto;
   background: radial-gradient(circle at 35% 30%, #3a4148, #14171b);
 }
-.sx-tile__flagicon { font-size: 34px; margin: 8px 0; opacity: 0.35; }
 .sx-tile__flag { width: 34px; height: 22px; margin: 8px 0; }
-.sx-nameinput {
-  width: 100%; text-align: center; font-family: var(--font-cond); font-size: 16px; font-weight: 700;
-  background: rgba(0, 0, 0, 0.35); color: var(--ink); border: 1px solid var(--gold); border-radius: 3px; padding: 6px 8px;
+
+/* ---- F3-fixes: icons (NATIONALITY/STATUS/COUNTRY/LEAGUE/TEAM placeholders
+   + club crest), all centered via the tile's own text-align:center. ------- */
+.sx-tile__iconwrap { margin: 6px 0; }
+.sx-tile__icon { width: 32px; height: 28px; color: rgba(255, 255, 255, 0.32); vertical-align: middle; }
+.sx-tile__icon--sm { width: 24px; height: 24px; }
+.sx-tile.is-focus .sx-tile__icon { color: rgba(42, 36, 16, 0.55); }
+.sx-tile__crest { width: 38px; height: 44px; vertical-align: middle; }
+
+/* ---- F3-fixes: MIN/MAX AGE, COUNTRY, LEAGUE, TEAM — carousel-style prev/
+   next arrows either side of the value (same .cnav look/feel as every other
+   carousel in the app), replacing plain click-to-cycle-by-one. ------------ */
+.sx-tile__arrowline { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: auto; }
+.sx-tile--arrow .sx-tile__arrowline { margin-top: 8px; }
+.sx-tile__arrowline .sx-tile__val { margin-top: 0; min-width: 44px; }
+.sx-tile__arrowline .cnav, .sx-tile__row--arrow .sx-tile__arrowline .cnav {
+  position: static; opacity: 0.55; width: 22px; height: 22px; font-size: 13px; flex: 0 0 auto;
 }
-.sx-tile--name.is-editing { cursor: default; }
+.sx-tile__arrowline .cnav:hover { opacity: 1; }
+.sx-tile.is-focus .sx-tile__arrowline .cnav, .sx-tile__row.is-focus .sx-tile__arrowline .cnav { opacity: 0.85; background: rgba(0, 0, 0, 0.25); color: var(--gold-text-dark); }
+.sx-tile__arrowline .cnav[disabled] { opacity: 0.15; }
 
 /* ---------------------------- SEARCH RESULTS ------------------------------ */
 .sx-restabs {
@@ -275,6 +291,58 @@
 .cn-col .apo-row.apo-editable:hover, .cn-col .apo-row.apo-clickable:hover { background: rgba(255, 255, 255, 0.05); }
 .cn-col .apo-section { color: var(--ink); border-bottom-color: rgba(255, 255, 255, 0.1); }
 .cn-col .apo-worth { color: var(--ink); }
+
+/* ===========================================================================
+   F3-fixes: PLAYER NAME / NATIONALITY keyboard-overlay search
+   (ms_SEARCH_PLAYERS_SCREEN_EXAMPLE_PLAYER_NAME_SEARCH.png). Direct child of
+   #search-overlay (see index.html) so its .fx-panel positions against
+   #stage like every other overlay's own .fx-panel — not nested inside
+   .sx-body, which would double-offset it the same way .news-crumb once was
+   (see this file's own header comment on .sx-crumb).
+   =========================================================================== */
+.sx-kbscrim {
+  position: absolute; inset: 0; z-index: 20;
+  background: rgba(0, 0, 0, 0.45);
+}
+.sx-kbpanel { width: 44%; min-width: 480px; }
+.sx-kbsearch { display: flex; flex-direction: column; gap: 14px; height: 100%; min-height: 0; }
+
+.sx-kbsearch__input {
+  flex: 0 0 auto;
+  font-family: var(--font-cond); font-size: 20px; font-weight: 700; color: var(--ink);
+  background: rgba(0, 0, 0, 0.35); border: 1px solid var(--gold); border-radius: 3px;
+  padding: 8px 12px; min-height: 22px; letter-spacing: 0.5px;
+}
+.sx-kbsearch__cursor { color: var(--gold); animation: sx-kb-blink 1s step-end infinite; }
+@keyframes sx-kb-blink { 50% { opacity: 0; } }
+
+.sx-kb { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.sx-kb__row { display: flex; gap: 6px; }
+.sx-kb__key {
+  width: 34px; height: 34px; border-radius: 4px; border: none; cursor: pointer;
+  background: rgba(255, 255, 255, 0.08); color: var(--ink);
+  font-family: var(--font-cond); font-weight: 700; font-size: 15px;
+}
+.sx-kb__key:hover { background: rgba(255, 255, 255, 0.18); }
+.sx-kb__key.is-focus { background: linear-gradient(150deg, var(--gold-bright), var(--gold-deep)); color: var(--gold-text-dark); }
+
+.sx-kbsearch__hint { flex: 0 0 auto; display: flex; justify-content: center; cursor: pointer; }
+
+.sx-kbsearch__results { flex: 1; min-height: 0; overflow-y: auto; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 8px; }
+.sx-kbsearch__results::-webkit-scrollbar { width: 8px; }
+.sx-kbsearch__results::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+.sx-kbsearch__head, .sx-kbsearch__row {
+  display: grid; grid-template-columns: 46px 1fr 56px; gap: 8px; align-items: center;
+  padding: 5px 8px; font-family: var(--font-ui); font-size: 13px;
+}
+.sx-kbsearch__head { color: var(--ink-dim); text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 8px; }
+.sx-kbsearch__row { color: var(--ink); cursor: pointer; }
+.sx-kbsearch__row:nth-child(even) { background: rgba(255, 255, 255, 0.03); }
+.sx-kbsearch__row:hover { background: rgba(255, 255, 255, 0.07); }
+.sx-kbsearch__row.is-focus { background: linear-gradient(150deg, var(--gold-bright), var(--gold-deep)); color: var(--gold-text-dark); }
+.sx-kbsearch__row--nation { grid-template-columns: 30px 1fr; }
+.sx-kbsearch__row--nation .flag { width: 22px; height: 15px; }
+.sx-kbsearch__empty { text-align: center; color: var(--ink-dim); font-family: var(--font-ui); font-size: 14px; padding: 30px 10px; }
 .cn-demands { margin-bottom: 6px; }
 .cn-demands__title { font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim); margin: 6px 0 2px; }
 /* ms_CONTRACTS_SCREEN_CONTRACT_NEGOTIATION.png shows the same signature

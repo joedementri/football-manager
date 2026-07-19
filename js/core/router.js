@@ -24,7 +24,7 @@ import { renderNtJobsOverlay } from "../ui/ntjobsui.js";
 import { renderNatlSquad } from "../ui/natlsquad.js";
 import { renderContracts } from "../ui/contractsui.js";
 import { renderNegotiation, renderSellList, renderRequestFunds } from "../ui/transfersui.js";
-import { renderSearch, renderMyShortlist, computeSearchResults } from "../ui/searchui.js";
+import { renderSearch, renderMyShortlist, computeSearchResults, computeNameSearchResults, computeNationSearchResults, KB_ROWS as KB_ROWS_FLAT } from "../ui/searchui.js";
 import { positionInfo } from "../config/positions.js";
 import { renderGtn } from "../ui/gtnui.js";
 import { renderYouth } from "../ui/youthui.js";
@@ -67,6 +67,8 @@ export function initRouter(store) {
   const footerSearch = document.getElementById("footer-search");
   const searchOverlay = document.getElementById("search-overlay");
   const searchBodyEl = document.getElementById("search-body");
+  const sxNameSearchEl = document.getElementById("sx-namesearch");
+  const sxNatSearchEl = document.getElementById("sx-natsearch");
   const footerShortlist = document.getElementById("footer-shortlist");
   const shortlistOverlay = document.getElementById("shortlist-overlay");
   const shortlistBodyEl = document.getElementById("shortlist-body");
@@ -807,9 +809,11 @@ export function initRouter(store) {
   // delegated handler on #search-body (same "many different interactive sub-
   // states, no point pre-querying dozens of stable IDs" reasoning as GTN/
   // Youth's own handlers), matching ui/searchui.js's data-action vocabulary.
+  // F3-fixes: tile 2 (NATIONALITY) dropped out of TILE_CYCLE — activating it
+  // now opens the keyboard-overlay search instead of cycling in place, same
+  // as tile 0 (PLAYER NAME) already did.
   const TILE_CYCLE = {
     1: { 0: (d) => store.searchCycleArea(d), 1: (d) => store.searchCycleRole(d) },
-    2: { 0: (d) => store.searchCycleNationality(d) },
     3: { 0: (d) => store.searchCycleStatus(d) },
     4: { 0: (d) => store.searchAdjustMinAge(d), 1: (d) => store.searchAdjustMaxAge(d) },
     5: { 0: (d) => store.searchCycleCountry(d) },
@@ -818,13 +822,27 @@ export function initRouter(store) {
   };
   function activateFilterTile(tile, sub) {
     store.searchFilterFocus(tile, sub);
-    if (tile === 0) { store.searchStartEditName(); return; }
+    if (tile === 0) { store.searchOpenNameSearch(); return; }
+    if (tile === 2) { store.searchOpenNationSearch(); return; }
     const fn = (TILE_CYCLE[tile] || {})[sub] || (TILE_CYCLE[tile] || {})[0];
     if (fn) fn(1);
   }
   searchBodyEl.addEventListener("click", (e) => {
     const tileEl = e.target.closest('[data-action="filter-activate"]');
     if (tileEl) { activateFilterTile(Number(tileEl.dataset.tile), Number(tileEl.dataset.sub || 0)); return; }
+    // F3-fixes: MIN/MAX AGE, COUNTRY, LEAGUE, TEAM's own prev/next carousel
+    // arrows — focuses the tile (dual-tile sub-row, or the tile itself) and
+    // steps its value by one, same direction/guard logic as ArrowLeft/Right
+    // already gives keyboard/gamepad users below.
+    const arrowEl = e.target.closest('[data-action="tile-prev"], [data-action="tile-next"]');
+    if (arrowEl) {
+      const tile = Number(arrowEl.dataset.tile);
+      const sub = Number(arrowEl.dataset.sub || 0);
+      store.searchFilterFocus(tile, sub);
+      const fn = (TILE_CYCLE[tile] || {})[sub] || (TILE_CYCLE[tile] || {})[0];
+      if (fn) fn(arrowEl.dataset.action === "tile-prev" ? -1 : 1);
+      return;
+    }
     const cardEl = e.target.closest('[data-action="select-result"]');
     if (cardEl) {
       const playerId = Number(cardEl.dataset.player);
@@ -852,32 +870,73 @@ export function initRouter(store) {
     const s = store.state.ui.transferSearch;
     switch (action) {
       case "back": if (s.stage === "results") store.searchBackFromResults(); else store.closeOverlay(); break;
-      case "reset": store.searchResetFilters(); break;
+      // F3-fixes: (X) now clears only the currently-focused tile;
+      // Start/Menu clears all 8 at once (searchResetFilters, unchanged).
+      case "reset-tile": store.searchResetTile(s.filterTile); break;
+      case "reset-all": store.searchResetFilters(); break;
       case "search": store.searchSubmitFilters(); break;
       case "filter-select": activateFilterTile(s.filterTile, s.filterSub); break;
       case "report-next": store.searchCycleReportPage(1, 3); break;
+      // The keyboard-overlay footer's own (A) Select prompt (mouse-only
+      // path — router.js's global keydown block below covers Enter/A).
+      case "kb-select": handleKbSelect(); break;
     }
   }
   footerSearch.addEventListener("click", (e) => {
     const el = e.target.closest("[data-action]");
     if (el) handleSearchFooterAction(el.dataset.action);
   });
-  // PLAYER NAME's live <input> (§B2's "(Y) opens direct numeric entry",
-  // applied to text here — this project's first free-text field, see
-  // ui/searchui.js's own header). `focusout` (unlike `blur`) bubbles, so this
-  // delegates cleanly off #search-body without needing to re-wire a fresh
-  // listener after every re-render the way a direct .addEventListener on the
-  // input itself would. Every keystroke also stops propagation — otherwise a
-  // typed "b"/"Escape" etc. would leak up to the global shortcut handler
-  // below and close the overlay mid-type.
-  searchBodyEl.addEventListener("focusout", (e) => {
-    if (e.target && e.target.id === "sx-nameinput") store.searchCommitName(e.target.value);
+
+  /* ----- F3-fixes: PLAYER NAME / NATIONALITY keyboard-overlay search
+   * (ms_SEARCH_PLAYERS_SCREEN_EXAMPLE_PLAYER_NAME_SEARCH.png). Both overlays
+   * share the same QWERTY-grid + debounce-on-name-only vocabulary; a real
+   * physical keyboard works too via the global keydown block below (no
+   * hidden <input> needed — every keystroke is just "type this letter into
+   * the overlay's own query state", same as clicking an on-screen key). ----- */
+  let nameSearchDebounce = null;
+  function nameSearchQueryChanged() {
+    clearTimeout(nameSearchDebounce);
+    nameSearchDebounce = setTimeout(() => store.searchNameCommitQuery(), 350);
+  }
+  function handleKbSelect() {
+    if (store.state.ui.transferSearch.nameSearch.open) {
+      const n = store.state.ui.transferSearch.nameSearch;
+      if (n.resultsFocus) {
+        const results = computeNameSearchResults(store.state);
+        const p = results[n.resultIndex];
+        if (p) store.searchApplyNameResult(p.id);
+      } else {
+        const letter = KB_ROWS_FLAT[n.cursorRow][n.cursorCol];
+        store.searchNameType(letter);
+        nameSearchQueryChanged();
+      }
+    } else if (store.state.ui.transferSearch.nationSearch.open) {
+      const n = store.state.ui.transferSearch.nationSearch;
+      if (n.resultsFocus) {
+        const results = computeNationSearchResults(store.state);
+        const nat = results[n.resultIndex];
+        if (nat) store.searchApplyNationResult(nat.id);
+      } else {
+        const letter = KB_ROWS_FLAT[n.cursorRow][n.cursorCol];
+        store.searchNationType(letter);
+      }
+    }
+  }
+  sxNameSearchEl.addEventListener("click", (e) => {
+    const keyEl = e.target.closest('[data-action="kb-key"]');
+    if (keyEl) { store.searchNameType(keyEl.dataset.letter); nameSearchQueryChanged(); return; }
+    const rowEl = e.target.closest('[data-action="kb-select-player"]');
+    if (rowEl) { store.searchApplyNameResult(Number(rowEl.dataset.player)); return; }
+    if (e.target.closest('[data-action="kb-select"]')) { handleKbSelect(); return; }
+    if (!e.target.closest(".fx-panel")) store.searchCloseNameSearch();
   });
-  searchBodyEl.addEventListener("keydown", (e) => {
-    if (!e.target || e.target.id !== "sx-nameinput") return;
-    e.stopPropagation();
-    if (e.key === "Enter") { e.preventDefault(); store.searchCommitName(e.target.value); }
-    else if (e.key === "Escape") { e.preventDefault(); store.searchCommitName(store.state.ui.transferSearch.filters.name); }
+  sxNatSearchEl.addEventListener("click", (e) => {
+    const keyEl = e.target.closest('[data-action="kb-key"]');
+    if (keyEl) { store.searchNationType(keyEl.dataset.letter); return; }
+    const rowEl = e.target.closest('[data-action="kb-select-nation"]');
+    if (rowEl) { store.searchApplyNationResult(rowEl.dataset.nation); return; }
+    if (e.target.closest('[data-action="kb-select"]')) { handleKbSelect(); return; }
+    if (!e.target.closest(".fx-panel")) store.searchCloseNationSearch();
   });
 
   // F3: My Shortlist — same action-menu vocabulary as Search Results above.
@@ -1338,13 +1397,52 @@ export function initRouter(store) {
     // / action menu, and My Shortlist's list + action menu. Same "keyboard
     // support exists, full mouse covers pixel-precise nav" footing as every
     // other F2/F3 screen's own keyboard block.
-    if (store.state.ui.overlay === "search" && store.state.ui.transferSearch.stage === "filters" && !store.state.ui.transferSearch.nameEditing) {
+    // F3-fixes: PLAYER NAME / NATIONALITY keyboard-overlay search — grid
+    // nav, typing, results-list nav, and (A)/(B) all live here while either
+    // overlay is open, taking priority over the plain filter-tile block
+    // below (a real physical keyboard needs no hidden <input> to capture
+    // this — every keystroke is just "type this letter into the overlay's
+    // own query state", same as clicking an on-screen key would).
+    if (store.state.ui.overlay === "search" && (store.state.ui.transferSearch.nameSearch.open || store.state.ui.transferSearch.nationSearch.open)) {
+      const isName = store.state.ui.transferSearch.nameSearch.open;
+      const n = isName ? store.state.ui.transferSearch.nameSearch : store.state.ui.transferSearch.nationSearch;
+      const results = isName ? computeNameSearchResults(store.state) : computeNationSearchResults(store.state);
+      const hasResults = (isName ? n.committedQuery.trim().length >= 2 : true) && results.length > 0;
+      const moveResult = (d) => (isName ? store.searchNameMoveResult(d, results.length) : store.searchNationMoveResult(d, results.length));
+      const setResultsFocus = (on) => (isName ? store.searchNameSetResultsFocus(on) : store.searchNationSetResultsFocus(on));
+      const cursorMove = (dr, dc) => (isName ? store.searchNameCursorMove(dr, dc) : store.searchNationCursorMove(dr, dc));
+      const typeLetter = (letter) => { if (isName) { store.searchNameType(letter); nameSearchQueryChanged(); } else store.searchNationType(letter); };
+      const applyPick = () => {
+        const picked = results[n.resultIndex];
+        if (!picked) return;
+        if (isName) store.searchApplyNameResult(picked.id); else store.searchApplyNationResult(picked.id);
+      };
+
+      if (e.key === "Backspace") { e.preventDefault(); if (isName) { store.searchNameBackspace(); nameSearchQueryChanged(); } else store.searchNationBackspace(); return; }
+      if (/^[a-zA-Z]$/.test(e.key)) { typeLetter(e.key.toUpperCase()); return; }
+      if (e.key === "b" || e.key === "B" || e.key === "Escape") { if (isName) store.searchCloseNameSearch(); else store.searchCloseNationSearch(); return; }
+      if (n.resultsFocus) {
+        if (e.key === "ArrowDown") { moveResult(1); return; }
+        if (e.key === "ArrowUp") { if (n.resultIndex <= 0) setResultsFocus(false); else moveResult(-1); return; }
+        if (e.key === "Enter" || e.key === "a" || e.key === "A") { applyPick(); return; }
+      } else {
+        if (e.key === "ArrowLeft") { cursorMove(0, -1); return; }
+        if (e.key === "ArrowRight") { cursorMove(0, 1); return; }
+        if (e.key === "ArrowUp") { cursorMove(-1, 0); return; }
+        if (e.key === "ArrowDown") { if (n.cursorRow === 2 && hasResults) setResultsFocus(true); else cursorMove(1, 0); return; }
+        if (e.key === "Enter" || e.key === "a" || e.key === "A") { typeLetter(KB_ROWS_FLAT[n.cursorRow][n.cursorCol]); return; }
+      }
+      return;
+    }
+    if (store.state.ui.overlay === "search" && store.state.ui.transferSearch.stage === "filters" && !store.state.ui.transferSearch.nameSearch.open && !store.state.ui.transferSearch.nationSearch.open) {
       const s = store.state.ui.transferSearch;
       const dualRows = { 1: 2, 4: 2 };
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         const delta = e.key === "ArrowLeft" ? -1 : 1;
         const fn = (TILE_CYCLE[s.filterTile] || {})[s.filterSub] || (TILE_CYCLE[s.filterTile] || {})[0];
-        if (fn) fn(delta); else if (s.filterTile === 0) store.searchStartEditName();
+        if (fn) fn(delta);
+        else if (s.filterTile === 0) store.searchOpenNameSearch();
+        else if (s.filterTile === 2) store.searchOpenNationSearch();
         return;
       }
       if (e.key === "ArrowUp" || e.key === "ArrowDown") {

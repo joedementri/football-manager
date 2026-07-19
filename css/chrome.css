@@ -371,6 +371,12 @@
   font-size: 12px; font-weight: 700; letter-spacing: 0.5px;
   color: #e9edf1; background: #39424d; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
 }
+/* F3-fixes: Start/Menu glyph — owner's own description ("a vertical tall
+   rectangle with rounded edges"), no lettered pill like every other glyph. */
+.btn-glyph.menu {
+  width: 13px; height: 22px; border-radius: 6px;
+  background: #39424d; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
+}
 
 /* hide a whole footer / a single prompt when not in use (author rule must
    beat the .footer{display:flex} above to honour the [hidden] attribute) */
