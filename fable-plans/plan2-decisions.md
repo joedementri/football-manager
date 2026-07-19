@@ -696,6 +696,21 @@ disabled-until-parent states, per-tile reset vs. reset-all, and the Transfers hu
 FINANCES and SEARCH PLAYERS — zero console errors. Re-ran the full §A5.4 regression (new game as
 Portsmouth, advance 10 days incl. auto-simmed matchdays, open all 5 hubs) — also clean.
 
+- [OWNER CORRECTION] **NATIONALITY/STATUS/COUNTRY/LEAGUE/TEAM icon sizing.** Follow-up pass: the
+  above icons/flags/crests were centered but tiny (32x28 placeholder box, 34x22 flag, 38x44 crest)
+  next to all the empty space around them. `.sx-tile__iconwrap` changed from a plain `margin: 6px 0`
+  block to `flex: 1; display: flex; align-items: center; justify-content: center` so it soaks up
+  every pixel of vertical space between the label and the value — the icon centers in that space on
+  both axes, and (for COUNTRY/LEAGUE/TEAM's `arrowTileHtml`) the value+arrow-line gets pushed to the
+  tile's bottom edge as a direct side effect, matching the request that those three tiles' text/arrows
+  sit "center bottom." Icon boxes themselves roughly doubled (`.sx-tile__icon`/`--sm` 32x28/24x24 →
+  60x60, `.sx-tile__flag` 34x22 → 68x46, `.sx-tile__crest` 38x44 → 64x76); SVGs/flags/crests all scale
+  via default `preserveAspectRatio="xMidYMid meet"` so a square box holding a non-square viewBox (the
+  LEAGUE/TEAM placeholders, viewBox `28x32`) still centers without distortion. CSS-only change
+  (`css/search.css`), no store/router/searchui.js logic touched. Verified visually in headless Chrome
+  with real Brazil flag / England flag / Manchester United crest data — all large, centered, no
+  clipping or distortion; re-ran `dev/tests.js` (still 575/575, unaffected by a pure CSS change).
+
 ## F3 — 2026-07-18
 
 Transfers: PLAYER SEARCH filter tiles → SEARCH RESULTS (tabs/cards/report + action menu) → My

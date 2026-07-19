@@ -68,15 +68,20 @@
   width: 84px; height: 84px; border-radius: 4px; margin: 6px auto;
   background: radial-gradient(circle at 35% 30%, #3a4148, #14171b);
 }
-.sx-tile__flag { width: 34px; height: 22px; margin: 8px 0; }
+.sx-tile__flag { width: 68px; height: 46px; margin: 0; }
 
 /* ---- F3-fixes: icons (NATIONALITY/STATUS/COUNTRY/LEAGUE/TEAM placeholders
-   + club crest), all centered via the tile's own text-align:center. ------- */
-.sx-tile__iconwrap { margin: 6px 0; }
-.sx-tile__icon { width: 32px; height: 28px; color: rgba(255, 255, 255, 0.32); vertical-align: middle; }
-.sx-tile__icon--sm { width: 24px; height: 24px; }
+   + club crest). `.sx-tile__iconwrap` is flex:1 so it soaks up all the
+   vertical space between the label and the value/arrow-line, then centers
+   its icon in that space both ways — the label stays pinned top, the value
+   (plain text for NATIONALITY/STATUS, the arrow-line for COUNTRY/LEAGUE/
+   TEAM) gets pushed to the bottom as a side effect, which is also what
+   "arrows/value centered at the bottom" below relies on. ------------------ */
+.sx-tile__iconwrap { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+.sx-tile__icon { width: 60px; height: 60px; color: rgba(255, 255, 255, 0.32); vertical-align: middle; }
+.sx-tile__icon--sm { width: 60px; height: 60px; }
 .sx-tile.is-focus .sx-tile__icon { color: rgba(42, 36, 16, 0.55); }
-.sx-tile__crest { width: 38px; height: 44px; vertical-align: middle; }
+.sx-tile__crest { width: 64px; height: 76px; vertical-align: middle; }
 
 /* ---- F3-fixes: MIN/MAX AGE, COUNTRY, LEAGUE, TEAM — carousel-style prev/
    next arrows either side of the value (same .cnav look/feel as every other
