@@ -40,6 +40,9 @@
 }
 .bio-ovr--pot { background: linear-gradient(180deg, #7fb8e6, #2f6fa8); color: #0d1e2c; }
 .bio-ovr__num { font-family: var(--font-cond); font-size: 24px; font-weight: 700; line-height: 1; }
+/* F3-fixes: an unscouted "45-65" range string is wider than a solid 2-digit
+   number — shrunk to fit the same 64px circular badge without wrapping. */
+.bio-ovr__num--range { font-size: 15px; }
 .bio-ovr__lbl { font-family: var(--font-ui); font-size: 11px; letter-spacing: 0.5px; }
 
 .bio-potential-band {

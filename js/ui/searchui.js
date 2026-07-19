@@ -10,14 +10,15 @@
 import { money } from "../core/format.js";
 import { positionInfo } from "../config/positions.js";
 import { eligibleFreeAgentTargets } from "../engine/freeagents.js";
-import { scoutingRangeFor } from "../config/scouting.js";
-import { fuzzyDisplay } from "./gtnui.js";
+import { scoutedRange, isFullyScouted, scoutProgressInfo } from "../engine/scoutrange.js";
 import { cmToFtIn } from "./playerbio.js";
 import { SUMMARY_GROUPS } from "../config/summary.js";
 import { scoutReportStatus, cheapestIdleScout } from "../engine/gtn.js";
+import { GK_ATTRS } from "./teamsheetui.js";
 import {
-  attrChip, posBar, glyphPill, actionPrompt, fxActionList, fxTable, fxPanel,
+  attrChip, posBar, actionPrompt, fxActionList, fxTable, fxPanel, fuzzyChip,
 } from "./panelkit.js";
+import { fullName, lastNameSort } from "../core/sortutil.js";
 
 /* ============================================================================
  * Shared pure helpers
@@ -28,7 +29,8 @@ function isFreeAgentCandidate(state, player) {
 }
 
 /** World-wide search pool, filtered by every PLAYER SEARCH tile. Sorted by
- * true overall descending (no pic evidences a different default sort). */
+ * last name (F3-fixes: sorting by the true, possibly-unscouted Overall would
+ * leak hidden info — name order doesn't). */
 export function computeSearchResults(state) {
   const f = state.ui.transferSearch.filters;
   let pool = state.players.filter((p) => p.clubId !== state.club.id);
@@ -50,7 +52,7 @@ export function computeSearchResults(state) {
   if (f.leagueId) pool = pool.filter((p) => state.clubLeague.get(p.clubId) === f.leagueId);
   if (f.teamId) pool = pool.filter((p) => p.clubId === f.teamId);
 
-  return pool.slice().sort((a, b) => b.overall - a.overall).slice(0, 300);
+  return pool.slice().sort(lastNameSort).slice(0, 300);
 }
 
 /** Action menu rows shared by Search Results and My Shortlist (plan2.md
@@ -77,26 +79,23 @@ export function buildActionRows(state, player, selectedAction) {
 }
 
 /* ============================================================================
- * §B4-ish attribute rows, with F3's own fuzzy-per-attribute reading (see
- * plan2-decisions.md F3: no per-attribute scouting range exists anywhere in
- * this codebase — only overall/potential are fuzzed — so an unscouted
- * player's individual attribute chips reuse the exact same scoutingRangeFor
- * half-width band the overall/potential numbers already use, computed live
- * rather than stored).
+ * §B4-ish attribute rows, with F3's own fuzzy-per-attribute reading — an
+ * unscouted player's individual attribute chips reuse the exact same
+ * continuous day-by-day range engine/scoutrange.js computes for Overall/
+ * Potential, computed live rather than stored (F3-fixes).
  * ========================================================================== */
 
-function attrValueHtml(player, key) {
-  const level = player.scouting.level;
-  if (level >= 3) return attrChip(player.attrs[key]);
-  const [lo, hi] = scoutingRangeFor(player.attrs[key], level);
-  return `<span class="fx-fuzzy"><span class="fx-attr-chip fx-attr-chip--min">${lo}</span><span class="fx-fuzzy__sep">&ndash;</span><span class="fx-attr-chip fx-attr-chip--max">${hi}</span></span>`;
+function attrValueHtml(state, player, key) {
+  if (isFullyScouted(player)) return attrChip(player.attrs[key]);
+  const [lo, hi] = scoutedRange(state, player, key, player.attrs[key]);
+  return fuzzyChip(lo, hi);
 }
 
-function twoColAttrRows(player, pairs) {
+function twoColAttrRows(state, player, pairs) {
   return pairs.map(([[k1, l1], right]) => (
     `<div class="sx-attrgrid__row">` +
-      `<span class="sx-attrgrid__name">${l1}</span>${attrValueHtml(player, k1)}` +
-      (right ? `<span class="sx-attrgrid__name">${right[1]}</span>${attrValueHtml(player, right[0])}` : `<span></span><span></span>`) +
+      `<span class="sx-attrgrid__name">${l1}</span>${attrValueHtml(state, player, k1)}` +
+      (right ? `<span class="sx-attrgrid__name">${right[1]}</span>${attrValueHtml(state, player, right[0])}` : `<span></span><span></span>`) +
     `</div>`
   )).join("");
 }
@@ -128,6 +127,11 @@ const TECHNICAL_PAGE = [
   [["slideTackle", "Sliding Tackle"], ["volleys", "Volleys"]],
   [["curve", "Curve"], ["penalties", "Penalties"]],
 ];
+// F3-fixes: GK Attributes page (owner: "make sure GK's are showing relevant
+// stats similar to how we set it up in the squad page") — same field/label
+// pairs as ui/teamsheetui.js's own GK page (imported GK_ATTRS), just paired
+// into twoColAttrRows' 2-column row shape.
+const GK_PAGE = [[GK_ATTRS[0], GK_ATTRS[1]], [GK_ATTRS[2], GK_ATTRS[3]], [GK_ATTRS[4], null]];
 
 function reportHeaderHtml(state, player) {
   const club = state.clubsById.get(player.clubId);
@@ -140,38 +144,56 @@ function reportHeaderHtml(state, player) {
       `</div>` +
       `<div class="sx-rephead__club">` +
         `<div class="sx-rephead__clubrow"><span>${club.name.toUpperCase()}</span><svg class="crest crest--sm"><use href="#crest-${club.id}"></use></svg></div>` +
-        `<span class="flag" data-flag="${player.nationId}"></span>` +
+        `<span class="flag sx-rephead__flag" data-flag="${player.nationId}"></span>` +
       `</div>` +
       `<div class="sx-rephead__facts"><span>Height: <b>${cmToFtIn(player.heightCm)}</b></span><span>Preferred Foot: <b>${player.foot}</b></span></div>` +
     `</div>`
   );
 }
 
-function summaryPageHtml(state, player) {
-  const level = player.scouting.level;
+/** Page 1's left-half "Report Status" box — existing icon+sentence, plus
+ * (F3-fixes) a day-count progress bar whenever a scout is directly assigned
+ * (engine/scoutrange.js's scoutProgressInfo — null for a never-assigned or
+ * already-complete player, which just falls back to the sentence alone). */
+function scoutProgressHtml(state, player) {
   const status = scoutReportStatus(state, player);
-  const enquiry = state.transfers.enquiries.get(player.id);
   const statusIcon = status.kind === "complete" ? "&#10003;" : status.kind === "scouting" ? "&#128269;" : "!";
+  const enquiry = state.transfers.enquiries.get(player.id);
   let statusLine = status.line;
-  if (enquiry) {
+  if (enquiry && enquiry.resolved !== false) {
     statusLine = enquiry.refused ? `${player.commonName} is not for sale.` : `Estimated fee: ${money(enquiry.lo)} - ${money(enquiry.hi)}.`;
+  } else if (enquiry) {
+    statusLine = `Awaiting a response to your enquiry about ${player.commonName}.`;
   }
+  const progress = scoutProgressInfo(state, player);
+  const progressHtml = progress
+    ? `<div class="sx-repstatus__bar"><i style="width:${progress.pct}%"></i></div>` +
+      `<div class="sx-repstatus__days">${progress.scoutName ? `${progress.scoutName} — ` : ""}${progress.elapsedDays} of ${progress.totalDays} days</div>`
+    : "";
+  return (
+    `<div class="sx-repstatus">` +
+      `<div class="sx-repstatus__head"><span class="sx-repstatus__icon is-${status.kind}">${statusIcon}</span>Report Status</div>` +
+      `<div class="sx-repstatus__line">${statusLine}</div>` +
+      progressHtml +
+    `</div>`
+  );
+}
+
+/** Page 1 (Summary): scouting progress on the left half, the 6 SUMMARY_GROUPS
+ * category averages on the right half (F3-fixes owner ask), each shown as a
+ * fuzzy range until the report is complete. */
+function summaryPageHtml(state, player) {
+  const scouted = isFullyScouted(player);
   const summaryRows = SUMMARY_GROUPS.map((g) => {
-    const sum = g.attrs.reduce((s, k) => s + player.attrs[k], 0);
-    const mean = sum / g.attrs.length;
-    if (level >= 3) return { label: g.label, html: attrChip(Math.round(mean)) };
-    const [lo] = scoutingRangeFor(Math.round(mean), level);
-    const [, hi] = scoutingRangeFor(Math.round(mean), level);
-    return { label: g.label, html: `<span class="fx-fuzzy"><span class="fx-attr-chip fx-attr-chip--min">${lo}</span><span class="fx-fuzzy__sep">&ndash;</span><span class="fx-attr-chip fx-attr-chip--max">${hi}</span></span>` };
+    const mean = Math.round(g.attrs.reduce((s, k) => s + player.attrs[k], 0) / g.attrs.length);
+    const html = scouted ? attrChip(mean) : fuzzyChip(...scoutedRange(state, player, `summary:${g.key}`, mean));
+    return { label: g.label, html };
   });
   return (
     reportHeaderHtml(state, player) +
     `<div class="sx-repbody">` +
-      `<div class="sx-repstatus">` +
-        `<div class="sx-repstatus__head"><span class="sx-repstatus__icon is-${status.kind}">${statusIcon}</span>Report Status</div>` +
-        `<div class="sx-repstatus__line">${statusLine}</div>` +
-      `</div>` +
-      `<div class="sx-repsummary">` +
+      `<div class="sx-repbody__left">${scoutProgressHtml(state, player)}</div>` +
+      `<div class="sx-repbody__right sx-repsummary">` +
         `<div class="sx-repsummary__head">Summary</div>` +
         summaryRows.map((r) => `<div class="sx-attr-row"><span class="sx-attr-row__name">${r.label}</span>${r.html}</div>`).join("") +
       `</div>` +
@@ -184,21 +206,39 @@ function attrPageHtml(state, player, title, rows, extraTitle, extraRows) {
     reportHeaderHtml(state, player) +
     `<div class="sx-attrgrid">` +
       (extraTitle ? `<div class="sx-attrgrid__title">${title}</div>` : "") +
-      twoColAttrRows(player, rows) +
-      (extraTitle ? `<div class="sx-attrgrid__title">${extraTitle}</div>${twoColAttrRows(player, extraRows)}` : "") +
+      twoColAttrRows(state, player, rows) +
+      (extraTitle ? `<div class="sx-attrgrid__title">${extraTitle}</div>${twoColAttrRows(state, player, extraRows)}` : "") +
     `</div>`
   );
 }
 
-const REPORT_PAGE_COUNT = 3;
+/** Page order: Summary, [GK Attributes if a keeper], Physical+Mental,
+ * Technical (F3-fixes: GK page inserted the same way ui/teamsheetui.js's own
+ * attrPageDefs prepends one for the Squad screen). Exported so
+ * core/router.js's prev/next paging knows how many pages this player has —
+ * it varies (GK vs outfield), unlike the old fixed REPORT_PAGE_COUNT. */
+function reportPageDefs(player) {
+  const isGk = positionInfo(player.position).area === "GK";
+  const pages = ["summary"];
+  if (isGk) pages.push("gk");
+  pages.push("physical-mental", "technical");
+  return pages;
+}
+export function reportPageCount(player) {
+  return reportPageDefs(player).length;
+}
+
 function reportPageHtml(state, player, page) {
-  if (page === 0) return summaryPageHtml(state, player);
-  if (page === 1) return attrPageHtml(state, player, "Physical:", PHYSICAL_PAGE, "Mental:", MENTAL_PAGE);
+  const pages = reportPageDefs(player);
+  const kind = pages[page] ?? pages[0];
+  if (kind === "summary") return summaryPageHtml(state, player);
+  if (kind === "gk") return attrPageHtml(state, player, "Goalkeeping:", GK_PAGE);
+  if (kind === "physical-mental") return attrPageHtml(state, player, "Physical:", PHYSICAL_PAGE, "Mental:", MENTAL_PAGE);
   return attrPageHtml(state, player, "Technical:", TECHNICAL_PAGE);
 }
 
-function reportPagerHtml(pageIndex) {
-  const dots = Array.from({ length: REPORT_PAGE_COUNT }, (_, i) => `<i class="${i === pageIndex ? "on" : ""}"></i>`).join("");
+function reportPagerHtml(pageIndex, pageCount) {
+  const dots = Array.from({ length: pageCount }, (_, i) => `<i class="${i === pageIndex ? "on" : ""}"></i>`).join("");
   return `<div class="sx-report__pager"><button type="button" class="cnav prev" data-action="report-prev">&lsaquo;</button><span class="dots">${dots}</span><button type="button" class="cnav next" data-action="report-next">&rsaquo;</button></div>`;
 }
 
@@ -488,7 +528,6 @@ function cardHtml(state, player, selected) {
   const area = positionInfo(player.position).area;
   return (
     `<div class="sx-card${selected ? " is-sel" : ""}" data-action="select-result" data-player="${player.id}">` +
-      (selected ? glyphPill("x") : "") +
       `<span class="avatar sx-card__portrait"></span>` +
       `<div class="sx-card__meta">` +
         `<div class="sx-card__name">${player.firstName}<br><b>${player.lastName}</b></div>` +
@@ -513,7 +552,7 @@ function renderResults(state) {
 
   const selected = s.selectedPlayerId != null ? state.playersById.get(s.selectedPlayerId) : null;
   const reportHtml = selected
-    ? `<div class="sx-report__body">${reportPageHtml(state, selected, s.reportPage)}</div>${reportPagerHtml(s.reportPage)}`
+    ? `<div class="sx-report__body">${reportPageHtml(state, selected, s.reportPage)}</div>${reportPagerHtml(s.reportPage, reportPageCount(selected))}`
     : `<div class="empty"><span class="lbl">Select a player to view their Search Report</span></div>`;
 
   const actionMenuHtml = s.actionMenuOpen && selected
@@ -565,32 +604,40 @@ export function renderSearch(state) {
 function shortlistTableHtml(state, list, selectedId) {
   const rows = list.map(({ playerId }) => {
     const p = state.playersById.get(playerId);
-    return { id: p.id, pos: p.position, area: positionInfo(p.position).area, name: p.commonName };
+    return { id: p.id, pos: p.position, position: p.position, area: positionInfo(p.position).area, name: fullName(p), lastName: p.lastName, firstName: p.firstName, age: p.age };
   });
-  const sorted = rows.sort((a, b) => (state.ui.shortlist.sortDir === "asc" ? a.pos.localeCompare(b.pos) : b.pos.localeCompare(a.pos)));
+  const sorted = rows.sort(lastNameSort);
+  if (state.ui.shortlist.sortDir === "desc") sorted.reverse();
   return fxTable({
-    columns: [{ key: "pos", label: "Pos", sortable: true }, { key: "name", label: "Name" }],
+    columns: [{ key: "pos", label: "Pos" }, { key: "name", label: "Name", sortable: true }],
     rows: sorted,
-    sortKey: "pos",
+    sortKey: "name",
     sortDir: state.ui.shortlist.sortDir,
     rowClass: (row) => (row.id === selectedId ? "is-sel" : ""),
     cellHtml: (col, row) => (col.key === "pos" ? `${posBar(row.area)}${row.pos}` : row.name),
   });
 }
 
+/** F3-fixes: OVR shows as a fuzzy range (same rules as the Search Report)
+ * and VALUE stays hidden entirely until the report is complete — otherwise
+ * shortlisting an unscouted player would leak exactly the info scouting is
+ * supposed to be gating. */
 function shortlistPlayerCardHtml(state, player) {
   const club = state.clubsById.get(player.clubId);
+  const scouted = isFullyScouted(player);
+  const ovrHtml = scouted ? attrChip(player.overall) : fuzzyChip(...scoutedRange(state, player, "overall", player.overall));
+  const valueHtml = scouted ? money(player.value) : "???";
   return (
     `<div class="fx-paper__playercard">` +
       `<svg class="crest crest--sm"><use href="#crest-${club.id}"></use></svg>` +
-      `<div class="fx-paper__pcname">${player.commonName}</div>` +
+      `<div class="fx-paper__pcname">${fullName(player)}</div>` +
       `<div class="fx-paper__pcclub">${club.name}</div>` +
       `<div class="fx-paper__pcgrid">` +
-        `<div><span class="k">OVR</span><span class="v">${player.overall}</span></div>` +
+        `<div><span class="k">OVR</span><span class="v">${ovrHtml}</span></div>` +
         `<div><span class="k">POS</span><span class="v">${player.position}</span></div>` +
         `<div><span class="k">AGE</span><span class="v">${player.age}</span></div>` +
       `</div>` +
-      `<div class="fx-paper__pcrow"><span class="k">VALUE</span><span class="v">${money(player.value)}</span></div>` +
+      `<div class="fx-paper__pcrow"><span class="k">VALUE</span><span class="v">${valueHtml}</span></div>` +
       `<div class="fx-paper__pcrow fx-paper__pcrow--gold"><span class="k">FORM</span><span class="v">${formWord(player.form)}</span></div>` +
       `<div class="fx-paper__pcrow fx-paper__pcrow--gold"><span class="k">MORALE</span><span class="v">${moraleWord(player.morale)}</span></div>` +
     `</div>`
@@ -618,19 +665,18 @@ export function moraleWord(morale) {
   return "Angry";
 }
 
-function shortlistAttrSheetHtml(player) {
-  const group = (title, pairs) => `<div class="sx-attrgrid__title">${title}</div>${twoColAttrRows(player, pairs)}`;
+/** F3-fixes: GKs get their own GK attribute group instead of the irrelevant
+ * outfield Technical group (owner: "make sure GK's are showing relevant
+ * stats similar to how we set it up in the squad page"). */
+function shortlistAttrSheetHtml(state, player) {
+  const group = (title, pairs) => `<div class="sx-attrgrid__title">${title}</div>${twoColAttrRows(state, player, pairs)}`;
   const isGk = positionInfo(player.position).area === "GK";
   return (
     `<div class="sx-attrgrid sx-attrgrid--paper">` +
+      (isGk ? group("Goalkeeping:", GK_PAGE) : "") +
       group("Physical:", PHYSICAL_PAGE) +
       group("Mental:", MENTAL_PAGE) +
-      group("Technical:", TECHNICAL_PAGE) +
-      group("Goalkeeping:", [
-        [["gkDiving", "GK Diving"], ["gkHandling", "GK Handling"]],
-        [["gkKicking", "GK Kicking"], ["gkReflexes", "GK Reflexes"]],
-        [["gkPositioning", "GK Positioning"], null],
-      ]) +
+      (isGk ? "" : group("Technical:", TECHNICAL_PAGE)) +
     `</div>`
   );
 }
@@ -663,7 +709,7 @@ export function renderMyShortlist(state) {
       (list.length ? `<div class="fx-paper__title sx-shortlist__title">My Shortlist</div>` : "") +
       `<div class="sx-shortlist__cols">` +
         `<div class="sx-shortlist__left">${leftHtml}${actionMenuHtml}</div>` +
-        `<div class="sx-shortlist__right">${selected ? shortlistAttrSheetHtml(selected) : ""}</div>` +
+        `<div class="sx-shortlist__right">${selected ? shortlistAttrSheetHtml(state, selected) : ""}</div>` +
       `</div>` +
     `</div>`;
 

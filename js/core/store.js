@@ -491,7 +491,7 @@ function createUiDefaults(today) {
  */
 function deriveIndices(state, {
   allClubs, allLeagues, allNations, allCups, results = new Map(), clubLeague, cups, finances,
-  transferListings, transferPendingOffers, clubTransferBudgets, transferShortlist,
+  transferListings, transferPendingOffers, clubTransferBudgets, transferShortlist, transferEnquiries,
 }) {
   state.staticData = { leagues: allLeagues, clubs: allClubs, nations: allNations, cups: allCups };
   state.clubLeague = clubLeague || new Map(allClubs.map((c) => [c.id, c.leagueId]));
@@ -553,13 +553,16 @@ function deriveIndices(state, {
   state.transfers.pendingOffers = transferPendingOffers || [];
   state.transfers.negotiation = null;
   // F3: My Shortlist ({playerId, dateAdded}[]) — persists like listings above
-  // (not re-derivable from the seed). Enquiry results (F3's "Enquire about
-  // <name>" action) are deliberately NOT persisted, same "in-flight/session-
-  // only UI state" footing as `negotiation` itself just above — a fresh
-  // enquiry is one click away, and the inbox email it sends already is the
-  // durable record.
+  // (not re-derivable from the seed).
   state.transfers.shortlist = transferShortlist || [];
-  state.transfers.enquiries = new Map();
+  // F3-fixes: enquiry results (F3's "Enquire about <name>" action) now DO
+  // persist — the Approach — Transfer Offer dossier quotes a resolved one
+  // back to the user, so losing it on reload would silently make that quote
+  // vanish. A pending (unresolved) entry surviving a reload still has its
+  // own state.transfers.pendingOffers entry to resolve it on schedule (that
+  // Map/array pair is restored together, same footing as listings/
+  // pendingOffers above).
+  state.transfers.enquiries = new Map(transferEnquiries || []);
   // CPU clubs' own transfer budgets (engine/clubbudget.js) — lazily
   // populated per club as CPU<->CPU activity/incoming bids touch them;
   // persists across saves so a club's spend isn't silently refilled on reload.
@@ -835,6 +838,7 @@ export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
     results: saved.results, clubLeague: saved.clubLeague, cups: saved.cupsState, finances: saved.finances,
     transferListings: saved.transferListings, transferPendingOffers: saved.transferPendingOffers,
     clubTransferBudgets: saved.clubTransferBudgets, transferShortlist: saved.transferShortlist,
+    transferEnquiries: saved.transferEnquiries,
   });
 
   // F1: a pre-F1 save never had state.squad.sheets at all — same "fresh
@@ -1250,6 +1254,7 @@ export class Store {
       else if (entry.type === "contract-response") negotiation.resolveContractOfferEntry(state, entry);
       else if (entry.type === "loan-response") negotiation.resolveLoanRequestEntry(state, entry);
       else if (entry.type === "approach-response") freeagents.resolveApproachEntry(state, entry);
+      else if (entry.type === "enquiry-response") enquiryEngine.resolveEnquiryEntry(state, entry);
     }
   }
 

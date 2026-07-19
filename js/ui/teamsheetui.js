@@ -44,7 +44,9 @@ const SKILL_ATTRS = [
   ["shotPower", "Shot Power"], ["longShots", "Long Shots"], ["standTackle", "Stand Tackle"],
   ["slideTackle", "Slide Tackle"], ["volleys", "Volleys"], ["curve", "Curve"], ["penalties", "Penalties"],
 ];
-const GK_ATTRS = [
+// Exported for reuse by ui/searchui.js (F3-fixes: Search Report/Shortlist's
+// own GK attribute page, same field/label pairs as this screen's).
+export const GK_ATTRS = [
   ["gkDiving", "GK Diving"], ["gkHandling", "GK Handling"], ["gkKicking", "GK Kicking"],
   ["gkReflexes", "GK Reflexes"], ["gkPositioning", "GK Pos."],
 ];

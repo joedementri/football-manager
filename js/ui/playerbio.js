@@ -7,6 +7,8 @@
 import { ATTRIBUTE_GROUPS } from "../config/attributes.js";
 import { positionInfo } from "../config/positions.js";
 import { money, number } from "../core/format.js";
+import { fullName } from "../core/sortutil.js";
+import { scoutedRange, isFullyScouted } from "../engine/scoutrange.js";
 
 const ATTR_LABELS = {
   acceleration: "Acceleration", sprintSpeed: "Sprint Speed",
@@ -54,15 +56,33 @@ function categoryAvg(attrs, names) {
   return Math.round(names.reduce((s, n) => s + attrs[n], 0) / names.length);
 }
 
-function renderPanel(groupName, attrs) {
+/** F3-fixes: an opponent/free-agent player who isn't fully scouted shows the
+ * same kind of fuzzy range every other stat page in the app now does
+ * (Search Report/Shortlist — engine/scoutrange.js), instead of Player Bio
+ * being the one screen that always revealed everything regardless of
+ * scouting.level. A player on the user's own club is always fully known —
+ * gen/player.js's own header documents core/store.js's createCareerState and
+ * engine/contracts.js's movePlayerToClub both raising scouting.level to 3
+ * the moment a player is on that club, so isFullyScouted already covers
+ * "own team" with no separate check needed here. */
+function renderPanel(state, player, groupName) {
   const names = ATTRIBUTE_GROUPS[groupName];
-  const avg = categoryAvg(attrs, names);
-  const rows = names.map((n) => (
-    `<div class="bio-attr-row"><span class="bio-attr-name">${ATTR_LABELS[n]}</span><span class="bio-attr-val">${attrs[n]}</span></div>`
-  )).join("");
+  const scouted = isFullyScouted(player);
+  const trueAvg = categoryAvg(player.attrs, names);
+  const avgHtml = scouted ? trueAvg : (() => {
+    const [lo, hi] = scoutedRange(state, player, `bio:${groupName}`, trueAvg);
+    return `${lo}&ndash;${hi}`;
+  })();
+  const rows = names.map((n) => {
+    const valHtml = scouted ? player.attrs[n] : (() => {
+      const [lo, hi] = scoutedRange(state, player, n, player.attrs[n]);
+      return `${lo}&ndash;${hi}`;
+    })();
+    return `<div class="bio-attr-row"><span class="bio-attr-name">${ATTR_LABELS[n]}</span><span class="bio-attr-val">${valHtml}</span></div>`;
+  }).join("");
   return (
     `<div class="bio-panel">` +
-      `<div class="bio-panel__head"><span class="bio-panel__label">${groupName}</span><span class="bio-panel__avg">${avg}</span></div>` +
+      `<div class="bio-panel__head"><span class="bio-panel__label">${groupName}</span><span class="bio-panel__avg">${avgHtml}</span></div>` +
       rows +
     `</div>`
   );
@@ -76,10 +96,11 @@ export function renderPlayerBio(state) {
     return;
   }
 
-  document.getElementById("bio-crumb-name").textContent = player.commonName;
+  const scouted = isFullyScouted(player);
+  document.getElementById("bio-crumb-name").textContent = fullName(player);
 
   const info = positionInfo(player.position);
-  const panels = ["PAC", "SHO", "PAS", "DRI", "DEF", "PHY"].map((g) => renderPanel(g, player.attrs)).join("");
+  const panels = ["PAC", "SHO", "PAS", "DRI", "DEF", "PHY"].map((g) => renderPanel(state, player, g)).join("");
 
   const infoRows = [
     ["Age", player.age],
@@ -89,29 +110,43 @@ export function renderPlayerBio(state) {
     ["Work Rates", `${player.workRateAtt} / ${player.workRateDef}`],
     ["Weak Foot", stars(player.weakFoot)],
     ["Skill Moves", stars(player.skillMoves)],
-    ["Value", money(player.value)],
-    ["Wage", `${money(player.contract.wage)} / week`],
+    // F3-fixes: Value/Wage stay hidden until the report is complete (owner:
+    // "Dont show overall and potential and value and wage until fully
+    // scouted").
+    ...(scouted ? [
+      ["Value", money(player.value)],
+      ["Wage", `${money(player.contract.wage)} / week`],
+    ] : []),
     ["Contract", `Until ${player.contract.endYear}`],
     ["Squad Role", player.contract.squadRole],
     ["Form", `${player.form} / 10`],
     ["Morale", `${player.morale} / 10`],
   ].map(([k, v]) => `<div class="bio-info-row"><span class="k">${k}</span><span class="v">${v}</span></div>`).join("");
 
+  const ovrHtml = scouted ? player.overall : (() => {
+    const [lo, hi] = scoutedRange(state, player, "overall", player.overall);
+    return `${lo}&ndash;${hi}`;
+  })();
+  const potHtml = scouted ? player.potential : (() => {
+    const [lo, hi] = scoutedRange(state, player, "potential", player.potential);
+    return `${lo}&ndash;${hi}`;
+  })();
+
   container.innerHTML =
     `<div class="bio-identity">` +
       `<div class="bio-identity__top">` +
         `<span class="flag flag--lg" data-flag="${player.nationId}"></span>` +
         `<div class="bio-identity__name">` +
-          `<div class="bio-name">${player.commonName}</div>` +
-          `<div class="bio-sub">${info.label} &middot; ${player.firstName} ${player.lastName}</div>` +
+          `<div class="bio-name">${fullName(player)}</div>` +
+          `<div class="bio-sub">${info.label} &middot; ${player.commonName}</div>` +
         `</div>` +
         `<svg class="crest bio-identity__crest"><use href="#crest-${player.clubId}"></use></svg>` +
       `</div>` +
       `<div class="bio-ovr-row">` +
-        `<div class="bio-ovr"><span class="bio-ovr__num">${player.overall}</span><span class="bio-ovr__lbl">OVR</span></div>` +
-        `<div class="bio-ovr bio-ovr--pot"><span class="bio-ovr__num">${player.potential}</span><span class="bio-ovr__lbl">POT</span></div>` +
+        `<div class="bio-ovr"><span class="bio-ovr__num${scouted ? "" : " bio-ovr__num--range"}">${ovrHtml}</span><span class="bio-ovr__lbl">OVR</span></div>` +
+        `<div class="bio-ovr bio-ovr--pot"><span class="bio-ovr__num${scouted ? "" : " bio-ovr__num--range"}">${potHtml}</span><span class="bio-ovr__lbl">POT</span></div>` +
       `</div>` +
-      `<div class="bio-potential-band">${potentialBand(player, state.seasonStartYear)}</div>` +
+      (scouted ? `<div class="bio-potential-band">${potentialBand(player, state.seasonStartYear)}</div>` : "") +
       `<div class="bio-info">${infoRows}</div>` +
     `</div>` +
     `<div class="bio-panels">${panels}</div>`;

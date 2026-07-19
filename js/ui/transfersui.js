@@ -72,22 +72,32 @@ function playerInfoPaperHtml(state, player, club) {
  * ========================================================================== */
 
 function transferOfferRightHtml(state, n, player, club) {
+  // F3-fixes: if the user already enquired about this player and got a real
+  // answer back, quote that instead of computing a fresh independent
+  // estimate — owner: "if you approach to transfer it mentions how much the
+  // team is asking for in the dossier." Falls back to the old on-the-fly
+  // estimate for a player nobody's ever enquired about (or whose enquiry is
+  // still pending — engine/enquiry.js's `resolved: false` placeholder).
+  const enquiry = state.transfers.enquiries.get(player.id);
+  const resolvedEnquiry = enquiry && enquiry.resolved && !enquiry.refused ? enquiry : null;
   const wantedFee = computeWantedFee({ player, buyingClub: state.club, sellingClub: club, state });
-  const lo = Math.round(wantedFee * (1 - ENQUIRY_RANGE_PCT / 100));
-  const hi = Math.round(wantedFee * (1 + ENQUIRY_RANGE_PCT / 100));
+  const lo = resolvedEnquiry ? resolvedEnquiry.lo : Math.round(wantedFee * (1 - ENQUIRY_RANGE_PCT / 100));
+  const hi = resolvedEnquiry ? resolvedEnquiry.hi : Math.round(wantedFee * (1 + ENQUIRY_RANGE_PCT / 100));
   const exchangePlayer = n.exchangePlayerId != null ? state.playersById.get(n.exchangePlayerId) : null;
   const rejectedNote = n.exchangeRejectedNote
     ? `<div class="apo-note apo-note--warn">${club.name} didn't need that player and turned down the exchange — the offer went cash-only.</div>` : "";
   const over = n.feeOffer > state.finances.transferBudget;
   const editingFee = state.ui.negotiation.editingFeeOffer;
+  const cecBody = resolvedEnquiry
+    ? `${club.name} told us they'd want a fee in the region of ${money(lo)} and ${money(hi)} for ${player.commonName}.`
+    : `${player.commonName} is one of the key players in his role and plays for a good club. He's probably going for a sum between ${money(lo)} and ${money(hi)} at this point.`;
 
   return (
     `<div class="fx-paper apo-right">` +
       `<div class="fx-paper__title">TRANSFER OFFER</div>` +
       `<div class="apo-cec">` +
         `<div class="apo-cec__head">Chief Executive Comments:</div>` +
-        `<div class="apo-cec__body">${player.commonName} is one of the key players in his role and plays for a good club. ` +
-          `He's probably going for a sum between ${money(lo)} and ${money(hi)} at this point.</div>` +
+        `<div class="apo-cec__body">${cecBody}</div>` +
       `</div>` +
       `<div class="apo-toggle" data-action="offer-mode-toggle">${glyphPill("lt")}${glyphPill("rt")} BUY</div>` +
       `<div class="apo-row"><span class="k">Rem. Transfer Budget</span><span class="v${over ? " apo-over" : ""}">${money(state.finances.transferBudget)}</span></div>` +

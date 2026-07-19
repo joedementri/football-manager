@@ -711,6 +711,148 @@ Portsmouth, advance 10 days incl. auto-simmed matchdays, open all 5 hubs) — al
   with real Brazil flag / England flag / Manchester United crest data — all large, centered, no
   clipping or distortion; re-ran `dev/tests.js` (still 575/575, unaffected by a pure CSS change).
 
+Second follow-up pass same day: a 15-item punch list on the Search Report/Shortlist/Player Bio right-
+side panel — layout polish, a real scouting-progress engine, and closing a real data-loss bug. Two
+owner clarifying questions resolved before starting (Q&A, not guessed): scout report speed is driven
+by **Judgment** (not Experience — Judgment already gated "accuracy of ranges" everywhere else in
+`config/scouting.js`), 3 days at 5★ down to 8 days at 1★, linear between (owner's own recalled figure —
+checked `reference/ini/scout.ini` first, confirmed no such table exists there, `[TUNED]`); and the new
+last-name-first sort applies only to Search Results + My Shortlist (screens showing an opponent's
+possibly-hidden Overall), not Squad List/Squad Report/Team Stats (the user's own, already-fully-known
+players — no info to hide there).
+
+- [OWNER SPEC] **(X) removed from search-result cards.** `glyphPill("x")` was a purely decorative
+  Xbox-glyph overlay on the selected card (no `data-action` of its own — the whole card div is already
+  the click target); deleted the markup + its now-dead `.sx-card .btn-glyph` CSS rule. The reference
+  pic (`ms_SEARCH_PLAYERS_SCREEN_SEARCH_RESULTS_PLAYER_PAGE_2.png`) actually shows this glyph too, but
+  the owner's explicit instruction wins over pic-fidelity here.
+- **Sort by last name, then first, then position, then age** (`core/sortutil.js`, new — `fullName()` +
+  `lastNameSort()`, shared by both screens below so "full name" reads identically everywhere it's
+  fixed). Replaces `computeSearchResults`' old `overall desc` and My Shortlist's old `pos`-only sort.
+- **Header row spacing + flag size**, read off `ms_SEARCH_PLAYERS_SCREEN_SEARCH_RESULTS_PLAYER_SELECTED.png`
+  fresh: `.sx-rephead` row-gap 4px → 10px (was overlapping), and the name/club row's flag — previously
+  the bare 18x12 `.flag` default — got its own `.sx-rephead__flag` (32x21), matching the pic's own
+  flag-roughly-crest-sized proportion.
+- **Carousel dots/arrows overlap — real bug, not cosmetic.** `.dots` (`css/chrome.css`) defaults to
+  `position: absolute; right: 12px; bottom: 10px` for a pager sitting directly on a positioned overlay
+  root; `.sx-report__pager` never overrode it back to static (every *other* `.cnav`+`.dots` pager in the
+  app already carries this override — teamsheet/formations), so the dots escaped to the bottom-right
+  corner of the whole `.sx-body`, not the small flex row between the arrows. One rule added
+  (`.sx-report__pager .dots { position: static; ... }`).
+- [SCOPE DECISION] **7-band range-chip colour scale, not FIFA 15's own.** The owner recalled FIFA 15's
+  dark-green/green/light-green/orange/yellow/light-red/dark-red order but flagged the exact numbers as
+  unknown, asking only for *consistency with the rest of the app*. That FIFA order reverses yellow and
+  orange versus this app's own established `attrBand`/`ATTR_BAND_HEX` (green > yellow > orange > red,
+  used everywhere from attribute chips to jersey fitness dots) — reproducing FIFA's order verbatim would
+  make "yellow" mean opposite things on two screens of the same app. Kept the app's own ordering and
+  added 3 extra steps to it instead (`panelkit.js`'s new `rangeBand()`/`RANGE_BAND_HEX`/`rangeChip()`):
+  darkgreen ≥85, green ≥72, lightgreen ≥60, yellow ≥50, orange ≥38, lightred ≥25, darkred <25, `[TUNED]`.
+  The *actual* bug being fixed: every fuzzy chip pair used to hard-paint its low end red and high end
+  green regardless of what either number meant (a min of 70 read as alarming as a min of 20) — `fuzzyChip`
+  now colours each end by its own value via `rangeBand`, not by min/max role. Solid (fully-scouted)
+  chips are untouched — the reference pics confirm those already use this exact 4-colour scheme
+  correctly, nothing to fix there.
+- **Continuous day-by-day scouting engine** (`engine/scoutrange.js`, new; `config/scouting.js` additions;
+  `engine/gtn.js` changes) — the core piece the rest of this pass hangs off:
+  - `startPlayerScout` (the "Ask X to Scout Y" action) now stamps `player.scouting.assignedDate` +
+    `totalDays` (`REPORT_DAYS_BY_JUDGMENT[scout.judgment]`, the 3-8 day table above) instead of only
+    bumping a discrete level. A new daily hook, `processTargetedScoutTasks` (called from
+    `runDailyGtnActivity`), completes the task the day the clock runs out — flips to level 3/exact *and*
+    frees the scout immediately, rather than leaving them tied up for the mission's full 3-month tier
+    duration on a report that's already finished. [JUDGMENT CALL]: a broad region/tag mission
+    (`startMission`, no `targetPlayerId`) is untouched — still narrows in the old discrete weekly-report
+    steps (`RANGE_HALF_WIDTH_BY_LEVEL`, level 0 widened 12→20 to match the "very wide" language below) —
+    the owner's wording ("when a scout is *assigned*...") reads as the single-player action specifically,
+    and `processMissionReport`'s own loop now explicitly skips `narrowPlayerKnowledge` for a
+    `targetPlayerId` mission so the two paths never fight over the same fields.
+  - `scoutedRange(state, player, key, trueValue)` is the one function every screen below calls for a
+    range: `continuousHalfWidth(elapsedDays, totalDays)` narrows linearly from `RANGE_START_HALF_WIDTH`
+    (20 — "very wide when unscouted") to 0 as `elapsedDays` climbs toward `totalDays`; a player with no
+    `assignedDate` at all falls back to the old discrete per-level table. **Fuzziness**: the true value is
+    deliberately *not* pinned to the range's exact midpoint — a stable per-player-per-`key` fraction
+    (`RngStream(deriveSeed(...))`, average of two uniforms = a simple triangular distribution biased
+    toward 0.5) decides where within the range the true value sits, so it's usually near the middle but
+    not always exactly on it, matching the owner's own wording. Derived fresh from `state.seed` every
+    call rather than stored — no new per-attribute persisted field needed, and it's stable across
+    renders/reloads since the seed never changes.
+  - `player.scouting.assignedDate`/`totalDays` are new schema fields (`gen/player.js`, defaulted `null`)
+    and are appended to the *end* of `db.js`'s positional `serializePlayer` array (so an older save still
+    deserializes fine — `ArrayCursor` reads past-the-end as `undefined`, treated as `null`).
+- **Page 1 (Summary) split**: scouting progress on the left half (`scoutProgressHtml` — existing
+  icon+sentence "Report Status" box, now with a day-count progress bar underneath whenever
+  `scoutProgressInfo` returns non-null), the 6 `SUMMARY_GROUPS` category ranges on the right half
+  (`.sx-repbody` flex-column → 2-col grid). Each category average is now genuinely fuzzed via
+  `scoutedRange` instead of the old hand-rolled always-red/always-green markup.
+- **GK attribute page** — Search Report gained a 4th page (`GK_PAGE`, built from `teamsheetui.js`'s own
+  exported `GK_ATTRS` so the two screens' GK field/label pairs never drift apart) inserted after Summary
+  for a keeper, mirroring the Squad screen's own `attrPageDefs` GK-page-prepend pattern (owner: "make
+  sure GK's are showing relevant stats similar to how we set it up in the squad page"). Page count now
+  varies per player (`reportPageCount`, exported) — `core/router.js`'s prev/next/Change-View handlers
+  read it off the currently-selected player instead of a fixed `3`. My Shortlist's own attribute sheet
+  had an actual live bug here: `shortlistAttrSheetHtml` computed `isGk` but never used it, unconditionally
+  showing Physical+Mental+Technical+Goalkeeping for *every* player — now branches Goalkeeping+Physical+
+  Mental for a GK, Physical+Mental+Technical otherwise.
+- **Enquiry reworked into a delayed request** (`engine/enquiry.js` — `submitEnquiry` no longer resolves
+  synchronously). Reuses `engine/negotiation.js`'s own established pattern verbatim rather than inventing
+  a new one: a `state.transfers.pendingOffers` entry (`type: "enquiry-response"`, new dispatch case in
+  `core/store.js`'s `_resolvePendingTransferOffers`) due 1-3 days out (`ENQUIRY_MIN/MAX_DAYS`, the owner's
+  own number — a separate, shorter window than fee/contract offers' existing 3-6 days, since a "will you
+  sell" enquiry is a lighter ask than a full negotiation), or resolved on the spot if `today` is already a
+  transfer deadline day (same `isDeadlineDay`/`config/calendar.js` check `engine/negotiation.js` already
+  uses for its own offers — this is what the owner's "or next sim hour on transfer day" phrasing turned
+  out to mean: deadline day is the one day nothing queues). A `{resolved:false, date}` placeholder is
+  written immediately so the Search Report status line can say "Awaiting a response" right away.
+  - [OWNER-DRIVEN REVERSAL] `state.transfers.enquiries` used to be deliberately *not* persisted ("a fresh
+    enquiry is one click away"). Now it is (`db.js`'s new `serializeEnquiryEntry`/`transferEnquiries`
+    field) — the owner wants the answer remembered for the dossier (next bullet), so losing it on reload
+    would silently make that quote vanish.
+  - **Approach — Transfer Offer dossier now quotes a resolved enquiry back** (`transfersui.js`'s
+    `transferOfferRightHtml`): if `state.transfers.enquiries.get(player.id)` is resolved and not refused,
+    its `lo`/`hi` replace the dossier's own independently-computed on-the-fly estimate, phrased as "X told
+    us they'd want a fee in the region of...". Falls back to the old fresh estimate for a player nobody's
+    enquired about (or whose enquiry is still pending).
+- [BUG FIX] **Autosave never covered Shortlist/scouting/enquiry actions — owner hit this directly** ("I
+  added a player, refreshed, and they were no longer in my shortlist"). `main.js`'s `wireAutosave` only
+  ever listened for `"advance"`/`"teamsheet"`; `toggleShortlistPlayer`/`performPlayerAction` (ask-scout,
+  enquire, toggle-shortlist) only ever emit `"search"`/`"shortlist"`, so none of those actions ever
+  triggered a write. Added a second debounced (800ms, same as the existing teamsheet fix) listener on
+  both events — one shared timer since `toggleShortlistPlayer` fires both together.
+- **Shortlist card**: OVR now a `scoutedRange`/`fuzzyChip` pair instead of the true number, VALUE fully
+  hidden (`"???"`) until `isFullyScouted` — both were shown unconditionally before, defeating the whole
+  point of scouting a shortlisted player. Top card + bottom table both switched from `player.commonName`
+  to the new `fullName()` helper.
+- **Player Bio gated for the first time.** Previously showed real everything (attrs, Overall, Potential,
+  Value, Wage) regardless of `scouting.level` — reachable for an unscouted player via My Shortlist's own
+  (RS) Player Bio prompt or the negotiation dossier's RS prompt, a straight bypass of the whole scouting
+  system. Now: full name at top (was `commonName` big + `firstName lastName` small — swapped, `commonName`
+  moved to the subtitle alongside the position label), the 6 PAC/SHO/PAS/DRI/DEF/PHY panels' category
+  averages *and* individual attribute rows fall back to `scoutedRange` when not fully scouted (plain
+  "lo–hi" text, not chips — this screen has no reference pic and was "authored fresh from the token set"
+  per its own header, so it keeps its existing plain-number look rather than importing chip styling built
+  for a different screen), Value/Wage rows omitted entirely, the potential-band flavour line hidden (it
+  leaks whether `potential > overall`, itself supposed-to-be-hidden info). [JUDGMENT CALL] no separate
+  "is this the user's own player" check was added — `gen/player.js`'s own header already documents
+  `core/store.js`'s `createCareerState` and `engine/contracts.js`'s `movePlayerToClub` both raising
+  `scouting.level` to 3 the instant a player is on the user's club, so the existing `isFullyScouted`
+  check already covers "own team = always revealed" with no new code; verified visually rather than
+  assumed (own-team player's bio showed solid numbers with zero manual scouting setup).
+
+Testing: extended `dev/tests.js`'s existing `scoutingRangeFor` half-width assertion for the level-0
+12→20 widen (the only one of 575 pre-existing assertions this pass touched — everything else, including
+the enquiry group's "resolves synchronously" assertions, kept passing unmodified since
+`buildM7FakeState`'s fixture calendar date already happens to be Sep 1 = deadline day). Full suite
+575/575 green. Manually verified end-to-end in headless Chrome (Playwright): (X) gone, alphabetical
+sort, header spacing/flag, carousel arrows either side of the dots, a GK's 4-page report incl. the new
+GK page, a live scout assignment's progress bar going from "QA Scout — 0 of 3 days" (wide fuzzy ranges,
+level 1) to a green "report is complete" (exact values) after exactly 3 in-game days for a 5★-Judgment
+scout, range-chip colours varying by actual value rather than by min/max role, Shortlist's hidden
+OVR-range/VALUE and full name (top card + table), Player Bio's hidden Value/Wage + range panels for an
+unscouted player flipping to solid numbers once scouted, an own-team player's bio auto-revealed with no
+manual setup, a shortlisted player + a submitted enquiry both surviving a full page reload with no manual
+Save (the autosave bug fix), and a submitted enquiry resolving after 3 simulated days with an inbox
+email landing and its refused/fee-range outcome persisting — zero unexpected console errors throughout
+(only the pre-existing, already-documented-harmless `/favicon.ico` 404).
+
 ## F3 — 2026-07-18
 
 Transfers: PLAYER SEARCH filter tiles → SEARCH RESULTS (tabs/cards/report + action menu) → My

@@ -109,12 +109,39 @@ export const REPORT_INTERVAL_DAYS = 7;
 // level 1 ⇒ ovr/pot as wide ranges (±6), level 2 ⇒ ±3, level 3 (fully
 // scouted) ⇒ exact." Level 0 (never scouted at all) is this project's own
 // addition so "un-scouted players in Search show ranges too" (plan1.md) is
-// meaningful — set to double level 1's band, continuing the same halving
-// pattern (12 -> 6 -> 3 -> 0) the plan's own three levels already follow.
-export const RANGE_HALF_WIDTH_BY_LEVEL = [12, 6, 3, 0];
+// meaningful — matches RANGE_START_HALF_WIDTH below (F3-fixes: "very wide
+// when unscouted") rather than the old 12, so a player nobody has ever
+// looked at and a player on day 0 of a fresh scout assignment read as
+// equally wide-open.
+export const RANGE_HALF_WIDTH_BY_LEVEL = [20, 6, 3, 0];
 export function scoutingRangeFor(trueValue, level) {
   const half = RANGE_HALF_WIDTH_BY_LEVEL[level];
   return [Math.max(1, trueValue - half), Math.min(99, trueValue + half)];
+}
+
+// F3-fixes: a direct single-player scout task ("Ask <scout> to Scout <name>")
+// narrows continuously, day by day, rather than in the old discrete level
+// steps above — owner's own recalled pacing (not in scout.ini, which has no
+// star-tiered report-completion-time table): 5★ Judgment = 3 days, 1★ = 8
+// days, linear in between. Judgment already gates "accuracy of ranges"
+// elsewhere in this file (SCOUT_COST_KNOWLEDGE_LEVEL_* comment above), so
+// it's the stat that governs how fast an accurate report comes together
+// too. [TUNED]. Index 0 unused (stars are 1-5).
+export const REPORT_DAYS_BY_JUDGMENT = [null, 8, 7, 6, 4, 3];
+
+// Widest a continuously-narrowing range starts at before any of its days
+// have elapsed — owner: "the range should be very wide when unscouted."
+// [TUNED], one step past RANGE_HALF_WIDTH_BY_LEVEL's own widest band (12)
+// used to be, continuing that table's halving pattern one notch further out.
+export const RANGE_START_HALF_WIDTH = 20;
+
+/** Continuous half-width for a value `elapsedDays` into a `totalDays`
+ * scouting task — narrows linearly from RANGE_START_HALF_WIDTH down to 0
+ * (exact) once elapsedDays >= totalDays. */
+export function continuousHalfWidth(elapsedDays, totalDays) {
+  if (elapsedDays == null || !totalDays) return RANGE_START_HALF_WIDTH;
+  const frac = Math.max(0, Math.min(1, elapsedDays / totalDays));
+  return Math.round(RANGE_START_HALF_WIDTH * (1 - frac));
 }
 
 // GTN mission "player type" tags (plan1.md's own example: "'Pacey, Prolific'

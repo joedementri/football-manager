@@ -19,7 +19,7 @@ import {
   MAX_HIRED_SCOUTS, POOL_SIZE, POOL_REFRESH_DAYS, hireCost, sackCost, monthlySalary,
   scoutStatRangeForClub, MAX_SCOUTED_PLAYERS_BY_JUDGMENT, MISSION_TIERS, missionCost,
   FIND_COUNT_RANGE_BY_EXPERIENCE, FIRST_REPORT_DAYS, REPORT_INTERVAL_DAYS, scoutingRangeFor, tagScore,
-  SCOUT_TAGS,
+  SCOUT_TAGS, REPORT_DAYS_BY_JUDGMENT,
 } from "../config/scouting.js";
 
 function nextGtnId(state) {
@@ -186,9 +186,39 @@ export function startPlayerScout(state, playerId) {
   scout.missionId = mission.id;
   state.gtn.missions.push(mission);
   player.scouting.level = Math.max(player.scouting.level, 1);
+  // F3-fixes: a direct single-player task narrows continuously day-by-day
+  // (engine/scoutrange.js) rather than in processMissionReport's old weekly
+  // discrete steps — assignedDate/totalDays are this task's own clock,
+  // independent of the mission's nextReportDate above (kept only for GTN
+  // Scout Report screen bookkeeping, unused by the continuous path).
+  player.scouting.assignedDate = today;
+  player.scouting.totalDays = REPORT_DAYS_BY_JUDGMENT[scout.judgment];
   player.scouting.ovrRange = scoutingRangeFor(player.overall, player.scouting.level);
   player.scouting.potRange = scoutingRangeFor(player.potential, player.scouting.level);
   return { ok: true, mission, scout };
+}
+
+/** Daily hook (runDailyGtnActivity below): completes any direct single-
+ * player scout task whose continuous clock has run out — flips the player
+ * to level 3/exact and frees the scout immediately rather than leaving them
+ * tied up for the mission's full 3-month tier duration on a report that's
+ * already finished (owner: "it should take days simmed to complete the
+ * report" — completion ends the task, unlike a broad region/tag mission
+ * which keeps searching for new finds until its own endDate). */
+function processTargetedScoutTasks(state, today) {
+  for (const mission of state.gtn.missions) {
+    if (mission.status !== "active" || !mission.targetPlayerId) continue;
+    const player = state.playersById.get(mission.targetPlayerId);
+    if (!player || !player.scouting.assignedDate || player.scouting.level >= 3) continue;
+    const elapsed = toEpochDay(today) - toEpochDay(player.scouting.assignedDate);
+    if (elapsed < player.scouting.totalDays) continue;
+    player.scouting.level = 3;
+    player.scouting.ovrRange = [player.overall, player.overall];
+    player.scouting.potRange = [player.potential, player.potential];
+    mission.status = "completed";
+    const scout = state.gtn.scouts.find((s) => s.id === mission.scoutId);
+    if (scout && scout.missionId === mission.id) scout.missionId = null;
+  }
 }
 
 export function cancelMission(state, missionId) {
@@ -257,7 +287,11 @@ function processMissionReport(state, mission, today) {
   for (const pid of mission.foundPlayerIds) {
     const player = state.playersById.get(pid);
     if (!player) continue;
-    narrowPlayerKnowledge(player);
+    // F3-fixes: a targeted single-player task's own player narrows
+    // continuously via processTargetedScoutTasks/engine/scoutrange.js
+    // instead of this weekly discrete step — skip it here so the two paths
+    // never fight over the same player.scouting fields.
+    if (!mission.targetPlayerId) narrowPlayerKnowledge(player);
     if (mission.seenPlayerIds.includes(pid) && !mission.updatedPlayerIds.includes(pid)) {
       mission.updatedPlayerIds.push(pid);
     }
@@ -310,6 +344,7 @@ export function runDailyGtnActivity(state, today) {
   refreshScoutPool(state, today);
   applyMonthlySalaries(state, today);
   for (const mission of state.gtn.missions) processMissionReport(state, mission, today);
+  processTargetedScoutTasks(state, today);
   for (const mission of state.gtn.missions) {
     if (mission.status === "active" && toEpochDay(today) >= toEpochDay(mission.endDate)) {
       mission.status = "completed";

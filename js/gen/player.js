@@ -240,7 +240,11 @@ export function generatePlayer(opts) {
     // createCareerState raises the user's own starting squad to level 3
     // right after world-gen; engine/contracts.js's movePlayerToClub does the
     // same the moment any player later joins the user's club.
-    scouting: { level: 0, ovrRange: scoutingRangeFor(overall, 0), potRange: scoutingRangeFor(potential, 0) },
+    // F3-fixes: assignedDate/totalDays are set only by engine/gtn.js's
+    // startPlayerScout (a direct single-player scout task) and drive
+    // engine/scoutrange.js's continuous day-by-day narrowing; null here
+    // means "not on that path yet" — see that file's own header.
+    scouting: { level: 0, ovrRange: scoutingRangeFor(overall, 0), potRange: scoutingRangeFor(potential, 0), assignedDate: null, totalDays: null },
     // Set true by engine/retirement.js (M5) once a player's retirement roll
     // hits at the January board-review date; they actually retire (and a
     // regen replaces them) at the July 1 rollover — plan1.md: "announce in

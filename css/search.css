@@ -135,7 +135,6 @@
 .sx-card__pos { display: flex; align-items: center; gap: 4px; font-family: var(--font-ui); font-size: 11px; color: var(--ink-dim); margin-top: 2px; }
 .sx-card__crest { position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; }
 .sx-card__age { grid-column: 2; font-family: var(--font-ui); font-size: 11px; color: var(--ink-dim); }
-.sx-card .btn-glyph { position: absolute; top: 6px; left: 6px; width: 16px; height: 16px; font-size: 10px; }
 
 /* ---------------------------- Search Report panel -------------------------- */
 .sx-report { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
@@ -143,25 +142,43 @@
 .sx-report__body::-webkit-scrollbar { width: 8px; }
 .sx-report__body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
 .sx-report__pager { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding-top: 6px; }
+/* F3-fixes: .dots (css/chrome.css) defaults to position:absolute, meant for
+   a pager sitting directly on a positioned overlay root — inside this small
+   flex row it needs to go back to being a normal flex child, or it escapes
+   to the bottom-right of the whole .sx-body and overlaps nothing/everything
+   depending on scroll position. Same override every other .cnav+.dots pager
+   in the app already carries (css/teamsheet.css/.sqts-pagernav .dots etc). */
+.sx-report__pager .dots { position: static; display: flex; gap: 6px; }
 
-.sx-rephead { display: grid; grid-template-columns: 64px 1fr auto; gap: 4px 14px; align-items: center; padding-bottom: 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin-bottom: 12px; }
+.sx-rephead { display: grid; grid-template-columns: 64px 1fr auto; gap: 10px 14px; align-items: center; padding-bottom: 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin-bottom: 12px; }
 .sx-rephead__portrait { grid-row: 1 / 3; width: 64px; height: 64px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #3a4148, #14171b); }
 .sx-rephead__mid { font-family: var(--font-cond); }
 .sx-rephead__name { font-size: 16px; line-height: 1.1; color: var(--ink); }
 .sx-rephead__name b { font-weight: 700; }
 .sx-rephead__age { font-size: 20px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 6px; }
-.sx-rephead__club { text-align: right; font-family: var(--font-ui); font-size: 12px; color: var(--ink-dim); }
+.sx-rephead__club { text-align: right; font-family: var(--font-ui); font-size: 12px; color: var(--ink-dim); display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .sx-rephead__clubrow { display: flex; align-items: center; gap: 8px; justify-content: flex-end; text-transform: uppercase; font-weight: 700; color: var(--ink); }
+/* F3-fixes: bare .flag (css/screens.css) is 18x12 — too small next to the
+   crest above it; bumped up, matching the same "big flag" treatment F3-fixes
+   already gave PLAYER SEARCH's own filter tiles (.sx-tile__flag). */
+.sx-rephead__flag { width: 32px; height: 21px; }
 .sx-rephead__facts { grid-column: 1 / 4; font-family: var(--font-ui); font-size: 12px; color: var(--ink-dim); display: flex; gap: 20px; }
 .sx-rephead__facts b { color: var(--ink); }
 
-.sx-repbody { display: flex; flex-direction: column; gap: 14px; }
+/* F3-fixes: page 1 (Summary) — scouting progress on the left half, the 6
+   SUMMARY_GROUPS category ranges on the right half. */
+.sx-repbody { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; align-items: start; }
+.sx-repbody__left { min-width: 0; }
+.sx-repbody__right { min-width: 0; }
 .sx-repstatus__head { display: flex; align-items: center; gap: 8px; font-family: var(--font-cond); font-size: 18px; font-weight: 700; color: var(--ink); }
 .sx-repstatus__icon { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
 .sx-repstatus__icon.is-complete { background: var(--green-ok); color: #0e1a0f; }
 .sx-repstatus__icon.is-scouting { background: var(--gold); color: var(--gold-text-dark); }
 .sx-repstatus__icon.is-not-scouting { background: rgba(255, 255, 255, 0.15); color: var(--ink); }
 .sx-repstatus__line { font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim); margin-top: 6px; }
+.sx-repstatus__bar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); overflow: hidden; margin-top: 10px; }
+.sx-repstatus__bar > i { display: block; height: 100%; background: var(--gold); }
+.sx-repstatus__days { font-family: var(--font-ui); font-size: 12px; color: var(--ink-dim); margin-top: 6px; }
 .sx-repsummary__head { font-family: var(--font-cond); font-size: 18px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
 
 .sx-attrgrid { display: flex; flex-direction: column; }

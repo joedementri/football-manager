@@ -1110,8 +1110,11 @@ async function run() {
 
   group("config/scouting.js — scoutingRangeFor half-widths (plan1.md M8 verbatim: ±6/±3/exact)");
   {
-    assert("half-width table is [12, 6, 3, 0] (level 0 authored, 1-3 are plan1.md's own numbers)",
-      deepEqual(RANGE_HALF_WIDTH_BY_LEVEL, [12, 6, 3, 0]));
+    // F3-fixes: level 0's half-width widened 12 -> 20 to match
+    // RANGE_START_HALF_WIDTH ("the range should be very wide when
+    // unscouted") — 1-3 are still plan1.md's own numbers.
+    assert("half-width table is [20, 6, 3, 0] (level 0 widened by F3-fixes, 1-3 are plan1.md's own numbers)",
+      deepEqual(RANGE_HALF_WIDTH_BY_LEVEL, [20, 6, 3, 0]));
     assert("level 1 -> ±6", deepEqual(scoutingRangeFor(70, 1), [64, 76]));
     assert("level 2 -> ±3", deepEqual(scoutingRangeFor(70, 2), [67, 73]));
     assert("level 3 -> exact", deepEqual(scoutingRangeFor(70, 3), [70, 70]));

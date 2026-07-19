@@ -265,6 +265,23 @@ function wireAutosave(store) {
     clearTimeout(teamsheetSaveTimer);
     teamsheetSaveTimer = setTimeout(() => db.saveGame(AUTOSAVE_SLOT, store.state), 800);
   });
+
+  // F3-fixes: adding/removing a shortlist player, assigning a scout, and
+  // submitting an enquiry all only ever emit "search"/"shortlist" (core/
+  // store.js's toggleShortlistPlayer/performPlayerAction) — same gap
+  // "teamsheet" above already had to be patched for once before. Owner hit
+  // this directly: "I added a player, refreshed, and they were no longer in
+  // my shortlist." One shared debounce timer since both events routinely
+  // fire together for the same user action (toggleShortlistPlayer emits
+  // both) — no reason to double-save.
+  let transferSaveTimer = null;
+  function debouncedTransferSave() {
+    if (!db.isSupported() || !store.state.settings.autosave) return;
+    clearTimeout(transferSaveTimer);
+    transferSaveTimer = setTimeout(() => db.saveGame(AUTOSAVE_SLOT, store.state), 800);
+  }
+  store.on("search", debouncedTransferSave);
+  store.on("shortlist", debouncedTransferSave);
 }
 
 // M5 additions: nations + cups are now fetched here too (not just leagues/

@@ -301,13 +301,46 @@ export function teamMedallion({ crestHref, stars, att, mid, def }) {
   );
 }
 
-/** Unscouted-range chip pair, e.g. "58 – 68" (red min / green max). */
+/* ============================== §B4b unscouted-range colour scale ========= */
+
+// F3-fixes: a fuzzy range chip used to always paint its low end red and its
+// high end green regardless of what either number actually meant — a min of
+// 70 (good) read exactly as alarming as a min of 20 (poor). Fixed by scoring
+// each end by its own quality, same idea as attrBand above but with 3 extra
+// steps (owner: FIFA 15's dark-green/green/light-green/orange/yellow/light-
+// red/dark-red 7-tier scale, exact thresholds unknown). Deliberately keeps
+// attrBand's own green > yellow > orange > red ordering rather than FIFA
+// 15's (uncertain, owner-recalled) green/orange/yellow ordering, so a range
+// chip's colour means the same thing as a solid attrChip's colour everywhere
+// in the app (owner: "do this with consistency with the rest of the stat
+// pages"). [TUNED] thresholds — no reference source for the exact numbers.
+export function rangeBand(value) {
+  if (value >= 85) return "darkgreen";
+  if (value >= 72) return "green";
+  if (value >= 60) return "lightgreen";
+  if (value >= 50) return "yellow";
+  if (value >= 38) return "orange";
+  if (value >= 25) return "lightred";
+  return "darkred";
+}
+
+export const RANGE_BAND_HEX = {
+  darkgreen: "#1a7a34", green: "#39b54a", lightgreen: "#8cc63f",
+  yellow: "#e8c227", orange: "#d9822b", lightred: "#e0654f", darkred: "#8e2418",
+};
+
+export function rangeChip(value) {
+  return `<span class="fx-attr-chip fx-attr-chip--${rangeBand(value)}">${value}</span>`;
+}
+
+/** Unscouted-range chip pair, e.g. "58 – 68" — each end coloured by its own
+ * value via rangeBand, not by whether it's the low or high end. */
 export function fuzzyChip(min, max) {
   return (
     `<span class="fx-fuzzy">` +
-      `<span class="fx-attr-chip fx-attr-chip--min">${min}</span>` +
+      rangeChip(min) +
       `<span class="fx-fuzzy__sep">&ndash;</span>` +
-      `<span class="fx-attr-chip fx-attr-chip--max">${max}</span>` +
+      rangeChip(max) +
     `</span>`
   );
 }

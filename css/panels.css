@@ -254,6 +254,13 @@
 .fx-attr-chip--yellow { background: #e8c227; color: #241d05; }
 .fx-attr-chip--orange { background: #d9822b; color: #fff; }
 .fx-attr-chip--red { background: #c0392b; color: #fff; }
+/* F3-fixes: 3 extra steps (panelkit.js's rangeBand) used only by unscouted
+   range chips (.fx-fuzzy below) — darkgreen/lightgreen/lightred/darkred
+   fill the gaps either side of the 4 solid-chip colours above. */
+.fx-attr-chip--darkgreen { background: #1a7a34; color: #fff; }
+.fx-attr-chip--lightgreen { background: #8cc63f; color: #1a2b0a; }
+.fx-attr-chip--lightred { background: #e0654f; color: #fff; }
+.fx-attr-chip--darkred { background: #8e2418; color: #fff; }
 
 .fx-attr-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; font-family: var(--font-ui); font-size: 14px; color: var(--ink-dim); }
 .fx-attr-row__name { color: var(--ink); }
@@ -291,6 +298,4 @@
 .fx-medallion__lines b { display: block; font-size: 16px; color: var(--ink); }
 
 .fx-fuzzy { display: inline-flex; gap: 3px; align-items: center; }
-.fx-fuzzy .fx-attr-chip--min { background: #c0392b; color: #fff; }
-.fx-fuzzy .fx-attr-chip--max { background: #39b54a; color: #0e1a0f; }
 .fx-fuzzy__sep { color: var(--ink-faint); font-size: 11px; }

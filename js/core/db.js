@@ -168,6 +168,11 @@ export function serializePlayer(p) {
     p.contract.preAgreedTerms ? p.contract.preAgreedTerms.wage : 0,
     p.contract.preAgreedTerms ? p.contract.preAgreedTerms.years : 0,
     p.contract.preAgreedTerms ? SQUAD_ROLE_CODES.indexOf(p.contract.preAgreedTerms.squadRole) : -1,
+    // F3-fixes: engine/gtn.js's startPlayerScout continuous-narrowing clock
+    // (engine/scoutrange.js) — appended at the end so an older save (whose
+    // arrays end here) still deserializes fine via ArrayCursor's undefined-
+    // past-the-end reads below.
+    p.scouting.assignedDate ? toEpochDay(p.scouting.assignedDate) : -1, p.scouting.totalDays ?? -1,
   ];
 }
 
@@ -200,6 +205,7 @@ export function deserializePlayer(arr) {
   const hasLoan = c.next(), loanParentClubId = c.next(), loanReturnDate = c.next(), loanFullWage = c.next();
   const hasPreAgreed = c.next(), preAgreedClubId = c.next();
   const preAgreedWage = c.next(), preAgreedYears = c.next(), preAgreedRoleIdx = c.next();
+  const assignedDateRaw = c.next(), totalDaysRaw = c.next();
 
   return {
     id, firstName, lastName, commonName, nationId, clubId, natTeamId,
@@ -216,7 +222,11 @@ export function deserializePlayer(arr) {
     seasonStats: { apps, goals, assists, cleanSheets, avgRating, yellows, reds },
     careerStats: [],
     kitNumber, isYouth: !!isYouth,
-    scouting: { level: scoutLevel, ovrRange: [ovrLo, ovrHi], potRange: [potLo, potHi] },
+    scouting: {
+      level: scoutLevel, ovrRange: [ovrLo, ovrHi], potRange: [potLo, potHi],
+      assignedDate: assignedDateRaw != null && assignedDateRaw >= 0 ? fromEpochDay(assignedDateRaw) : null,
+      totalDays: totalDaysRaw != null && totalDaysRaw >= 0 ? totalDaysRaw : null,
+    },
     growthPeriod: { minutes: growthMinutes, ratingSum: growthRatingSum, ratingCount: growthRatingCount },
     retiringAnnounced: !!retiringAnnounced,
     loan: hasLoan ? { parentClubId: loanParentClubId, returnDate: fromEpochDay(loanReturnDate), fullWage: loanFullWage } : null,
@@ -278,6 +288,18 @@ function serializePendingOffer(o) {
 }
 function deserializePendingOffer(o) {
   return { ...o, dueDate: fromEpochDay(o.dueDate) };
+}
+
+/** F3-fixes: state.transfers.enquiries (Map<playerId,{resolved,refused?,lo?,
+ * hi?,date}>) — previously deliberately session-only ("a fresh enquiry is
+ * one click away"), now persisted so the Approach — Transfer Offer dossier
+ * can quote back a fee the club already told you (owner: "if you approach to
+ * transfer it mentions how much the team is asking for in the dossier"). */
+function serializeEnquiryEntry([playerId, e]) {
+  return [playerId, { ...e, date: toEpochDay(e.date) }];
+}
+function deserializeEnquiryEntry([playerId, e]) {
+  return [playerId, { ...e, date: fromEpochDay(e.date) }];
 }
 
 /** M8: state.gtn (engine/gtn.js — hired scouts, the weekly hire pool, and
@@ -552,6 +574,7 @@ export function serializeSave(state) {
     // F3: My Shortlist ({playerId, dateAdded}[]) — dateAdded converted to an
     // epoch day the same way every other persisted Date in this file is.
     transferShortlist: (state.transfers?.shortlist || []).map((s) => ({ playerId: s.playerId, dateAdded: toEpochDay(s.dateAdded) })),
+    transferEnquiries: [...(state.transfers?.enquiries || new Map()).entries()].map(serializeEnquiryEntry),
     // M7: state.news.transfer is the one part of core/store.js's M0-era
     // NEWS_DATA stub this milestone starts writing real articles into
     // (engine/transferai.js/negotiation.js/freeagents.js's pushTransferNews)
@@ -609,6 +632,7 @@ export function deserializeSave(saved) {
     transferPendingOffers: (saved.transferPendingOffers || []).map(deserializePendingOffer),
     clubTransferBudgets: new Map(saved.clubTransferBudgets || []),
     transferShortlist: (saved.transferShortlist || []).map((s) => ({ playerId: s.playerId, dateAdded: fromEpochDay(s.dateAdded) })),
+    transferEnquiries: (saved.transferEnquiries || []).map(deserializeEnquiryEntry),
     newsTransfer: saved.newsTransfer,
     gtn: saved.gtn ? deserializeGtnState(saved.gtn) : null,
     academy: saved.academy ? deserializeAcademyState(saved.academy) : null,

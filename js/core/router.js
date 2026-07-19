@@ -24,7 +24,7 @@ import { renderNtJobsOverlay } from "../ui/ntjobsui.js";
 import { renderNatlSquad } from "../ui/natlsquad.js";
 import { renderContracts } from "../ui/contractsui.js";
 import { renderNegotiation, renderSellList, renderRequestFunds } from "../ui/transfersui.js";
-import { renderSearch, renderMyShortlist, computeSearchResults, computeNameSearchResults, computeNationSearchResults, KB_ROWS as KB_ROWS_FLAT } from "../ui/searchui.js";
+import { renderSearch, renderMyShortlist, computeSearchResults, computeNameSearchResults, computeNationSearchResults, KB_ROWS as KB_ROWS_FLAT, reportPageCount } from "../ui/searchui.js";
 import { positionInfo } from "../config/positions.js";
 import { renderGtn } from "../ui/gtnui.js";
 import { renderYouth } from "../ui/youthui.js";
@@ -856,8 +856,11 @@ export function initRouter(store) {
     const el = e.target.closest("[data-action]");
     if (!el) return;
     switch (el.dataset.action) {
-      case "report-prev": store.searchCycleReportPage(-1, 3); break;
-      case "report-next": store.searchCycleReportPage(1, 3); break;
+      // F3-fixes: page count now varies per player (GK gets an extra
+      // "GK Attributes" page) — reportPageCount(selected) replaces the old
+      // fixed 3.
+      case "report-prev": store.searchCycleReportPage(-1, currentReportPageCount()); break;
+      case "report-next": store.searchCycleReportPage(1, currentReportPageCount()); break;
       case "ask-scout": case "toggle-shortlist": case "enquire":
       case "approach-buy": case "approach-loan": case "sign-free-agent": {
         const playerId = Number(e.target.closest("[data-player]")?.dataset.player);
@@ -866,6 +869,13 @@ export function initRouter(store) {
       }
     }
   });
+  /** F3-fixes: how many Search Report pages the currently-selected player
+   * has — varies (GK gets an extra page), see reportPageCount's own header. */
+  function currentReportPageCount() {
+    const s = store.state.ui.transferSearch;
+    const player = s.selectedPlayerId != null ? store.state.playersById.get(s.selectedPlayerId) : null;
+    return player ? reportPageCount(player) : 3;
+  }
   function handleSearchFooterAction(action) {
     const s = store.state.ui.transferSearch;
     switch (action) {
@@ -876,7 +886,7 @@ export function initRouter(store) {
       case "reset-all": store.searchResetFilters(); break;
       case "search": store.searchSubmitFilters(); break;
       case "filter-select": activateFilterTile(s.filterTile, s.filterSub); break;
-      case "report-next": store.searchCycleReportPage(1, 3); break;
+      case "report-next": store.searchCycleReportPage(1, currentReportPageCount()); break;
       // The keyboard-overlay footer's own (A) Select prompt (mouse-only
       // path — router.js's global keydown block below covers Enter/A).
       case "kb-select": handleKbSelect(); break;
