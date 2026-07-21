@@ -180,6 +180,14 @@
 .sx-repstatus__bar > i { display: block; height: 100%; background: var(--gold); }
 .sx-repstatus__days { font-family: var(--font-ui); font-size: 12px; color: var(--ink-dim); margin-top: 6px; }
 .sx-repsummary__head { font-family: var(--font-cond); font-size: 18px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+/* F3-fixes: .sx-attr-row had no rule of its own (a `sx-`/`fx-` prefix
+   mismatch left it falling back to default inline flow — name and chip just
+   trailed each other with no alignment). Same grid approach as
+   .sx-attrgrid__row below (page 2/3's attribute pages), sized for one
+   name/value pair per row instead of two, so every row's range chip lands
+   flush against the same right edge. */
+.sx-attr-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; padding: 3px 0; font-family: var(--font-ui); font-size: 13px; }
+.sx-attr-row__name { color: var(--ink-dim); }
 
 .sx-attrgrid { display: flex; flex-direction: column; }
 .sx-attrgrid__title { font-family: var(--font-cond); font-size: 15px; font-weight: 700; color: var(--ink-dim); text-transform: uppercase; margin: 10px 0 2px; }
