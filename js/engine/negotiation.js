@@ -28,6 +28,8 @@ import { buildBuyNewsArticle, buildLoanNewsArticle, pushTransferNews } from "./t
 import { recordTransferFeePaid } from "./career.js";
 import { positionInfo } from "../config/positions.js";
 import { SQUAD_ROLE_CYCLE } from "../config/contract.js";
+import { recordSeasonPurchase } from "./finances.js";
+import { pushNegotiationLogEntry, currentContractSnapshot } from "./negotiationlog.js";
 
 // F3 (fable-plans/plan2.md): "And/Or Player: Select Player" player-exchange
 // row on the Approach — Transfer Offer dossier — his adjusted value x0.9
@@ -92,6 +94,10 @@ export function startFeeNegotiation(state, playerId) {
     contractOffer: null, lastContractResponse: null,
     loanLength: "season",
     result: null,
+    // F4 (plan2-decisions.md): the TRANSFER NEGOTIATIONS ledger's "Sent" row
+    // only appears once an offer has actually been submitted — see
+    // engine/negotiationlog.js's sentLedgerRow.
+    everSubmitted: false,
     // F3: player-exchange (Approach Offer dossier's "And/Or Player" row) —
     // exchangePlayerId is the user's own squad player offered alongside cash;
     // exchangeCreditApplied is locked in on the *first* fee submission (see
@@ -182,6 +188,11 @@ function applyFeeResolution(state, playerId, feeOffer, round, exchangeCredit = 0
   } else {
     n.phase = "rejected";
     n.lastFeeResponse = "rejected";
+    pushNegotiationLogEntry(state, {
+      source: "sent", dealType: "transfer", playerId, fromClubId: sellingClub.id, toClubId: state.club.id,
+      outcome: "fail", negStatus: "Rejected", transferFee: feeOffer, estimatedWorth: wantedFee,
+      current: currentContractSnapshot(state, player), offered: null, date: state.calendar.today,
+    });
   }
 }
 
@@ -213,6 +224,7 @@ export function submitFeeOffer(state) {
 
   const { playerId, feeOffer, round, exchangeCreditApplied } = n;
   n.phase = "fee-waiting";
+  n.everSubmitted = true;
   if (isDeadlineDay(state, state.calendar.today)) {
     applyFeeResolution(state, playerId, feeOffer, round, exchangeCreditApplied);
   } else {
@@ -280,7 +292,15 @@ function applyContractResolution(state, playerId, contractOffer, promisedRole) {
   const accepted = rng.chance(chance);
   n.lastContractResponse = accepted ? "accepted" : "rejected";
   if (accepted) completeTransfer(state);
-  else n.phase = "rejected";
+  else {
+    n.phase = "rejected";
+    pushNegotiationLogEntry(state, {
+      source: "sent", dealType: "transfer", playerId, fromClubId: sellingClub.id, toClubId: state.club.id,
+      outcome: "fail", negStatus: "Rejected", transferFee: n.feeOffer, estimatedWorth: player.value,
+      current: currentContractSnapshot(state, player), offered: { wage: contractOffer.wage, years: contractOffer.years, bonus: contractOffer.bonusPerGoal || 0 },
+      date: state.calendar.today,
+    });
+  }
 }
 
 export function resolveContractOfferEntry(state, entry) {
@@ -313,10 +333,15 @@ function completeTransfer(state) {
   // comment) — the exchange player's credited value is a separate transfer,
   // not cash, so it's never part of the budget debit/credit below.
   const fee = n.feeOffer;
+  // F4: snapshot BEFORE player.contract is overwritten below — the ledger's
+  // "CURRENT" column means the player's contract at his old club, not the
+  // deal just agreed.
+  const currentSnapshot = currentContractSnapshot(state, player);
 
   state.finances.transferBudget -= fee;
   creditClubBudget(state, sellingClub.id, fee);
   recordTransferFeePaid(state, { fee, playerId: player.id }); // M11 My Career: "Record Transfer Fee"
+  recordSeasonPurchase(state, fee); // F4: Budget Allocation's "Players Purchased" line
 
   if (n.exchangeCreditApplied > 0 && n.exchangePlayerId != null) {
     const exchangePlayer = state.playersById.get(n.exchangePlayerId);
@@ -331,11 +356,20 @@ function completeTransfer(state) {
     wage: n.contractOffer.wage, endYear: state.seasonStartYear + n.contractOffer.years,
     signingBonus: n.contractOffer.signingOnFee || 0, squadRole: resolvedSquadRole(n.promisedRole), warnedExpiry: false,
   };
-  if (n.contractOffer.signingOnFee) state.finances.transferBudget -= n.contractOffer.signingOnFee;
+  if (n.contractOffer.signingOnFee) {
+    state.finances.transferBudget -= n.contractOffer.signingOnFee;
+    recordSeasonPurchase(state, n.contractOffer.signingOnFee);
+  }
   recomputeValue(player, state.club, state.seasonStartYear);
   refreshUserRoster(state);
 
   pushTransferNews(state, buildBuyNewsArticle({ player, fromClub: sellingClub, toClub: state.club, fee, today: state.calendar.today }));
+  pushNegotiationLogEntry(state, {
+    source: "sent", dealType: "transfer", playerId: player.id, fromClubId: sellingClub.id, toClubId: state.club.id,
+    outcome: "success", negStatus: "Completed", transferFee: fee, estimatedWorth: player.value,
+    current: currentSnapshot, offered: { wage: n.contractOffer.wage, years: n.contractOffer.years, bonus: n.contractOffer.bonusPerGoal || 0 },
+    date: state.calendar.today,
+  });
   n.phase = "completed";
   n.result = "completed";
 }
@@ -345,6 +379,7 @@ function completeLoan(state) {
   const player = state.playersById.get(n.playerId);
   const parentClubId = player.clubId;
   const parentClub = state.clubsById.get(parentClubId);
+  const currentSnapshot = currentContractSnapshot(state, player); // F4: before the wage-share cut below
 
   movePlayerToClub(state, player, state.club.id);
   const months = n.loanLength === "short" ? SHORT_LOAN_LENGTH_MONTHS : SEASON_LOAN_LENGTH_MONTHS;
@@ -361,6 +396,12 @@ function completeLoan(state) {
   refreshUserRoster(state);
 
   pushTransferNews(state, buildLoanNewsArticle({ player, fromClub: parentClub, toClub: state.club, today }));
+  pushNegotiationLogEntry(state, {
+    source: "sent", dealType: "loan", playerId: player.id, fromClubId: parentClubId, toClubId: state.club.id,
+    outcome: "success", negStatus: "Completed", transferFee: 0, estimatedWorth: player.value,
+    current: currentSnapshot, offered: { wage: player.contract.wage, years: currentSnapshot.years, bonus: n.loanBonusPerGoal || 0 },
+    date: today,
+  });
   n.phase = "completed";
   n.result = "completed";
 }
@@ -385,6 +426,7 @@ export function startLoanNegotiation(state, playerId, loanLength) {
     result: null,
     exchangePlayerId: null, exchangeCreditApplied: 0, exchangeRejectedNote: false,
     loanBonusPerGoal: 0, loanFutureFee: null,
+    everSubmitted: false,
   };
 }
 
@@ -396,6 +438,7 @@ export function submitLoanOffer(state) {
   if (!n || n.dealType !== "loan" || n.phase !== "loan") return { error: "no-negotiation" };
   const { playerId, loanLength } = n;
   n.phase = "loan-waiting";
+  n.everSubmitted = true;
   if (isDeadlineDay(state, state.calendar.today)) {
     applyLoanResolution(state, playerId, loanLength);
   } else {
@@ -413,6 +456,11 @@ function applyLoanResolution(state, playerId, loanLength) {
   const approvalChance = LOAN_APPROVAL_CHANCE_BY_ROLE[player.contract.squadRole] ?? 0.5;
   if (!rng.chance(approvalChance)) {
     n.phase = "rejected";
+    pushNegotiationLogEntry(state, {
+      source: "sent", dealType: "loan", playerId, fromClubId: sellingClub.id, toClubId: state.club.id,
+      outcome: "fail", negStatus: "Rejected", transferFee: 0, estimatedWorth: player.value,
+      current: currentContractSnapshot(state, player), offered: null, date: state.calendar.today,
+    });
     return;
   }
   const chance = decisionChance({
@@ -421,6 +469,11 @@ function applyLoanResolution(state, playerId, loanLength) {
   });
   if (!rng.chance(chance)) {
     n.phase = "rejected";
+    pushNegotiationLogEntry(state, {
+      source: "sent", dealType: "loan", playerId, fromClubId: sellingClub.id, toClubId: state.club.id,
+      outcome: "fail", negStatus: "Rejected", transferFee: 0, estimatedWorth: player.value,
+      current: currentContractSnapshot(state, player), offered: null, date: state.calendar.today,
+    });
     return;
   }
   n.loanLength = loanLength;

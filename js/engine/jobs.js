@@ -23,6 +23,7 @@ import { buildLeagueTable } from "./comps/league.js";
 import { computeWageCeiling } from "./wage.js";
 import { RngStream, deriveSeed } from "../core/rng.js";
 import { recordClubJoined } from "./career.js";
+import { snapshotSeasonFinances } from "./finances.js";
 
 const MAX_VACANCIES = 20;
 const CPU_SACK_CHANCE = 0.35; // not INI-derived — a plan-authored "simple rep sim" (see header)
@@ -78,11 +79,25 @@ export function acceptJob(state, clubId) {
   state.league.clubs = [...state.clubsById.values()].filter((c) => c.leagueId === league.id);
   state.league.table = buildLeagueTable(state.league, state.league.clubs, state.fixtures.byLeague.get(league.id), state.results);
   state.squad.lineup = pickBestXI(roster);
+  // F4 [ENGINE FIX]: state.squad.roster was never refreshed here (a
+  // pre-existing gap, surfaced by this milestone's own Budget Allocation
+  // rollover test) — every other roster-changing path in this codebase
+  // (negotiation.js/transferai.js/contracts.js/season.js) re-derives it from
+  // playersByClub immediately after mutating squad membership; acceptJob is
+  // exactly such a path (the whole squad changes at once) and was simply
+  // missing this line, leaving the Squad hub/Sell Players/etc. reading the
+  // *previous* club's roster until some unrelated later event happened to
+  // refresh it.
+  state.squad.roster = roster.slice().sort((a, b) => b.overall - a.overall);
   state.manager.sacked = false;
   state.manager.warned = false;
   // M6: a new club means a new transfer/wage budget (fable-plans/plan1.md's
   // Finances tile) — same "fresh start" spirit as the board emails below.
   state.finances = { transferBudget: club.baseTransferBudget, wageCeiling: computeWageCeiling(club, league) };
+  // F4: fresh Budget Allocation baseline for the new club (snapshotSeasonFinances
+  // reads state.playersByClub directly, not state.squad.roster, since that
+  // cache isn't refreshed for the new club until later — see its own header).
+  snapshotSeasonFinances(state);
 
   const cup = domesticCupFor(league, state.staticData.cups);
   const emails = buildObjectiveEmails({ club, league, cup, managerName: state.manager.name, today: state.calendar.today });

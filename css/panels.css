@@ -196,36 +196,57 @@
   width: 300px;
   background: rgba(15, 18, 22, 0.96);
   border-radius: 6px;
-  padding: 16px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 4px;
   overflow: auto;
 }
 .fx-playercard__portrait {
-  width: 84px; height: 84px; border-radius: 50%;
+  width: 46px; height: 46px; border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, #3a4148, #14171b);
   margin: 0 auto;
 }
-.fx-playercard__name { text-align: center; font-size: 20px; font-weight: 700; color: var(--ink); }
+.fx-playercard__name { text-align: center; font-size: 18px; font-weight: 700; color: var(--ink); line-height: 1.2; }
 .fx-playercard__sub { text-align: center; font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim); display: flex; align-items: center; justify-content: center; gap: 6px; }
 .fx-playercard__posbar { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
 .fx-playercard__club { display: flex; align-items: center; justify-content: center; gap: 6px; font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim); }
-.fx-playercard__stats { display: flex; justify-content: space-between; font-family: var(--font-ui); font-size: 12px; color: var(--ink-dim); border-top: 1px solid rgba(255,255,255,0.08); border-bottom: 1px solid rgba(255,255,255,0.08); padding: 8px 0; }
-.fx-playercard__stats b { display: block; color: var(--ink); font-size: 15px; }
+.fx-playercard__club .crest--sm { width: 20px; height: 20px; }
+.fx-playercard__age { text-align: center; font-family: var(--font-cond); font-size: 26px; font-weight: 700; color: var(--ink); display: flex; align-items: center; justify-content: center; gap: 8px; }
+.fx-playercard__agelbl { font-family: var(--font-ui); font-size: 11px; font-weight: 600; color: var(--ink-dim); align-self: flex-end; margin-right: -4px; }
+.fx-playercard__stats { display: flex; justify-content: space-between; font-family: var(--font-ui); font-size: 11px; color: var(--ink-dim); border-top: 1px solid rgba(255,255,255,0.08); border-bottom: 1px solid rgba(255,255,255,0.08); padding: 4px 0; }
+.fx-playercard__stats b { display: block; color: var(--ink); font-size: 14px; }
 .fx-playercard__word--gold { color: var(--gold); font-weight: 700; }
-.fx-playercard__tagline { font-family: var(--font-ui); font-size: 12px; color: #e0a92e; display: flex; gap: 6px; align-items: flex-start; }
+.fx-playercard__iconrow { display: flex; align-items: center; gap: 8px; font-family: var(--font-ui); font-size: 12px; color: var(--ink); }
+.fx-playercard__icon { font-size: 14px; }
+.fx-playercard__tagline { font-family: var(--font-ui); font-size: 11px; color: #e0a92e; display: flex; gap: 6px; align-items: flex-start; }
 
-.fx-actions { display: flex; flex-direction: column; gap: 4px; margin-top: auto; }
+/* F4: fxPlayerCard's optional right-side attribute mini-panel (see
+   ui/panelkit.js's own header on this primitive's F4 rewrite) — sits beside
+   the card, same dark sheet look, no independent scrolling of its own (a
+   fixed 6-row list, see ui/sellplayersui.js). */
+.fx-playercard-wrap { position: absolute; left: 40px; top: 90px; bottom: 90px; display: flex; gap: 14px; }
+.fx-playercard-wrap .fx-playercard { position: static; left: auto; top: auto; bottom: auto; }
+.fx-playercard__attrpanel {
+  width: 260px;
+  background: rgba(15, 18, 22, 0.96);
+  border-radius: 6px;
+  padding: 16px;
+  overflow: auto;
+  align-self: stretch;
+}
+.fx-playercard__attrpanel .fx-attr-row { padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+
+.fx-actions { display: flex; flex-direction: column; gap: 3px; margin-top: auto; }
 .fx-actions__row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 10px;
+  padding: 5px 10px;
   border-radius: 4px;
   background: rgba(255,255,255,0.04);
   font-family: var(--font-cond);
-  font-size: 15px;
+  font-size: 14px;
   color: var(--ink);
   cursor: pointer;
 }

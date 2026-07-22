@@ -30,12 +30,19 @@ import * as enquiryEngine from "../engine/enquiry.js";
 import { isSimilarPosition, suggestedSubScore } from "../config/managerai.js";
 import { applyBoardReview, applyMidSeasonGrowth, rolloverSeason } from "../engine/season.js";
 import { acceptJob } from "../engine/jobs.js";
-import { computeWageCeiling } from "../engine/wage.js";
-import { checkContractExpiryWarnings, applyCpuContractRenewals, computeAsk, renewUserContract } from "../engine/contracts.js";
+import { computeWageCeiling, squadWageBill } from "../engine/wage.js";
+import {
+  checkContractExpiryWarnings, applyCpuContractRenewals, computeAsk, renewUserContract,
+  releasePlayer, releaseGuardReason,
+} from "../engine/contracts.js";
 import * as negotiation from "../engine/negotiation.js";
 import * as freeagents from "../engine/freeagents.js";
 import * as transferai from "../engine/transferai.js";
-import { reallocateBudget, requestFundsFromBoard } from "../engine/finances.js";
+import {
+  reallocateBudget, requestFundsFromBoard, snapshotSeasonFinances,
+  budgetSplitStepAmounts, budgetSplitPct, applyBudgetSplitStep,
+} from "../engine/finances.js";
+import { successfulEntries, unsuccessfulEntries, sentLedgerRow, receivedLedgerRows } from "../engine/negotiationlog.js";
 import * as gtnEngine from "../engine/gtn.js";
 import * as academyEngine from "../engine/academy.js";
 import { createManagerCareerFields } from "../engine/career.js";
@@ -323,9 +330,27 @@ function createUiDefaults(today) {
     // one sortable column" convention as ui/squadreportui.js's own Squad
     // Report overlay).
     shortlist: { selectedPlayerId: null, sortDir: "asc", actionMenuOpen: false, actionMenuIndex: 0 },
-    // Sell/Loan List overlay: selected squad player + the asking-price draft
-    // being adjusted before listPlayer() commits it.
-    sellList: { selectedPlayerId: null, askingPriceDraft: 0 },
+    // F4 (fable-plans/plan2.md, ms_SELL_PLAYERS_SCREEN.png): replaces the old
+    // M7 Sell/Loan List two-pane row list — same shape convention as
+    // shortlist above (selected player + sort + action-menu cursor).
+    // `pricePrompt` (null | {type, draft}) is the "Listing price: prompt with
+    // default = adjusted value" step (plan2.md F4.1) shown after picking
+    // "Add to Transfer/Loan List" — no reference pic shows this specific
+    // sub-step, [JUDGMENT CALL] logged in plan2-decisions.md F4.
+    sellPlayers: { selectedPlayerId: null, sortDir: "desc", actionMenuOpen: false, actionMenuIndex: 0, pricePrompt: null },
+    // F4 (ms_TRANSFER_NEGOTIATIONS_*.png): [LB][RB] cycles the 4 ledgers;
+    // `sortDir` is shared across all 4 tabs (the pic's own list header shows
+    // one sortable column, "Ovr▲" — same "one shared sort toggle" convention
+    // as ui/squadreportui.js's own single-sortable-column overlay).
+    negotiationsLedger: { tab: 0, sortDir: "asc", receivedIndex: 0, sentIndex: 0, successfulIndex: 0, unsuccessfulIndex: 0 },
+    // F4 (ms_TRANSFER_HISTORY_SCREEN.png): MY CLUB / ALL CLUBS tabs.
+    transferHistory: { tab: "myclub", selectedIndex: -1 },
+    // F4 (ms_FINANCES_BUDGET_ALLOCATION.png): `modifying` toggles the live
+    // slider draft on ((LS) Modify Allocation); `draft`/`stepAmounts` are only
+    // meaningful while modifying (seeded fresh every time modify is entered —
+    // see engine/finances.js's budgetSplitStepAmounts header for why the step
+    // size is fixed at that moment, not re-derived per step).
+    budgetAllocation: { modifying: false, draft: null, stepAmounts: null },
     // F3: Negotiation dossier UI-only toggles (never persisted, same footing
     // as state.transfers.negotiation itself) — `editingFeeOffer` swaps the
     // Approach — Transfer Offer's "Offered Transfer Sum" row into a live
@@ -492,6 +517,7 @@ function createUiDefaults(today) {
 function deriveIndices(state, {
   allClubs, allLeagues, allNations, allCups, results = new Map(), clubLeague, cups, finances,
   transferListings, transferPendingOffers, clubTransferBudgets, transferShortlist, transferEnquiries,
+  transferNegotiationsLog, transferDisallowedBids,
 }) {
   state.staticData = { leagues: allLeagues, clubs: allClubs, nations: allNations, cups: allCups };
   state.clubLeague = clubLeague || new Map(allClubs.map((c) => [c.id, c.leagueId]));
@@ -522,6 +548,13 @@ function deriveIndices(state, {
   // resets this every July 1 ("budgets reset"), jobs.js's acceptJob
   // recomputes it for whichever club is accepted.
   state.finances = finances || { transferBudget: state.club.baseTransferBudget, wageCeiling: computeWageCeiling(state.club, state.league) };
+  // F4 (plan2-decisions.md): a brand-new career gets a fresh Budget
+  // Allocation baseline; a loaded save's own seasonStartTransferBudget/etc.
+  // (persisted in `finances` itself, core/db.js — no separate db.js field
+  // needed) passes straight through. A pre-F4 save's `finances` predates
+  // these 4 fields entirely (undefined) — same "fresh default for an older
+  // save" fallback convention this file already uses for gtn/academy/etc.
+  if (!finances || finances.seasonStartTransferBudget === undefined) snapshotSeasonFinances(state);
 
   state.fixtures = buildFixtures({
     leagues: allLeagues, clubs: effectiveClubs, seed: state.seed, seasonStartYear: state.seasonStartYear,
@@ -563,6 +596,13 @@ function deriveIndices(state, {
   // Map/array pair is restored together, same footing as listings/
   // pendingOffers above).
   state.transfers.enquiries = new Map(transferEnquiries || []);
+  // F4: the TRANSFER NEGOTIATIONS ledger's persisted terminal-outcome log
+  // (engine/negotiationlog.js — "Sent"/"Received" are derived live from
+  // state.transfers.negotiation/state.inbox.emails instead, see that file's
+  // own header) and the Sell Players "Disallow Transfer Bids" per-player
+  // flag set — both persist directly, same rationale as listings above.
+  state.transfers.negotiations = transferNegotiationsLog || [];
+  state.transfers.disallowedBids = new Set(transferDisallowedBids || []);
   // CPU clubs' own transfer budgets (engine/clubbudget.js) — lazily
   // populated per club as CPU<->CPU activity/incoming bids touch them;
   // persists across saves so a club's spend isn't silently refilled on reload.
@@ -839,6 +879,7 @@ export function hydrateFromSave(saved, { leagues, clubs, nations, cups }) {
     transferListings: saved.transferListings, transferPendingOffers: saved.transferPendingOffers,
     clubTransferBudgets: saved.clubTransferBudgets, transferShortlist: saved.transferShortlist,
     transferEnquiries: saved.transferEnquiries,
+    transferNegotiationsLog: saved.transferNegotiationsLog, transferDisallowedBids: saved.transferDisallowedBids,
   });
 
   // F1: a pre-F1 save never had state.squad.sheets at all — same "fresh
@@ -1232,6 +1273,7 @@ export class Store {
     this._resolvePendingTransferOffers(day);
     transferai.runWeeklyTransferActivity(this.state, day);
     transferai.checkIncomingBidsOnListedPlayers(this.state, day);
+    transferai.expirePendingBids(this.state, day); // F4: withdraws unanswered incoming bids past their expiry
     negotiation.resolveLoanReturns(this.state, day);
     gtnEngine.runDailyGtnActivity(this.state, day);
     academyEngine.runDailyAcademyActivity(this.state, day);
@@ -3007,47 +3049,265 @@ export class Store {
     this.closeOverlay();
   }
 
-  /* ----- M7: Sell/Loan List ----- */
+  /* ============================================================================
+   * F4 (fable-plans/plan2.md): SELL PLAYERS (ms_SELL_PLAYERS_SCREEN*.png) —
+   * replaces the old M7 Sell/Loan List two-pane row list with the §B1
+   * two-pane fx-table + §B3 playercard/action-menu shape every other F3+
+   * action menu already uses (Search Results/My Shortlist).
+   * ========================================================================== */
 
-  openSellList() {
+  openSellPlayers() {
+    const s = this.state.ui.sellPlayers;
     const first = this.state.squad.roster[0];
-    this.selectSellListPlayer(first ? first.id : null);
-    this.openOverlay("selllist");
+    s.selectedPlayerId = first ? first.id : null;
+    s.actionMenuOpen = false;
+    s.actionMenuIndex = 0;
+    s.pricePrompt = null;
+    this.openOverlay("sellplayers");
   }
 
-  selectSellListPlayer(playerId) {
-    const s = this.state.ui.sellList;
-    s.selectedPlayerId = playerId;
-    const player = playerId != null ? this.state.playersById.get(playerId) : null;
-    const existing = playerId != null ? this.state.transfers.listings.get(playerId) : null;
-    s.askingPriceDraft = existing ? existing.askingPrice : (player ? player.value : 0);
-    this.emit("selllist", null);
+  selectSellPlayersRow(playerId) {
+    this.state.ui.sellPlayers.selectedPlayerId = playerId;
+    this.emit("sellplayers", null);
   }
 
-  adjustAskingPrice(deltaPct) {
-    const s = this.state.ui.sellList;
+  sortSellPlayersStatus() {
+    const s = this.state.ui.sellPlayers;
+    s.sortDir = s.sortDir === "asc" ? "desc" : "asc";
+    this.emit("sellplayers", null);
+  }
+
+  sellPlayersOpenActionMenu() {
+    const s = this.state.ui.sellPlayers;
+    if (s.selectedPlayerId == null) return;
+    s.actionMenuOpen = true;
+    s.actionMenuIndex = 0;
+    this.emit("sellplayers", null);
+  }
+
+  sellPlayersCloseActionMenu() {
+    const s = this.state.ui.sellPlayers;
+    s.actionMenuOpen = false;
+    s.pricePrompt = null;
+    this.emit("sellplayers", null);
+  }
+
+  sellPlayersActionMenuFocus(index) {
+    this.state.ui.sellPlayers.actionMenuIndex = index;
+    this.emit("sellplayers", null);
+  }
+
+  /** "Add to Transfer List"/"...Loan List for Season/Short Loan" — opens the
+   * asking-price prompt (plan2.md F4.1: "prompt with default = adjusted
+   * value") rather than listing instantly; sellPlayersConfirmListing commits
+   * it. Re-opening a row that's already listed at this exact type reseeds the
+   * draft from the existing asking price so adjusting an existing listing
+   * doesn't silently reset it back to full value. */
+  sellPlayersBeginListing(type) {
+    const s = this.state.ui.sellPlayers;
     const player = this.state.playersById.get(s.selectedPlayerId);
     if (!player) return;
-    s.askingPriceDraft = Math.max(0, Math.round((s.askingPriceDraft + player.value * deltaPct) / 1000) * 1000);
-    this.emit("selllist", null);
+    const existing = this.state.transfers.listings.get(s.selectedPlayerId);
+    s.pricePrompt = { type, draft: existing && existing.type === type ? existing.askingPrice : player.value };
+    this.emit("sellplayers", null);
   }
 
-  listPlayer(type) {
-    const s = this.state.ui.sellList;
-    if (s.selectedPlayerId == null) return;
+  sellPlayersAdjustListingPrice(deltaPct) {
+    const s = this.state.ui.sellPlayers;
+    const player = this.state.playersById.get(s.selectedPlayerId);
+    if (!player || !s.pricePrompt) return;
+    s.pricePrompt.draft = Math.max(0, Math.round((s.pricePrompt.draft + player.value * deltaPct) / 1000) * 1000);
+    this.emit("sellplayers", null);
+  }
+
+  sellPlayersCancelListingPrompt() {
+    this.state.ui.sellPlayers.pricePrompt = null;
+    this.emit("sellplayers", null);
+  }
+
+  sellPlayersConfirmListing() {
+    const s = this.state.ui.sellPlayers;
+    if (s.selectedPlayerId == null || !s.pricePrompt) return;
     this.state.transfers.listings.set(s.selectedPlayerId, {
-      type, askingPrice: s.askingPriceDraft, listedDate: this.state.calendar.today,
+      type: s.pricePrompt.type, askingPrice: s.pricePrompt.draft, listedDate: this.state.calendar.today,
     });
-    this.emit("selllist", null);
+    s.pricePrompt = null;
+    s.actionMenuOpen = false;
+    this.emit("sellplayers", null);
     this.emit("advance", null); // Transfers hub's Sell Players tile reflects the new listing count
   }
 
-  unlistPlayer() {
-    const s = this.state.ui.sellList;
+  sellPlayersUnlist() {
+    const s = this.state.ui.sellPlayers;
     if (s.selectedPlayerId == null) return;
     this.state.transfers.listings.delete(s.selectedPlayerId);
-    this.emit("selllist", null);
+    s.actionMenuOpen = false;
+    this.emit("sellplayers", null);
     this.emit("advance", null);
+  }
+
+  sellPlayersToggleDisallowBids() {
+    const s = this.state.ui.sellPlayers;
+    if (s.selectedPlayerId == null) return;
+    const set = this.state.transfers.disallowedBids;
+    if (set.has(s.selectedPlayerId)) set.delete(s.selectedPlayerId);
+    else set.add(s.selectedPlayerId);
+    s.actionMenuOpen = false;
+    this.emit("sellplayers", null);
+  }
+
+  /** "Offer New Contract" — hands off to the existing Office ▸ Contracts
+   * renewal overlay (plan2.md F4.1's own text: "-> F6 negotiation panel" —
+   * F6 hasn't restyled Contracts into the shared CONTRACT NEGOTIATION panel
+   * yet, so this wires into whatever renewal screen exists today, same
+   * "reuse the existing engine, restyle later" footing as F2's Tactics tab). */
+  sellPlayersOfferContract() {
+    const s = this.state.ui.sellPlayers;
+    if (s.selectedPlayerId == null) return;
+    const playerId = s.selectedPlayerId;
+    s.actionMenuOpen = false;
+    // Closes Sell Players first rather than opening Contracts nested on top
+    // of it — (B) from Contracts then returns straight to the Transfers hub
+    // instead of back through Sell Players, matching how Contracts is
+    // normally reached directly from the Office hub (a top-level overlay,
+    // never nested under anything else).
+    this.closeOverlay();
+    this.selectContractPlayer(playerId);
+    this.openOverlay("contracts");
+  }
+
+  sellPlayersRelease() {
+    const s = this.state.ui.sellPlayers;
+    if (s.selectedPlayerId == null) return { error: "no-selection" };
+    const result = releasePlayer(this.state, s.selectedPlayerId);
+    if (result.ok) {
+      s.actionMenuOpen = false;
+      s.selectedPlayerId = this.state.squad.roster[0] ? this.state.squad.roster[0].id : null;
+    }
+    this.emit("sellplayers", null);
+    this.emit("advance", null);
+    return result;
+  }
+
+  /* ============================================================================
+   * F4: TRANSFER NEGOTIATIONS ledger (ms_TRANSFER_NEGOTIATIONS_*.png) —
+   * engine/negotiationlog.js owns the actual data derivation; these methods
+   * just cycle the [LB][RB] tab + per-tab row cursor and emit for
+   * ui/negotiationsui.js to re-render from.
+   * ========================================================================== */
+
+  openTransferNegotiationsLedger() {
+    this.openOverlay("negotiationsledger");
+  }
+
+  cycleNegotiationsLedgerTab(delta) {
+    const n = this.state.ui.negotiationsLedger;
+    n.tab = (n.tab + delta + 4) % 4;
+    this.emit("negotiationsledger", null);
+  }
+
+  sortNegotiationsLedger() {
+    const n = this.state.ui.negotiationsLedger;
+    n.sortDir = n.sortDir === "asc" ? "desc" : "asc";
+    this.emit("negotiationsledger", null);
+  }
+
+  selectNegotiationsLedgerRow(index) {
+    const n = this.state.ui.negotiationsLedger;
+    const key = ["receivedIndex", "sentIndex", "successfulIndex", "unsuccessfulIndex"][n.tab];
+    n[key] = index;
+    this.emit("negotiationsledger", null);
+  }
+
+  /** (A) on an active "Transfer Offers Sent" row reopens its live dossier/
+   * contract panel — the only tab with anything to "reopen" (Received's rows
+   * are decided via the inbox email's own Accept/Reject, Successful/
+   * Unsuccessful are terminal history, per plan2.md F4.2's own text). */
+  negotiationsLedgerOpenRow() {
+    const n = this.state.ui.negotiationsLedger;
+    if (n.tab !== 1) return; // 0=Received 1=Sent 2=Successful 3=Unsuccessful
+    if (!sentLedgerRow(this.state)) return;
+    this.openOverlay("negotiation");
+  }
+
+  /* ============================================================================
+   * F4: TRANSFER HISTORY (ms_TRANSFER_HISTORY_SCREEN.png) — MY CLUB / ALL
+   * CLUBS tabs over the same terminal negotiations log the ledger above
+   * reads, plus (ALL CLUBS) engine/transferai.js's own CPU<->CPU completions
+   * — see ui/transferhistoryui.js for the actual row-building.
+   * ========================================================================== */
+
+  openTransferHistory() {
+    this.openOverlay("transferhistory");
+  }
+
+  setTransferHistoryTab(tab) {
+    const h = this.state.ui.transferHistory;
+    h.tab = tab;
+    h.selectedIndex = -1;
+    this.emit("transferhistory", null);
+  }
+
+  selectTransferHistoryRow(index) {
+    this.state.ui.transferHistory.selectedIndex = index;
+    this.emit("transferhistory", null);
+  }
+
+  /* ============================================================================
+   * F4: FINANCES / BUDGET ALLOCATION (ms_FINANCES_BUDGET_ALLOCATION.png)
+   * ========================================================================== */
+
+  openFinances() {
+    this.state.ui.budgetAllocation.modifying = false;
+    this.state.ui.budgetAllocation.draft = null;
+    this.state.ui.budgetAllocation.stepAmounts = null;
+    this.openOverlay("finances");
+  }
+
+  /** "(LS) Modify Allocation" — enters the live slider: seeds a draft copy of
+   * {transferBudget, wageCeiling} plus a *fixed* step-amount pair (see
+   * engine/finances.js's budgetSplitStepAmounts header for why it's computed
+   * once here, not per-step). */
+  budgetAllocationBeginModify() {
+    const b = this.state.ui.budgetAllocation;
+    b.stepAmounts = budgetSplitStepAmounts(this.state);
+    b.draft = { transferBudget: this.state.finances.transferBudget, wageCeiling: this.state.finances.wageCeiling };
+    b.modifying = true;
+    this.emit("finances", null);
+  }
+
+  /** direction: +1 (toward transfer) | -1 (toward wage). */
+  budgetAllocationStep(direction) {
+    const b = this.state.ui.budgetAllocation;
+    if (!b.modifying || !b.draft) return;
+    const minWageCeiling = squadWageBill(this.state.squad.roster);
+    applyBudgetSplitStep(b.draft, direction, b.stepAmounts, minWageCeiling);
+    this.emit("finances", null);
+  }
+
+  /** "(A) Accept Allocation" — commits the draft into state.finances. */
+  budgetAllocationAccept() {
+    const b = this.state.ui.budgetAllocation;
+    if (b.modifying && b.draft) {
+      this.state.finances.transferBudget = b.draft.transferBudget;
+      this.state.finances.wageCeiling = b.draft.wageCeiling;
+    }
+    b.modifying = false;
+    b.draft = null;
+    b.stepAmounts = null;
+    this.emit("finances", null);
+    this.emit("advance", null); // Transfers hub Finances tile + Contracts' Rem. Wage Budget line reflect it
+  }
+
+  /** "(B) Back" while modifying discards the draft and returns to the plain
+   * Budget Allocation view (still on the same screen — B only leaves the
+   * screen entirely when not mid-modify, see core/router.js's own handler). */
+  budgetAllocationCancelModify() {
+    const b = this.state.ui.budgetAllocation;
+    b.modifying = false;
+    b.draft = null;
+    b.stepAmounts = null;
+    this.emit("finances", null);
   }
 
   /* ----- M7: incoming CPU bids (Office/Email inbox YES/NO decision emails) ----- */

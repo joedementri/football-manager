@@ -10,12 +10,27 @@
 // rather than eagerly computed for all ~600 clubs every rollover — most
 // clubs never transact in a given window, so there's no reason to pre-size a
 // full-world ledger up front.
+//
+// F4 (fable-plans/plan2.md, config/budget.js): the lazy seed is floored at
+// the club's own league's LEAGUE_BUDGET_MIN — a floor only (see
+// config/budget.js's own header for why the MAX table isn't enforced here).
+
+import { leagueBudgetMin } from "../config/budget.js";
+
+function clubLeague(state, clubId) {
+  const club = state.clubsById.get(clubId);
+  if (!club) return null;
+  const leagueId = state.clubLeague ? state.clubLeague.get(clubId) ?? club.leagueId : club.leagueId;
+  return state.staticData?.leagues.find((l) => l.id === leagueId) || null;
+}
 
 export function getClubBudget(state, clubId) {
   if (!state.clubTransferBudgets) state.clubTransferBudgets = new Map();
   if (!state.clubTransferBudgets.has(clubId)) {
     const club = state.clubsById.get(clubId);
-    state.clubTransferBudgets.set(clubId, club ? club.baseTransferBudget : 0);
+    const base = club ? club.baseTransferBudget : 0;
+    const floor = leagueBudgetMin(clubLeague(state, clubId));
+    state.clubTransferBudgets.set(clubId, Math.max(base, floor));
   }
   return state.clubTransferBudgets.get(clubId);
 }

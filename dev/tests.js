@@ -38,7 +38,7 @@ import { computeValue } from "../js/engine/value.js";
 import { computeWage, computeWageCeiling, squadWageBill } from "../js/engine/wage.js";
 import {
   computeAsk, acceptanceChance, renewUserContract, applyCpuContractRenewals,
-  resolveExpiredContracts, checkContractExpiryWarnings,
+  resolveExpiredContracts, checkContractExpiryWarnings, releaseGuardReason, releasePlayer,
 } from "../js/engine/contracts.js";
 import { decisionCurveY } from "../js/config/negotiation.js";
 import { computeWantedFee, feeDecisionChances, rollThreeWay, computeCounterFee } from "../js/engine/teamdecision.js";
@@ -53,7 +53,20 @@ import {
 import { eligibleFreeAgentTargets, startApproach, submitApproach } from "../js/engine/freeagents.js";
 import {
   runWeeklyTransferActivity, checkIncomingBidsOnListedPlayers, acceptIncomingBid, rejectIncomingBid,
+  expirePendingBids,
 } from "../js/engine/transferai.js";
+import {
+  successfulEntries, unsuccessfulEntries, worldwideCompletedEntries, sentLedgerRow, receivedLedgerRows,
+  pushNegotiationLogEntry,
+} from "../js/engine/negotiationlog.js";
+import {
+  RELEASE_GUARD_GROUPS, SQUAD_FLOOR_TOTAL, MAX_SQUAD_SIZE, boardStrictnessPct, carryOverPct,
+  leagueBudgetMin, BUDGET_SPLIT_RATE,
+} from "../js/config/budget.js";
+import { MAX_COUNTER_OFFERS } from "../js/config/transferai.js";
+import {
+  budgetSplitStepAmounts, applyBudgetSplitStep, budgetSplitPct,
+} from "../js/engine/finances.js";
 import {
   createInitialGtnState, hireScout, sackScout, startMission, cancelMission, viewMission,
   runDailyGtnActivity, missionNewCount, missionUpdateCount, primaryMission,
@@ -103,6 +116,7 @@ import { startPlayerScout, cheapestIdleScout, scoutReportStatus } from "../js/en
 import { computeSearchResults, buildActionRows, computeNameSearchResults, computeNationSearchResults } from "../js/ui/searchui.js";
 import { cmToFtIn } from "../js/ui/playerbio.js";
 import { EXCHANGE_PLAYER_VALUE_PCT } from "../js/engine/negotiation.js";
+import { statusLabel } from "../js/ui/sellplayersui.js";
 
 const groups = []; // [{ title, results: [{name, pass, detail}] }]
 let current = null;
@@ -2575,6 +2589,308 @@ async function run() {
     assert("searchApplyNationResult does NOT auto-run the search (stays on filters)", nsState.ui.transferSearch.stage === "filters");
   }
 
+  /* ==========================================================================
+   * F4 (fable-plans/plan2.md): Sell Players, Transfer Negotiations ledger,
+   * Transfer History, Finances/Budget Allocation.
+   * ======================================================================= */
+
+  group("config/budget.js — release guard groups + squad-total floor (transfer.ini MIN_PLAYERS_POSITION_*, cmsettings.ini MIN_SQUAD_SIZE/MAX_SQUAD_SIZE)");
+  {
+    const totalMin = RELEASE_GUARD_GROUPS.reduce((s, g) => s + g.min, 0);
+    assert("the 8 release-guard groups' own minimums sum to 21 (2+2+4+2+2+4+2+3, matching config/transferai.js's own area-level MIN_PLAYERS_PER_AREA totals)", totalMin === 21);
+    const allCodes = RELEASE_GUARD_GROUPS.flatMap((g) => g.codes);
+    assert("every one of the 28 position codes is covered by exactly one release-guard group", allCodes.length === 28 && new Set(allCodes).size === 28);
+    assert("SQUAD_FLOOR_TOTAL is cmsettings.ini's real MIN_SQUAD_SIZE (18), not the plan's own guessed 16", SQUAD_FLOOR_TOTAL === 18);
+    assert("MAX_SQUAD_SIZE is cmsettings.ini's real MAX_SQUAD_SIZE (52)", MAX_SQUAD_SIZE === 52);
+
+    function fakePlayer(id, position) { return { id, position }; }
+    const bigRoster = [];
+    let nid = 1;
+    for (const group of RELEASE_GUARD_GROUPS) {
+      for (let i = 0; i < group.min + 3; i++) bigRoster.push(fakePlayer(nid++, group.codes[i % group.codes.length]));
+    }
+    assert(`a squad well above every floor (n=${bigRoster.length}) allows Release`,
+      releaseGuardReason({ squad: { roster: bigRoster } }, bigRoster[0]) === null);
+
+    const stGroup = RELEASE_GUARD_GROUPS.find((g) => g.label === "ST");
+    const thinRoster = [
+      ...bigRoster.filter((p) => !stGroup.codes.includes(p.position)),
+      fakePlayer(900, "ST"), fakePlayer(901, "ST"), fakePlayer(902, "ST"),
+    ];
+    assert(`exactly at ST's own MIN_PLAYERS_POSITION_ST floor (${stGroup.min}) blocks Release`,
+      releaseGuardReason({ squad: { roster: thinRoster } }, thinRoster.find((p) => p.position === "ST")) !== null);
+
+    const smallRoster = bigRoster.slice(0, SQUAD_FLOOR_TOTAL);
+    assert(`a squad of exactly SQUAD_FLOOR_TOTAL (${SQUAD_FLOOR_TOTAL}) total players is blocked by the squad-total floor regardless of position`,
+      releaseGuardReason({ squad: { roster: smallRoster } }, smallRoster[0]) !== null);
+  }
+
+  group("config/budget.js — carryOverPct / boardStrictnessPct bands (cmsettings.ini [BUDGET])");
+  {
+    assert("carryOverPct(£500k) lands in the <=£1M band -> 90%", carryOverPct(500000) === 90);
+    assert("carryOverPct(£15M) lands in the <=£20M band -> 55%", carryOverPct(15000000) === 55);
+    assert("carryOverPct(£100M), past every named band, falls back to the last band's own value -> 10%", carryOverPct(100000000) === 10);
+    assert("boardStrictnessPct: a giant club (prestige 10) -> strict 60%", boardStrictnessPct({ prestige: 10 }) === 60);
+    assert("boardStrictnessPct: a tiny club (prestige 2) -> lenient 85%", boardStrictnessPct({ prestige: 2 }) === 85);
+    assert("boardStrictnessPct: a mid club (prestige 5) -> moderate 75%", boardStrictnessPct({ prestige: 5 }) === 75);
+    assert("leagueBudgetMin keys off the league's own iniLeagueId (EPL, 13) -> £18,000,000", leagueBudgetMin({ iniLeagueId: 13 }) === 18000000);
+    assert("leagueBudgetMin falls back to the default for an unlisted iniLeagueId", leagueBudgetMin({ iniLeagueId: 999999 }) === 100000);
+  }
+
+  group("engine/finances.js — Budget Allocation slider round-trip (F4, cmsettings.ini TRANSFER_WAGE_SPLIT_PERCENT=80)");
+  {
+    assert("BUDGET_SPLIT_RATE = 52 weeks x (80/20 split factor) = 208", BUDGET_SPLIT_RATE === 208);
+    const fakeFinState = { finances: { transferBudget: 1200000, wageCeiling: 82250 }, squad: { roster: [] } };
+    const steps = budgetSplitStepAmounts(fakeFinState);
+    assert("a real step's transferDelta/wageDelta are both positive", steps.transferDelta > 0 && steps.wageDelta > 0);
+    const draft = { transferBudget: fakeFinState.finances.transferBudget, wageCeiling: fakeFinState.finances.wageCeiling };
+    for (let i = 0; i < 5; i++) applyBudgetSplitStep(draft, 1, steps, 0);
+    for (let i = 0; i < 5; i++) applyBudgetSplitStep(draft, -1, steps, 0);
+    assert("moving 5 steps toward transfer then 5 back toward wage round-trips to the exact starting budgets",
+      draft.transferBudget === fakeFinState.finances.transferBudget && draft.wageCeiling === fakeFinState.finances.wageCeiling);
+    const [tPct, wPct] = budgetSplitPct(draft.transferBudget, draft.wageCeiling, []);
+    assert("budgetSplitPct's transfer/wage percentages always sum to 100", tPct + wPct === 100);
+  }
+
+  group("engine/contracts.js — releasePlayer (F4 Sell Players Release action, live Store)");
+  {
+    const relClub = world.clubs.find((c) => c.id !== "manchester-united") || world.clubs[5];
+    const relLeague = world.leagues.find((l) => l.id === relClub.leagueId);
+    const relState = createCareerState({ managerName: "Release Test", club: relClub, league: relLeague, world, seasonStartYear: 2014 });
+    // Not every individual position sub-group in a real 24-man squad clears
+    // its own fine-grained floor (e.g. a squad might only carry one true LB-
+    // coded player even though DEF as a whole has 8) — that's a legitimate
+    // guard result, not a bug, so this picks whichever roster player *is*
+    // releasable rather than assuming the lowest-overall one always is (the
+    // engine/contracts.js group above already exercises the guard's actual
+    // pass/fail boundary directly on a hand-crafted roster).
+    const target = relState.squad.roster.find((p) => releaseGuardReason(relState, p) === null);
+    assert("at least one roster player clears every release-guard floor in a real 24-man squad", !!target);
+    const budgetBefore = relState.finances.transferBudget;
+    const result = target ? releasePlayer(relState, target.id) : { ok: false };
+    assert("releasePlayer succeeds for that player", result.ok === true);
+    if (result.ok) {
+      assert("the released player is no longer on the user's club", target.clubId !== relClub.id);
+      assert("the released player lands at a real other club", relState.clubsById.has(target.clubId));
+      assert("the payoff (RELEASE_PAYOFF_PCT of wage x weeks remaining) was deducted from the transfer budget",
+        result.payoff >= 0 && relState.finances.transferBudget === budgetBefore - result.payoff);
+    }
+    assert("releasePlayer refuses a stale/foreign playerId", releasePlayer(relState, -999999).error === "not-found");
+  }
+
+  group("core/store.js — SELL PLAYERS status column reflects each action (F4, live Store)");
+  {
+    const spClub = world.clubs.find((c) => c.id !== "manchester-united") || world.clubs[3];
+    const spLeague = world.leagues.find((l) => l.id === spClub.leagueId);
+    const spState = createCareerState({ managerName: "Sell Test", club: spClub, league: spLeague, world, seasonStartYear: 2014 });
+    const spStore = new Store(spState);
+    spStore.openSellPlayers();
+    const player = spState.squad.roster[0];
+    spStore.selectSellPlayersRow(player.id);
+    assert("a freshly-opened, untouched player's status is 'None'", statusLabel(spState, player) === "None");
+
+    spStore.sellPlayersBeginListing("transfer");
+    assert("beginning a listing seeds the price prompt draft from the player's own value", spState.ui.sellPlayers.pricePrompt.draft === player.value);
+    const seeded = spState.ui.sellPlayers.pricePrompt.draft;
+    spStore.sellPlayersAdjustListingPrice(0.05);
+    assert("price-up steps the draft up", spState.ui.sellPlayers.pricePrompt.draft > seeded);
+    spStore.sellPlayersConfirmListing();
+    assert("confirming Add to Transfer List sets status to 'Transfer Listed'", statusLabel(spState, player) === "Transfer Listed");
+    assert("the listing's own type is 'transfer'", spState.transfers.listings.get(player.id).type === "transfer");
+
+    spStore.sellPlayersBeginListing("loan-season");
+    spStore.sellPlayersConfirmListing();
+    assert("switching to Loan List for Season Loan replaces the previous transfer listing", statusLabel(spState, player) === "Loan Listed (Season)");
+
+    spStore.sellPlayersBeginListing("loan-short");
+    spStore.sellPlayersConfirmListing();
+    assert("switching to Loan List for Short Loan replaces the season-loan listing", statusLabel(spState, player) === "Loan Listed (Short)");
+
+    spStore.sellPlayersToggleDisallowBids();
+    assert("Disallow Transfer Bids takes priority over any listing in the status label", statusLabel(spState, player) === "Bids Disallowed");
+    assert("the player id is really in state.transfers.disallowedBids", spState.transfers.disallowedBids.has(player.id));
+    spStore.sellPlayersToggleDisallowBids();
+    assert("toggling Disallow again reverts to the underlying listing status", statusLabel(spState, player) === "Loan Listed (Short)");
+
+    spStore.sellPlayersUnlist();
+    assert("Remove Listing reverts the status to 'None'", statusLabel(spState, player) === "None");
+
+    spStore.sellPlayersBeginListing("transfer");
+    spStore.sellPlayersCancelListingPrompt();
+    assert("cancelling the price prompt does NOT list the player", !spState.transfers.listings.has(player.id));
+  }
+
+  group("engine/negotiationlog.js — negotiations log gains exactly one terminal state per deal (F4)");
+  {
+    const state = buildM7FakeState();
+    const otherClub = state.staticData.clubs.find((c) => c.id !== state.club.id && c.id !== state.club.rivalId);
+    const target = (state.playersByClub.get(otherClub.id) || [])[0];
+    const before = (state.transfers.negotiations || []).length;
+    startFeeNegotiation(state, target.id);
+    state.transfers.negotiation.feeOffer = 1; // guarantees 0% accept chance
+    state.transfers.negotiation.round = MAX_COUNTER_OFFERS; // forces the reject branch regardless of the counter/reject roll
+    submitFeeOffer(state); // Sep 1 (buildM7FakeState's own "today") is the deadline day — resolves synchronously
+    const afterReject = (state.transfers.negotiations || []).length;
+    assert("a guaranteed-rejected fee offer appends exactly one terminal log entry", afterReject === before + 1);
+    assert("the new entry's outcome is 'fail'", state.transfers.negotiations[0].outcome === "fail");
+    assert("the new entry's source is 'sent'", state.transfers.negotiations[0].source === "sent");
+
+    const otherClubs2 = state.staticData.clubs.filter((c) => c.id !== state.club.id && c.id !== state.club.rivalId).slice(0, 6);
+    let completed = false;
+    outerF4:
+    for (const oc of otherClubs2) {
+      const roster2 = state.playersByClub.get(oc.id) || [];
+      const t2 = roster2.reduce((cheapest, p) => (p.value < cheapest.value ? p : cheapest), roster2[0]);
+      for (let attempt = 0; attempt < 6; attempt++) {
+        state.transfers.negotiation = null;
+        state.transfers.pendingOffers = [];
+        startFeeNegotiation(state, t2.id);
+        const n = state.transfers.negotiation;
+        n.promisedRole = t2.contract.squadRole;
+        n.feeOffer = Math.round(t2.value * (2 + attempt));
+        submitFeeOffer(state);
+        if (state.transfers.negotiation.phase === "contract") {
+          state.transfers.negotiation.contractOffer.wage = Math.round(state.transfers.negotiation.contractOffer.wage * (2 + attempt));
+          const beforeComplete = state.transfers.negotiations.length;
+          submitNegotiationContractOffer(state);
+          if (state.transfers.negotiation.phase === "completed") {
+            assert("completing a transfer appends exactly one more log entry", state.transfers.negotiations.length === beforeComplete + 1);
+            assert("the completed entry's outcome is 'success'", state.transfers.negotiations[0].outcome === "success");
+            completed = true;
+            break outerF4;
+          }
+        }
+      }
+    }
+    assert("at least one sampled club completed (backs the 'exactly one success entry' check above)", completed);
+  }
+
+  group("engine/transferai.js — acceptIncomingBid/rejectIncomingBid append negotiations log entries + sales income (F4)");
+  {
+    const state = buildM7FakeState();
+    state.finances.seasonSalesIncome = 0;
+    const buyingClub = state.staticData.clubs.find((c) => c.id !== state.club.id);
+    const player = state.squad.roster[state.squad.roster.length - 1];
+    const offer = player.value;
+    state.inbox.emails.unshift({
+      from: "X", to: "Y", cc: "Z", crest: "crest-a", date: new Date(state.calendar.today), read: false, subject: "s3", body: [],
+      action: { type: "transfer-bid", bidId: "acc-1", playerId: player.id, buyingClubId: buyingClub.id, offer },
+    });
+    const before = (state.transfers.negotiations || []).length;
+    acceptIncomingBid(state, "acc-1");
+    assert("accepting an incoming bid appends exactly one 'success' entry",
+      (state.transfers.negotiations || []).length === before + 1 && state.transfers.negotiations[0].outcome === "success");
+    assert("accepting credits seasonSalesIncome by the offer amount (F4 Budget Allocation's own rollover carry-over)", state.finances.seasonSalesIncome === offer);
+    assert("the sold player is moved to the buying club", player.clubId === buyingClub.id);
+
+    const player2 = state.squad.roster[0];
+    state.inbox.emails.unshift({
+      from: "X", to: "Y", cc: "Z", crest: "crest-a", date: new Date(state.calendar.today), read: false, subject: "s4", body: [],
+      action: { type: "transfer-bid", bidId: "rej-1", playerId: player2.id, buyingClubId: buyingClub.id, offer: player2.value },
+    });
+    const before2 = (state.transfers.negotiations || []).length;
+    rejectIncomingBid(state, "rej-1");
+    assert("rejecting an incoming bid appends exactly one 'fail' entry",
+      (state.transfers.negotiations || []).length === before2 + 1 && state.transfers.negotiations[0].outcome === "fail");
+  }
+
+  group("engine/transferai.js — expirePendingBids withdraws unanswered bids past their own expiry (F4, transfers.ini MIN_DAYS_TO_EXPIRE_OFFER)");
+  {
+    const state = buildM7FakeState();
+    const buyingClub = state.staticData.clubs.find((c) => c.id !== state.club.id);
+    const player = state.squad.roster[0];
+    const today = state.calendar.today;
+    state.inbox.emails.unshift({
+      from: "X", to: "Y", cc: "Z", crest: "crest-a", date: new Date(today), read: false, subject: "exp-s1", body: [],
+      action: { type: "transfer-bid", bidId: "exp-1", playerId: player.id, buyingClubId: buyingClub.id, offer: player.value, expiresDate: today },
+    });
+    const beforeLen = (state.transfers.negotiations || []).length;
+    const dayAfter = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    expirePendingBids(state, dayAfter);
+    const email = state.inbox.emails.find((e) => e.subject === "exp-s1");
+    assert("an expired bid's action is cleared", email.action === null);
+    assert("expiry appends exactly one terminal ('Withdrawn') log entry",
+      (state.transfers.negotiations || []).length === beforeLen + 1 && state.transfers.negotiations[0].negStatus === "Withdrawn");
+
+    state.inbox.emails.unshift({
+      from: "X", to: "Y", cc: "Z", crest: "crest-a", date: new Date(today), read: false, subject: "exp-s2", body: [],
+      action: { type: "transfer-bid", bidId: "exp-2", playerId: player.id, buyingClubId: buyingClub.id, offer: player.value, expiresDate: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 5) },
+    });
+    expirePendingBids(state, dayAfter);
+    const email2 = state.inbox.emails.find((e) => e.subject === "exp-s2");
+    assert("a bid still inside its own expiry window is left untouched", email2.action !== null);
+  }
+
+  group("engine/negotiationlog.js — Sent/Received live derivation + worldwideCompletedEntries vs successfulEntries scoping (F4)");
+  {
+    const tnClub = world.clubs.find((c) => c.id !== "manchester-united") || world.clubs[7];
+    const tnLeague = world.leagues.find((l) => l.id === tnClub.leagueId);
+    const tnState = createCareerState({ managerName: "TN Test", club: tnClub, league: tnLeague, world, seasonStartYear: 2014 });
+    const tnStore = new Store(tnState);
+
+    assert("sentLedgerRow is null with no live negotiation", sentLedgerRow(tnState) === null);
+    const target = tnState.players.find((p) => p.clubId !== tnClub.id);
+    tnStore.startBid(target.id);
+    assert("sentLedgerRow stays null before the offer is actually submitted (n.everSubmitted still false)", sentLedgerRow(tnState) === null);
+    tnStore.negoSubmitFeeOffer(); // a fresh career always starts July 1st — never a deadline day, so this queues rather than resolving
+    const row = sentLedgerRow(tnState);
+    assert("sentLedgerRow appears once the offer is submitted", row !== null && row.playerId === target.id);
+
+    const myPlayer = tnState.squad.roster[0];
+    tnState.inbox.emails.unshift({
+      from: "TEST FC", to: "x", cc: "x", crest: "crest-a", date: new Date(tnState.calendar.today), read: false, subject: "test", body: [],
+      action: { type: "transfer-bid", bidId: "test-bid-1", playerId: myPlayer.id, buyingClubId: target.clubId, offer: myPlayer.value, expiresDate: tnState.calendar.today },
+    });
+    const received = receivedLedgerRows(tnState);
+    assert("receivedLedgerRows picks up a pending transfer-bid email", received.some((r) => r.playerId === myPlayer.id));
+
+    const beforeWorld = (tnState.transfers.negotiations || []).length;
+    const c1 = tnState.staticData.clubs[0], c2 = tnState.staticData.clubs[1];
+    const somePlayer = (tnState.playersByClub.get(c2.id) || tnState.players)[0];
+    pushNegotiationLogEntry(tnState, {
+      source: "cpu", dealType: "transfer", playerId: somePlayer.id, fromClubId: c2.id, toClubId: c1.id,
+      outcome: "success", negStatus: "Completed", transferFee: 1000000, estimatedWorth: 900000,
+      current: null, offered: null, date: tnState.calendar.today,
+    });
+    assert("worldwideCompletedEntries includes a CPU<->CPU completion (Transfer History's ALL CLUBS tab)", worldwideCompletedEntries(tnState).length === beforeWorld + 1);
+    assert("successfulEntries (user-scoped, TRANSFER NEGOTIATIONS' own Successful tab) excludes the CPU<->CPU entry", successfulEntries(tnState).length === beforeWorld);
+  }
+
+  group("core/db.js — F4 negotiations log + disallowedBids + email action.expiresDate round-trip");
+  {
+    const dbClub = world.clubs.find((c) => c.id !== "manchester-united") || world.clubs[9];
+    const dbLeague = world.leagues.find((l) => l.id === dbClub.leagueId);
+    const dbState = createCareerState({ managerName: "DB F4 Test", club: dbClub, league: dbLeague, world, seasonStartYear: 2014 });
+    const dbStore = new Store(dbState);
+    const p1 = dbState.squad.roster[0];
+    dbStore.openSellPlayers();
+    dbStore.selectSellPlayersRow(p1.id);
+    dbStore.sellPlayersToggleDisallowBids();
+    pushNegotiationLogEntry(dbState, {
+      source: "sent", dealType: "transfer", playerId: p1.id, fromClubId: dbClub.id, toClubId: dbClub.id,
+      outcome: "success", negStatus: "Completed", transferFee: 12345, estimatedWorth: 54321,
+      current: { wage: 1000, years: 2, bonus: 5 }, offered: { wage: 2000, years: 3, bonus: 10 },
+      date: dbState.calendar.today,
+    });
+    dbState.inbox.emails.unshift({
+      from: "X", to: "Y", cc: "Z", crest: "crest-a", date: new Date(dbState.calendar.today), read: false, subject: "db-bid", body: [],
+      action: { type: "transfer-bid", bidId: "db-1", playerId: p1.id, buyingClubId: dbClub.id, offer: 999, expiresDate: new Date(dbState.calendar.today) },
+    });
+
+    const saved = serializeSave(dbState);
+    const restored = deserializeSave(saved);
+    assert("transferDisallowedBids round-trips", restored.transferDisallowedBids.includes(p1.id));
+    assert("transferNegotiationsLog round-trips with the same length", restored.transferNegotiationsLog.length === dbState.transfers.negotiations.length);
+    const restoredEntry = restored.transferNegotiationsLog[0];
+    assert("a restored log entry's date round-trips as a real Date via epoch-day",
+      restoredEntry.date instanceof Date && restoredEntry.date.getFullYear() === dbState.calendar.today.getFullYear());
+    assert("a restored log entry keeps its transferFee/outcome/current/offered fields intact",
+      restoredEntry.transferFee === 12345 && restoredEntry.outcome === "success" && restoredEntry.current.wage === 1000 && restoredEntry.offered.years === 3);
+    const restoredEmail = restored.inbox.find((e) => e.action && e.action.bidId === "db-1");
+    assert("an email action's own expiresDate round-trips as a real Date (not left as a raw epoch-day int)",
+      restoredEmail && restoredEmail.action.expiresDate instanceof Date);
+  }
+
   render();
   window.__testWorld = world; // console inspection convenience
 
@@ -2668,6 +2984,19 @@ async function runFullSeasonRolloverTest() {
     assert(`season rollover advanced to July 1 ${seasonStartYear + 1} within a bounded number of days (${guard} days processed)`,
       toEpochDay(store.state.calendar.today) >= toEpochDay(targetDate));
     assert("rolloverSeason bumped seasonStartYear by exactly 1", store.state.seasonStartYear === seasonStartYear + 1);
+
+    // F4 (fable-plans/plan2.md, config/budget.js): the Budget Allocation
+    // season snapshot resets on rollover, and the new transferBudget (base +
+    // objective bonus + unspent carry-over + sales-return carry-over) is a
+    // finite, non-negative number.
+    assert("rollover resets seasonPurchases to 0", store.state.finances.seasonPurchases === 0);
+    assert("rollover resets seasonSalesIncome to 0", store.state.finances.seasonSalesIncome === 0);
+    assert("rollover snapshots seasonStartTransferBudget to the new transferBudget",
+      store.state.finances.seasonStartTransferBudget === store.state.finances.transferBudget);
+    assert("rollover snapshots a real seasonStartWageBill (matches the new roster's own wage bill)",
+      store.state.finances.seasonStartWageBill === squadWageBill(store.state.squad.roster));
+    assert("post-rollover transferBudget is a finite, non-negative number",
+      Number.isFinite(store.state.finances.transferBudget) && store.state.finances.transferBudget >= 0);
 
     const secondSeasonFixtureIds = new Set((store.state.fixtures.byClub.get(store.state.club.id) || []).map((f) => f.id));
     const anyIdCollision = [...secondSeasonFixtureIds].some((id) => firstSeasonUserFixtureIds.has(id));

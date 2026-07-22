@@ -28,6 +28,10 @@ import { movePlayerToClub } from "./contracts.js";
 import { getClubBudget, spendClubBudget, creditClubBudget } from "./clubbudget.js";
 import { buildCpuTransferNewsArticle, pushTransferNews } from "./transfernews.js";
 import { recordTransferFeeReceived } from "./career.js";
+import { recordSeasonSalesIncome } from "./finances.js";
+import { pushNegotiationLogEntry, currentContractSnapshot } from "./negotiationlog.js";
+import { addDays } from "../core/clock.js";
+import { MIN_DAYS_TO_EXPIRE_OFFER } from "../config/negotiation.js";
 
 const MONDAY = 1;
 
@@ -159,6 +163,11 @@ export function runWeeklyTransferActivity(state, today) {
     recomputeValue(target, club, state.seasonStartYear);
 
     pushTransferNews(state, buildCpuTransferNewsArticle({ player: target, fromClub: counterparty, toClub: club, fee: wantedFee, today }));
+    pushNegotiationLogEntry(state, {
+      source: "cpu", dealType: "transfer", playerId: target.id, fromClubId: counterparty.id, toClubId: club.id,
+      outcome: "success", negStatus: "Completed", transferFee: wantedFee, estimatedWorth: target.value,
+      current: null, offered: null, date: today,
+    });
     completed++;
     progress.completed++;
   }
@@ -194,6 +203,12 @@ function pickBiddingClub(state, rng, player) {
 
 function pushIncomingBidEmail(state, { player, buyingClub, offer, today }) {
   const bidId = `bid-${player.id}-${toEpochDay(today)}`;
+  // F4 (plan2.md TRANSFER NEGOTIATIONS ledger): a real expiry countdown,
+  // ported from transfers.ini [TRANSFERS_TRANSFER_TIMING]'s own
+  // MIN_DAYS_TO_EXPIRE_OFFER (already in config/negotiation.js) — an
+  // unanswered bid is withdrawn after this many days rather than sitting
+  // forever (see expirePendingBids below).
+  const expiresDate = addDays(today, MIN_DAYS_TO_EXPIRE_OFFER);
   state.inbox.emails.unshift({
     from: buyingClub.name.toUpperCase(), to: "Assistant Manager", cc: "Assistant Manager", crest: `crest-${buyingClub.id}`,
     date: new Date(today), read: false,
@@ -202,7 +217,7 @@ function pushIncomingBidEmail(state, { player, buyingClub, offer, today }) {
       `${buyingClub.name} have made an offer of ${money(offer)} for ${player.commonName}.`,
       "Do you want to accept this bid?",
     ],
-    action: { type: "transfer-bid", bidId, playerId: player.id, buyingClubId: buyingClub.id, offer },
+    action: { type: "transfer-bid", bidId, playerId: player.id, buyingClubId: buyingClub.id, offer, expiresDate },
   });
 }
 
@@ -242,8 +257,10 @@ export function acceptIncomingBid(state, bidId) {
   const player = state.playersById.get(playerId);
   if (!player || player.clubId !== state.club.id) return { error: "stale" };
   const buyingClub = state.clubsById.get(buyingClubId);
+  const currentSnapshot = currentContractSnapshot(state, player);
 
   state.finances.transferBudget += offer;
+  recordSeasonSalesIncome(state, offer); // F4: Budget Allocation's rollover sales-return %
   spendClubBudget(state, buyingClubId, offer);
   recordTransferFeeReceived(state, { fee: offer, playerId }); // M11 My Career: "Record Transfer Fee"
   movePlayerToClub(state, player, buyingClubId);
@@ -254,18 +271,54 @@ export function acceptIncomingBid(state, bidId) {
   };
   recomputeValue(player, buyingClub, state.seasonStartYear);
   state.transfers.listings.delete(playerId);
+  if (state.transfers.disallowedBids) state.transfers.disallowedBids.delete(playerId);
   state.squad.roster = (state.playersByClub.get(state.club.id) || []).slice().sort((a, b) => b.overall - a.overall);
 
   email.read = true;
   email.action = null;
   pushTransferNews(state, buildCpuTransferNewsArticle({ player, fromClub: state.club, toClub: buyingClub, fee: offer, today: state.calendar.today }));
+  pushNegotiationLogEntry(state, {
+    source: "received", dealType: "transfer", playerId, fromClubId: state.club.id, toClubId: buyingClubId,
+    outcome: "success", negStatus: "Completed", transferFee: offer, estimatedWorth: player.value,
+    current: currentSnapshot, offered: null, date: state.calendar.today,
+  });
   return { ok: true };
 }
 
 export function rejectIncomingBid(state, bidId) {
   const email = state.inbox.emails.find((e) => e.action && e.action.bidId === bidId);
   if (!email) return { error: "not-found" };
+  const { playerId, buyingClubId, offer } = email.action;
+  const player = state.playersById.get(playerId);
+  if (player) {
+    pushNegotiationLogEntry(state, {
+      source: "received", dealType: "transfer", playerId, fromClubId: state.club.id, toClubId: buyingClubId,
+      outcome: "fail", negStatus: "Rejected", transferFee: offer, estimatedWorth: player.value,
+      current: currentContractSnapshot(state, player), offered: null, date: state.calendar.today,
+    });
+  }
   email.read = true;
   email.action = null;
   return { ok: true };
+}
+
+/** Daily check (core/store.js's _processCalendarDay): an incoming bid nobody
+ * answered within its own expiresDate is withdrawn — logged as a terminal
+ * "Withdrawn" entry (Unsuccessful Negotiations) rather than sitting in the
+ * inbox/ledger forever. */
+export function expirePendingBids(state, today) {
+  for (const email of state.inbox.emails) {
+    if (!email.action || email.action.type !== "transfer-bid") continue;
+    if (toEpochDay(email.action.expiresDate ?? today) > toEpochDay(today)) continue;
+    const { playerId, buyingClubId, offer } = email.action;
+    const player = state.playersById.get(playerId);
+    if (player) {
+      pushNegotiationLogEntry(state, {
+        source: "received", dealType: "transfer", playerId, fromClubId: state.club.id, toClubId: buyingClubId,
+        outcome: "fail", negStatus: "Withdrawn", transferFee: offer, estimatedWorth: player.value,
+        current: currentContractSnapshot(state, player), offered: null, date: today,
+      });
+    }
+    email.action = null;
+  }
 }

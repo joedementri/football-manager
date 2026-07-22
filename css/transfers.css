@@ -7,8 +7,10 @@
    don't rewrite — the existing tokens).
    =========================================================================== */
 
-#search-overlay, #negotiation-overlay, #selllist-overlay, #requestfunds-overlay { display: none; }
-#search-overlay.is-active, #negotiation-overlay.is-active, #selllist-overlay.is-active, #requestfunds-overlay.is-active { display: block; }
+#search-overlay, #negotiation-overlay, #requestfunds-overlay,
+#sellplayers-overlay, #negotiationsledger-overlay, #transferhistory-overlay, #finances-overlay { display: none; }
+#search-overlay.is-active, #negotiation-overlay.is-active, #requestfunds-overlay.is-active,
+#sellplayers-overlay.is-active, #negotiationsledger-overlay.is-active, #transferhistory-overlay.is-active, #finances-overlay.is-active { display: block; }
 
 /* ----- shared: stepper + offer-row + fact-list + result banner primitives
    (same look as css/contracts.css's .ct-stepper/.ct-fact/.ct-result — kept
@@ -99,47 +101,120 @@
 .ng-head__sub { font-family: var(--font-ui); font-size: 14px; color: var(--ink-dim); }
 .ng-head__value { font-family: var(--font-ui); font-size: 13px; color: var(--gold); margin-top: 2px; }
 
-/* ----- Sell / Loan List ----- */
-.sl2-body {
-  position: absolute;
-  top: 160px; left: 36px; right: 36px; bottom: 56px;
-  display: grid; grid-template-columns: 56% 1fr; gap: 0 18px;
-  z-index: 7;
+/* ----- F4 (fable-plans/plan2.md): SELL PLAYERS (ms_SELL_PLAYERS_SCREEN*.png)
+   — replaces the old M7 Sell/Loan List (.sl2-*) two-pane row list above.
+   #sellplayers-body/#negotiationsledger-body/#transferhistory-body/
+   #finances-body deliberately carry NO position/sizing rule of their own —
+   every other overlay's own "-body" wrapper in this codebase (kitnumbers,
+   formations, etc.) is a plain unstyled div too, since their real content
+   (.fx-panel, .fx-playercard-wrap, ...) is already `position:absolute`
+   against #stage directly (base.css's own containing block for every
+   overlay). Giving the body wrapper its own `position:absolute;bottom:90px`
+   here as well double-counts the footer gap against .fx-panel's/
+   .fx-playercard-wrap's own identical 90px offset — caught during F4 manual
+   QA by measuring a real getBoundingClientRect(), not visible from a code
+   read (plan2-decisions.md F4). Transfer History is the one exception
+   (ui/transferhistoryui.js's own header explains why it isn't an .fx-panel
+   at all) and positions its own `.th-tabs`/`.th-tablewrap` directly. */
+.sp-panel .fx-panel__body { overflow: visible; padding: 0; }
+.sp-body-inner { display: flex; flex-direction: column; height: 100%; padding: 16px 20px; gap: 14px; }
+.sp-header { display: flex; justify-content: space-between; gap: 20px; }
+.sp-header__left { display: flex; gap: 14px; }
+.sp-header__left .fx-identity__crest { width: 64px; height: 64px; }
+.sp-header__names { display: flex; flex-direction: column; gap: 2px; }
+.sp-header__budgetline { font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim); margin-top: 6px; }
+.sp-header__budgetline .k { margin-right: 6px; }
+.sp-header__budgetline .v { color: var(--ink); font-weight: 700; }
+.sp-header__right { text-align: right; }
+.sp-header__title { font-family: var(--font-cond); font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+.sp-counts { display: flex; gap: 22px; justify-content: flex-end; }
+.sp-counts__cell { display: flex; flex-direction: column; align-items: center; font-family: var(--font-ui); }
+.sp-counts__cell .k { font-size: 12px; color: var(--ink-dim); }
+.sp-counts__cell .v { font-family: var(--font-cond); font-size: 20px; font-weight: 700; color: var(--ink); }
+.sp-tablewrap { flex: 1; overflow-y: auto; min-height: 0; }
+.sp-tablewrap::-webkit-scrollbar { width: 8px; }
+.sp-tablewrap::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+.sp-priceprompt { width: 340px !important; }
+.sp-priceprompt__row { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 20px; }
+.sp-priceprompt__val { font-family: var(--font-cond); font-size: 20px; font-weight: 700; min-width: 120px; text-align: center; }
+.sp-priceprompt__confirm {
+  margin: 24px 20px 0; padding: 8px 0; text-align: center; cursor: pointer; border-radius: 4px;
+  font-family: var(--font-cond); font-size: 15px; font-weight: 700; color: var(--gold-text-dark);
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold-deep));
 }
-#sl2-list { display: flex; flex-direction: column; overflow-y: auto; }
-#sl2-list::-webkit-scrollbar { width: 8px; }
-#sl2-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
-.sl2-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-.sl2-clubname { font-family: var(--font-cond); font-size: 22px; font-weight: 700; }
 
-.sl2-row {
-  display: grid; grid-template-columns: 1.6fr 0.5fr 0.5fr 1fr 1.1fr;
-  align-items: center; gap: 8px;
-  padding: 9px 10px; cursor: pointer;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  font-family: var(--font-ui); font-size: 14px;
+/* ----- F4: TRANSFER NEGOTIATIONS ledger (ms_TRANSFER_NEGOTIATIONS_*.png) ----- */
+.tn-panel { width: 92%; }
+.tn-panel .fx-panel__body { padding: 0; overflow: hidden; }
+.tn-body { display: grid; grid-template-columns: 46% 1fr; height: 100%; }
+.tn-list { overflow-y: auto; border-right: 1px solid rgba(255, 255, 255, 0.06); }
+.tn-listrow {
+  display: flex; align-items: center; gap: 10px; padding: 10px 16px; cursor: pointer;
+  font-family: var(--font-ui); font-size: 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
-.sl2-row:hover { background: rgba(255, 255, 255, 0.03); }
-.sl2-row__name { font-family: var(--font-cond); font-size: 16px; font-weight: 600; }
-.sl2-row .num { text-align: right; }
-.sl2-row.is-sel { background: linear-gradient(180deg, var(--gold-bright), var(--gold-deep)); border-radius: 4px; }
-.sl2-row.is-sel .sl2-row__name { color: var(--gold-text-dark); }
-.sl2-badge {
-  justify-self: end; padding: 2px 8px; border-radius: 10px;
-  font-family: var(--font-ui); font-size: 10px; font-weight: 700; letter-spacing: 0.03em;
-  background: rgba(242, 193, 78, 0.18); color: var(--gold); border: 1px solid rgba(242, 193, 78, 0.35);
-}
-.sl2-badge--loan { background: rgba(47, 127, 209, 0.18); color: #7fb5ec; border-color: rgba(47, 127, 209, 0.35); }
+.tn-listrow--head { color: var(--ink-dim); font-weight: 700; font-size: 12px; text-transform: uppercase; cursor: default; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+.tn-listrow--head:hover { background: none; }
+.tn-listrow:hover { background: rgba(255, 255, 255, 0.03); }
+.tn-listrow.is-sel { background: linear-gradient(180deg, var(--gold-bright), var(--gold-deep)); color: var(--gold-text-dark); }
+.tn-listrow__name { font-family: var(--font-cond); font-size: 16px; font-weight: 600; flex: 1; }
+.tn-listrow .num { min-width: 30px; text-align: right; }
+.tn-listrow__expires { min-width: 90px; text-align: right; }
+.tn-detail { padding: 10px 24px; overflow-y: auto; }
+.tn-detail__head { display: flex; }
+.tn-detail__col { flex: 1; text-align: center; }
+.tn-detail__lbl { font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim); background: rgba(255, 255, 255, 0.04); padding: 4px 0; }
+.tn-detail__crests { display: flex; align-items: center; justify-content: center; gap: 20px; padding: 8px 0; }
+.tn-detail__crests .crest { width: 40px; height: 40px; }
+.tn-detail__arrow { font-size: 20px; color: var(--ink-dim); }
+.tn-section { font-family: var(--font-cond); font-size: 14px; font-weight: 700; color: var(--ink); background: rgba(255, 255, 255, 0.04); padding: 4px 10px; margin: 6px -24px; }
+.tn-row { display: flex; justify-content: space-between; padding: 3px 0; font-family: var(--font-ui); font-size: 13px; }
+.tn-row .k { color: var(--ink-dim); }
+.tn-row .v { color: var(--ink); font-weight: 600; }
+.tn-row--gap { margin-top: 5px; }
+.tn-negrow { display: grid; grid-template-columns: 1.4fr 1fr 1fr; padding: 3px 0; font-family: var(--font-ui); font-size: 13px; }
+.tn-negrow .k { color: var(--ink-dim); }
+.tn-negrow .cur, .tn-negrow .off { text-align: center; }
+.tn-negrow--head { font-weight: 700; color: var(--gold); font-size: 11px; text-transform: uppercase; }
 
-#sl2-detail {
-  position: relative;
-  background: linear-gradient(160deg, rgba(30, 36, 43, 0.92), rgba(18, 22, 27, 0.92));
-  border-radius: 8px;
-  padding: 18px 20px;
-  overflow-y: auto;
-}
-.sl2-detail__name { font-family: var(--font-cond); font-size: 22px; font-weight: 700; }
-.sl2-detail__sub { font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim); margin-top: 2px; margin-bottom: 12px; }
+/* ----- F4: TRANSFER HISTORY (ms_TRANSFER_HISTORY_SCREEN.png) — deliberately
+   NOT an .fx-panel (the pic shows plain tabs + a flat table directly over the
+   backdrop, no dark rounded panel — see ui/transferhistoryui.js's header). ----- */
+.th-tabs { position: absolute; top: 100px; left: 40px; display: flex; gap: 34px; z-index: 7; }
+.th-tab { font-family: var(--font-cond); font-size: 22px; color: var(--ink-dim); cursor: pointer; }
+.th-tab.is-active { color: var(--gold); }
+.th-tablewrap { position: absolute; top: 150px; left: 40px; right: 40px; bottom: 90px; overflow-y: auto; background: rgba(6, 10, 16, 0.92); z-index: 6; }
+.th-tablewrap::-webkit-scrollbar { width: 8px; }
+.th-tablewrap::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+.th-table { width: 100%; border-collapse: collapse; font-family: var(--font-ui); font-size: 14px; }
+.th-table th { text-align: left; padding: 10px 14px; color: var(--ink-dim); font-weight: 600; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.th-table td { padding: 9px 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.04); }
+.th-table td .crest--sm { width: 18px; height: 18px; margin-right: 6px; vertical-align: middle; }
+.th-table tr.is-sel { background: linear-gradient(180deg, var(--gold-bright), var(--gold-deep)); }
+.th-name { font-family: var(--font-cond); font-size: 15px; font-weight: 600; }
+.th-empty { display: flex; align-items: center; justify-content: center; height: 200px; color: var(--ink-dim); font-family: var(--font-ui); }
+
+/* ----- F4: FINANCES / BUDGET ALLOCATION (ms_FINANCES_BUDGET_ALLOCATION.png) ----- */
+.ba-panel .fx-panel__body { padding: 20px 28px; overflow-y: auto; }
+.ba-explain { display: flex; justify-content: flex-end; text-align: right; flex-direction: column; margin-top: -50px; }
+.ba-explain__title { font-family: var(--font-cond); font-size: 18px; font-weight: 700; }
+.ba-explain__sub { font-family: var(--font-ui); font-size: 13px; color: var(--ink-dim); }
+.ba-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 30px; margin-top: 20px; }
+.ba-col__head { font-family: var(--font-cond); font-size: 18px; font-weight: 700; padding-bottom: 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin-bottom: 8px; }
+.ba-row { display: flex; justify-content: space-between; padding: 4px 0; font-family: var(--font-ui); font-size: 14px; }
+.ba-row .k { color: var(--ink-dim); }
+.ba-row .v { font-weight: 600; }
+.ba-green { color: #59c14d; }
+.ba-red { color: #e0473c; }
+.ba-slidersection { margin-top: 26px; }
+.ba-sliderrow { display: flex; align-items: center; gap: 18px; margin-top: 10px; }
+.ba-sliderrow__side { min-width: 160px; font-family: var(--font-ui); font-size: 13px; }
+.ba-sliderrow__side--right { text-align: right; }
+.ba-sliderrow__side .v { display: block; font-family: var(--font-cond); font-size: 20px; font-weight: 700; }
+.ba-bar { flex: 1; height: 16px; border-radius: 8px; overflow: hidden; display: flex; background: rgba(255, 255, 255, 0.08); }
+.ba-bar__transfer { background: #e8c227; height: 100%; }
+.ba-bar__wage { background: #2f7fd1; height: 100%; }
+.ba-splitlabel { text-align: center; font-family: var(--font-ui); font-size: 14px; color: var(--ink-dim); margin-top: 10px; }
+.ba-splitlabel b { font-family: var(--font-cond); font-size: 22px; color: var(--ink); }
 
 /* ----- Request Funds ----- */
 .rf-body {

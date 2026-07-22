@@ -7,8 +7,9 @@
 // needs this shared component; F6 reuses it unchanged for renewals). Search
 // Players moved out entirely to ui/searchui.js (F3 rebuilt it as PLAYER
 // SEARCH -> SEARCH RESULTS -> action menu, replacing the old filter-form/
-// list-row screen this file used to own). Sell/Loan List and Request Funds
-// are untouched — still pending their own F4/F6 fidelity passes.
+// list-row screen this file used to own). F4 moved Sell/Loan List out too —
+// ui/sellplayersui.js's SELL PLAYERS replaces it entirely (renderSellList
+// deleted). Request Funds is untouched — still pending its own F6 pass.
 
 import { money } from "../core/format.js";
 import { positionInfo } from "../config/positions.js";
@@ -289,69 +290,6 @@ export function renderNegotiation(state) {
   // 'rejected'
   container.innerHTML = `<div class="ng-result ng-result--rejected">The ${dealNoun(n.dealType)} talks have fallen through.</div>`;
   footer.innerHTML = prompt("b", "B", "back", "Close");
-}
-
-/* ============================================================================
- * Sell / Loan List
- * ========================================================================== */
-
-export function renderSellList(state) {
-  const listEl = document.getElementById("sl2-list");
-  const detailEl = document.getElementById("sl2-detail");
-  const roster = [...state.squad.roster];
-  const selectedId = state.ui.sellList.selectedPlayerId;
-
-  listEl.innerHTML =
-    `<div class="sl2-header">` +
-      `<svg class="crest crest--sm"><use href="#crest-${state.club.id}"></use></svg>` +
-      `<div class="sl2-clubname">${state.club.name}</div>` +
-    `</div>` +
-    `<div class="sl2-rows">${roster.map((p) => {
-      const sel = p.id === selectedId ? " is-sel" : "";
-      const listing = state.transfers.listings.get(p.id);
-      const badge = listing ? `<span class="sl2-badge sl2-badge--${listing.type}">${listing.type === "loan" ? "LOAN LISTED" : "LISTED"}</span>` : "";
-      return (
-        `<div class="sl2-row${sel}" data-player="${p.id}">` +
-          `<span class="sl2-row__name">${p.commonName}</span>` +
-          `<span class="sl2-row__pos">${p.position}</span>` +
-          `<span class="sl2-row__ovr num">${p.overall}</span>` +
-          `<span class="sl2-row__value num">${money(p.value)}</span>` +
-          badge +
-        `</div>`
-      );
-    }).join("")}</div>`;
-
-  const player = selectedId != null ? state.playersById.get(selectedId) : null;
-  const listing = selectedId != null ? state.transfers.listings.get(selectedId) : null;
-  if (!player) {
-    detailEl.innerHTML = `<div class="empty"><span class="lbl">Select a player</span></div>`;
-  } else {
-    const s = state.ui.sellList;
-    detailEl.innerHTML =
-      `<div class="sl2-detail__head">` +
-        `<div class="sl2-detail__name">${player.commonName}</div>` +
-        `<div class="sl2-detail__sub">${player.position} &middot; OVR ${player.overall} &middot; Value ${money(player.value)}</div>` +
-      `</div>` +
-      (listing ? `<div class="ng-note">Currently listed for ${listing.type === "loan" ? "loan" : "transfer"} at ${money(listing.askingPrice)}.</div>` : "") +
-      `<div class="ng-offer">` +
-        `<div class="ng-offer__row">` +
-          `<span class="ng-offer__label">Asking Price</span>` +
-          `<button class="ct-stepper" type="button" data-action="price-down">&minus;</button>` +
-          `<span class="ng-offer__val">${money(s.askingPriceDraft)}</span>` +
-          `<button class="ct-stepper" type="button" data-action="price-up">+</button>` +
-        `</div>` +
-      `</div>`;
-  }
-
-  const footer = document.getElementById("footer-selllist");
-  let html = "";
-  if (selectedId != null) {
-    html += prompt("a", "A", "list-transfer", "List for Transfer");
-    html += prompt("x", "X", "list-loan", "List for Loan");
-    if (listing) html += prompt("y", "Y", "unlist", "Remove Listing");
-  }
-  html += prompt("b", "B", "back", "Back");
-  footer.innerHTML = html;
 }
 
 /* ============================================================================

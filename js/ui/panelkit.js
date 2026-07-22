@@ -198,24 +198,47 @@ export function fxInputRow({ label, value, action }) {
  * action list — full-width rows... Right side may show the R-paged attribute
  * panel" — the action list lives *inside* the same sheet as the player info,
  * not beside it as a separate element).
+ *
+ * F4 (fable-plans/plan2.md, ms_SELL_PLAYERS_SCREEN_PLAYER_SELECTED.png): this
+ * primitive had zero real consumers before F4 (built in F0, only ever
+ * rendered on dev/kit.html) — F3's Search Results/My Shortlist action menus
+ * both grew their own bespoke card markup instead of using it. Sell Players
+ * is this component's first production consumer, so its shape is corrected
+ * here to actually match §B3's own original spec (icon rows for morale/
+ * fitness, not a single plain "Morale: X Fitness: Y" text line) rather than
+ * carrying that gap forward — logged in plan2-decisions.md F4. `moraleWord`/
+ * `fitnessWord` are now pre-formatted strings (callers already have
+ * ui/searchui.js's moraleWord()/ui/squadreportui.js's injuryStatusLabel()
+ * on hand), and `attrHtml` is optional pre-rendered extra markup for the
+ * pic's right-side attribute mini-panel (kept as a plain HTML slot rather
+ * than new attribute-selection logic inside this generic primitive).
  */
-export function fxPlayerCard({ firstName, lastName, age, position, area, club, nationFlagHtml, height, foot, overall, value, wage, form, morale, fitness, tagline, actions, selectedAction }) {
+export function fxPlayerCard({
+  firstName, lastName, age, position, area, club, crestHref, nationFlagHtml,
+  height, foot, overall, value, wage, form, moraleWord, fitnessWord, tagline,
+  attrHtml = "", actions, selectedAction,
+}) {
   return (
-    `<div class="fx-playercard">` +
-      `<div class="fx-playercard__portrait"></div>` +
-      `<div class="fx-playercard__name">${firstName} ${lastName}</div>` +
-      `<div class="fx-playercard__sub">${posBar(area)} AGE ${age} / ${position}</div>` +
-      `<div class="fx-playercard__club">${club}${nationFlagHtml || ""}</div>` +
-      `<div class="fx-playercard__sub">Height: ${height}   Preferred Foot: ${foot}</div>` +
-      `<div class="fx-playercard__stats">` +
-        `<span>OVERALL<b>${overall}</b></span>` +
-        `<span>VALUE<b>${value}</b></span>` +
-        `<span>WAGE<b>${wage}</b></span>` +
-        `<span>FORM<b class="fx-playercard__word--gold">${form}</b></span>` +
+    `<div class="fx-playercard-wrap">` +
+      `<div class="fx-playercard">` +
+        `<div class="fx-playercard__portrait"></div>` +
+        `<div class="fx-playercard__name">${firstName}<br>${lastName}</div>` +
+        `<div class="fx-playercard__club">${club}${crestHref ? `<svg class="crest crest--sm"><use href="${crestHref}"></use></svg>` : ""}${nationFlagHtml || ""}</div>` +
+        `<div class="fx-playercard__age">${age}<span class="fx-playercard__agelbl">AGE</span>${posBar(area)}${position}</div>` +
+        `<div class="fx-playercard__sub">Height: ${height}</div>` +
+        `<div class="fx-playercard__sub">Preferred Foot: ${foot}</div>` +
+        `<div class="fx-playercard__stats">` +
+          `<span>OVERALL<b>${overall}</b></span>` +
+          `<span>VALUE<b>${value}</b></span>` +
+          `<span>WAGE<b>${wage}</b></span>` +
+          `<span>FORM<b class="fx-playercard__word--gold">${form}</b></span>` +
+        `</div>` +
+        `<div class="fx-playercard__iconrow"><span class="fx-playercard__icon">&#128528;</span>${moraleWord}</div>` +
+        `<div class="fx-playercard__iconrow"><span class="fx-playercard__icon">&#128295;</span>${fitnessWord}</div>` +
+        (tagline ? `<div class="fx-playercard__tagline">&#9888; ${tagline}</div>` : "") +
+        (actions && actions.length ? fxActionList(actions, selectedAction) : "") +
       `</div>` +
-      `<div class="fx-playercard__sub">Morale: ${morale}   Fitness: ${fitness}</div>` +
-      (tagline ? `<div class="fx-playercard__tagline">&#9888; ${tagline}</div>` : "") +
-      (actions && actions.length ? fxActionList(actions, selectedAction) : "") +
+      (attrHtml ? `<div class="fx-playercard__attrpanel">${attrHtml}</div>` : "") +
     `</div>`
   );
 }

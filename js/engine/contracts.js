@@ -35,6 +35,8 @@ import {
   RENEWAL_PROBABILITIES, RENEWAL_TIER_BY_SQUAD_ROLE, PERCENTAGE_OF_ASK_ACCEPT,
   CONTRACT_LENGTH_PERCENTAGE, OVERALL_ASK_PCT, AGE_ASK_PCT, minBracketVal,
 } from "../config/contract.js";
+import { releaseGuardGroupFor, SQUAD_FLOOR_TOTAL, RELEASE_PAYOFF_PCT } from "../config/budget.js";
+import { buildCpuTransferNewsArticle, pushTransferNews } from "./transfernews.js";
 
 /* ============================================================================
  * Ask + acceptance — shared by both the user's negotiation UI and the CPU
@@ -256,6 +258,82 @@ function signWithNewClub(state, player, rng) {
   };
   recomputeValue(player, picked.club, state.seasonStartYear);
   return picked.club;
+}
+
+/* ============================================================================
+ * F4 (fable-plans/plan2.md): Sell Players' "Release" action. This engine has
+ * no idle `clubId=null` free-agent state anywhere (see this file's own
+ * header + engine/freeagents.js's header) — a released player lands
+ * immediately at a new CPU club, reusing rollSigningClub above exactly like
+ * a lapsed Bosman does (pickSigningClub already excludes state.club.id, so
+ * the roll can never hand the player straight back to the user).
+ * ========================================================================== */
+
+/** Months remaining on `endYear`'s contract from `state.calendar.today` —
+ * same boundary engine/contracts.js's own expiry-warning check uses
+ * (seasonStart(endYear)), just expressed as a month count. */
+function remainingContractMonths(state, endYear) {
+  const today = state.calendar.today;
+  const expiry = seasonStart(endYear);
+  let months = (expiry.getFullYear() - today.getFullYear()) * 12 + (expiry.getMonth() - today.getMonth());
+  if (expiry.getDate() < today.getDate()) months -= 1;
+  return Math.max(0, months);
+}
+
+/** Non-null (a short reason string) when Release is currently blocked for
+ * `player` — either their own position group would drop below transfer.ini's
+ * MIN_PLAYERS_POSITION_* floor, or the whole squad would drop below plan2.md
+ * F4.1's own literal 16-player floor (config/budget.js's SQUAD_FLOOR_TOTAL). */
+export function releaseGuardReason(state, player) {
+  if (state.squad.roster.length <= SQUAD_FLOOR_TOTAL) return "Squad Size too Small to Release";
+  const group = releaseGuardGroupFor(player.position);
+  if (group) {
+    const count = state.squad.roster.filter((p) => group.codes.includes(p.position)).length;
+    if (count <= group.min) return "Squad Size too Small to Release";
+  }
+  return null;
+}
+
+/** Releases `playerId` from the user's own squad: pays off RELEASE_PAYOFF_PCT
+ * of his remaining contract (wage x weeks-remaining) from the transfer
+ * budget, then signs him to a freshly-rolled CPU club exactly like a lapsed
+ * Bosman departure (signWithNewClub's own rollSigningClub call above).
+ * Returns {error} if the guard blocks it, else {ok, payoff, newClub}. */
+export function releasePlayer(state, playerId) {
+  const player = state.playersById.get(playerId);
+  if (!player || player.clubId !== state.club.id) return { error: "not-found" };
+  const reason = releaseGuardReason(state, player);
+  if (reason) return { error: "blocked", reason };
+
+  const monthsLeft = remainingContractMonths(state, player.contract.endYear);
+  const weeksLeft = Math.round((monthsLeft / 12) * 52);
+  const payoff = Math.round(player.contract.wage * weeksLeft * (RELEASE_PAYOFF_PCT / 100));
+  state.finances.transferBudget -= payoff;
+
+  const oldClub = state.club;
+  const rng = new RngStream(deriveSeed(state.seed, `release-${state.seasonStartYear}-${playerId}`));
+  const picked = rollSigningClub(state, player, rng, oldClub.id);
+  const newClub = picked ? picked.club : null;
+  if (newClub) {
+    movePlayerToClub(state, player, newClub.id);
+    player.contract = {
+      wage: computeWage(player, picked.league),
+      endYear: state.seasonStartYear + 1 + rng.int(1, 3),
+      signingBonus: 0, squadRole: "rotation", warnedExpiry: false,
+    };
+    recomputeValue(player, newClub, state.seasonStartYear);
+    pushTransferNews(state, buildCpuTransferNewsArticle({ player, fromClub: oldClub, toClub: newClub, fee: 0, today: state.calendar.today }));
+  } else {
+    // Practically impossible with ~600 clubs in the world (see
+    // rollSigningClub's own header) — extend the contract rather than leave
+    // the player in a broken clubless state.
+    player.contract.endYear += 2;
+  }
+
+  state.transfers.listings.delete(playerId);
+  if (state.transfers.disallowedBids) state.transfers.disallowedBids.delete(playerId);
+  state.squad.roster = (state.playersByClub.get(oldClub.id) || []).slice().sort((a, b) => b.overall - a.overall);
+  return { ok: true, payoff, newClub };
 }
 
 /* ============================================================================

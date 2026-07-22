@@ -23,7 +23,11 @@ import { renderJobsOverlay } from "../ui/jobsui.js";
 import { renderNtJobsOverlay } from "../ui/ntjobsui.js";
 import { renderNatlSquad } from "../ui/natlsquad.js";
 import { renderContracts } from "../ui/contractsui.js";
-import { renderNegotiation, renderSellList, renderRequestFunds } from "../ui/transfersui.js";
+import { renderNegotiation, renderRequestFunds } from "../ui/transfersui.js";
+import { renderSellPlayers } from "../ui/sellplayersui.js";
+import { renderTransferNegotiations } from "../ui/negotiationsui.js";
+import { renderTransferHistory } from "../ui/transferhistoryui.js";
+import { renderFinances } from "../ui/financesui.js";
 import { renderSearch, renderMyShortlist, computeSearchResults, computeNameSearchResults, computeNationSearchResults, KB_ROWS as KB_ROWS_FLAT, reportPageCount } from "../ui/searchui.js";
 import { positionInfo } from "../config/positions.js";
 import { renderGtn } from "../ui/gtnui.js";
@@ -75,10 +79,19 @@ export function initRouter(store) {
   const footerNegotiation = document.getElementById("footer-negotiation");
   const negotiationOverlay = document.getElementById("negotiation-overlay");
   const ngBodyEl = document.getElementById("ng-body");
-  const footerSelllist = document.getElementById("footer-selllist");
-  const selllistOverlay = document.getElementById("selllist-overlay");
-  const sl2ListEl = document.getElementById("sl2-list");
-  const sl2DetailEl = document.getElementById("sl2-detail");
+  // F4 (fable-plans/plan2.md): SELL PLAYERS / TRANSFER NEGOTIATIONS /
+  // TRANSFER HISTORY / FINANCES — replaces the old M7 Sell/Loan List overlay
+  // above (sl2ListEl/sl2DetailEl/footerSelllist/selllistOverlay all retired).
+  const footerSellplayers = document.getElementById("footer-sellplayers");
+  const sellplayersOverlay = document.getElementById("sellplayers-overlay");
+  const footerNegotiationsledger = document.getElementById("footer-negotiationsledger");
+  const negotiationsledgerOverlay = document.getElementById("negotiationsledger-overlay");
+  const negotiationsledgerBodyEl = document.getElementById("negotiationsledger-body");
+  const footerTransferhistory = document.getElementById("footer-transferhistory");
+  const transferhistoryOverlay = document.getElementById("transferhistory-overlay");
+  const transferhistoryBodyEl = document.getElementById("transferhistory-body");
+  const footerFinances = document.getElementById("footer-finances");
+  const financesOverlay = document.getElementById("finances-overlay");
   const footerRequestfunds = document.getElementById("footer-requestfunds");
   const requestfundsOverlay = document.getElementById("requestfunds-overlay");
   const rfBodyEl = document.getElementById("rf-body");
@@ -180,10 +193,22 @@ export function initRouter(store) {
       negotiationOverlay.classList.toggle("is-active", open);
       footerNegotiation.hidden = !open;
       if (open) renderNegotiation(store.state);
-    } else if (name === "selllist") {
-      selllistOverlay.classList.toggle("is-active", open);
-      footerSelllist.hidden = !open;
-      if (open) renderSellList(store.state);
+    } else if (name === "sellplayers") {
+      sellplayersOverlay.classList.toggle("is-active", open);
+      footerSellplayers.hidden = !open;
+      if (open) renderSellPlayers(store.state);
+    } else if (name === "negotiationsledger") {
+      negotiationsledgerOverlay.classList.toggle("is-active", open);
+      footerNegotiationsledger.hidden = !open;
+      if (open) renderTransferNegotiations(store.state);
+    } else if (name === "transferhistory") {
+      transferhistoryOverlay.classList.toggle("is-active", open);
+      footerTransferhistory.hidden = !open;
+      if (open) renderTransferHistory(store.state);
+    } else if (name === "finances") {
+      financesOverlay.classList.toggle("is-active", open);
+      footerFinances.hidden = !open;
+      if (open) renderFinances(store.state);
     } else if (name === "requestfunds") {
       requestfundsOverlay.classList.toggle("is-active", open);
       footerRequestfunds.hidden = !open;
@@ -291,7 +316,12 @@ export function initRouter(store) {
     // show even if the user isn't the one who triggered the resolution
     // (e.g. simply advancing past a due date).
     if (store.state.ui.overlay === "negotiation") renderNegotiation(store.state);
-    if (store.state.ui.overlay === "selllist") renderSellList(store.state);
+    if (store.state.ui.overlay === "sellplayers") renderSellPlayers(store.state);
+    // F4: a resolved incoming bid (accept/reject/expiry) or a rollover's
+    // budget reset can change either of these mid-advance the same way.
+    if (store.state.ui.overlay === "negotiationsledger") renderTransferNegotiations(store.state);
+    if (store.state.ui.overlay === "transferhistory") renderTransferHistory(store.state);
+    if (store.state.ui.overlay === "finances") renderFinances(store.state);
     if (store.state.ui.overlay === "requestfunds") renderRequestFunds(store.state);
     if (store.state.ui.overlay === "search") renderSearch(store.state);
     if (store.state.ui.overlay === "shortlist") renderMyShortlist(store.state);
@@ -314,7 +344,10 @@ export function initRouter(store) {
   store.on("search", () => renderSearch(store.state));
   store.on("shortlist", () => renderMyShortlist(store.state));
   store.on("negotiation", () => renderNegotiation(store.state));
-  store.on("selllist", () => renderSellList(store.state));
+  store.on("sellplayers", () => renderSellPlayers(store.state));
+  store.on("negotiationsledger", () => renderTransferNegotiations(store.state));
+  store.on("transferhistory", () => renderTransferHistory(store.state));
+  store.on("finances", () => renderFinances(store.state));
   store.on("requestfunds", () => renderRequestFunds(store.state));
   store.on("gtn", () => renderGtn(store.state));
   store.on("youth", () => renderYouth(store.state));
@@ -411,7 +444,10 @@ export function initRouter(store) {
       else if (tile.dataset.open === "contracts") store.openContracts();
       else if (tile.dataset.open === "search") store.openTransferSearch();
       else if (tile.dataset.open === "shortlist") store.openMyShortlist();
-      else if (tile.dataset.open === "selllist") store.openSellList();
+      else if (tile.dataset.open === "sellplayers") store.openSellPlayers();
+      else if (tile.dataset.open === "negotiationsledger") store.openTransferNegotiationsLedger();
+      else if (tile.dataset.open === "transferhistory") store.openTransferHistory();
+      else if (tile.dataset.open === "finances") store.openFinances();
       else if (tile.dataset.open === "requestfunds") store.openRequestFunds();
       else if (tile.dataset.open === "gtn") store.openGtn();
       else if (tile.dataset.open === "gtnreport") store.openGtnHubTile();
@@ -1042,29 +1078,96 @@ export function initRouter(store) {
     else if (e.key === "Escape") { e.preventDefault(); store.negoCommitFeeOfferDirect(store.state.transfers.negotiation.feeOffer); }
   });
 
-  // Sell / Loan List (M7): click a squad row to select it; asking-price
-  // stepper + List for Transfer/Loan/Remove Listing.
-  sl2ListEl.addEventListener("click", (e) => {
-    const row = e.target.closest(".sl2-row");
-    if (row) store.selectSellListPlayer(Number(row.dataset.player));
+  // F4 (fable-plans/plan2.md): SELL PLAYERS — same "click a selected card
+  // again to open its action menu" convention as Search Results above.
+  const sellplayersBodyEl = document.getElementById("sellplayers-body");
+  sellplayersBodyEl.addEventListener("click", (e) => {
+    const rowEl = e.target.closest("tr[data-row-id]");
+    if (rowEl) {
+      const playerId = Number(rowEl.dataset.rowId);
+      const s = store.state.ui.sellPlayers;
+      if (s.selectedPlayerId === playerId) store.sellPlayersOpenActionMenu();
+      else store.selectSellPlayersRow(playerId);
+      return;
+    }
+    const thEl = e.target.closest("th[data-sort]");
+    if (thEl) { store.sortSellPlayersStatus(); return; }
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    switch (el.dataset.action) {
+      case "price-down": store.sellPlayersAdjustListingPrice(-0.05); break;
+      case "price-up": store.sellPlayersAdjustListingPrice(0.05); break;
+      case "offer-contract": store.sellPlayersOfferContract(); break;
+      case "toggle-disallow": store.sellPlayersToggleDisallowBids(); break;
+      case "list-transfer": store.sellPlayersBeginListing("transfer"); break;
+      case "list-loan-season": store.sellPlayersBeginListing("loan-season"); break;
+      case "list-loan-short": store.sellPlayersBeginListing("loan-short"); break;
+      case "release": store.sellPlayersRelease(); break;
+      case "confirm-listing": store.sellPlayersConfirmListing(); break;
+      case "back":
+        if (store.state.ui.sellPlayers.pricePrompt) store.sellPlayersCancelListingPrompt();
+        else if (store.state.ui.sellPlayers.actionMenuOpen) store.sellPlayersCloseActionMenu();
+        else store.closeOverlay();
+        break;
+    }
   });
-  function handleSellListAction(action) {
-    switch (action) {
-      case "price-down": store.adjustAskingPrice(-0.05); break;
-      case "price-up": store.adjustAskingPrice(0.05); break;
-      case "list-transfer": store.listPlayer("transfer"); break;
-      case "list-loan": store.listPlayer("loan"); break;
-      case "unlist": store.unlistPlayer(); break;
+  footerSellplayers.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    switch (el.dataset.action) {
+      case "sort": store.sortSellPlayersStatus(); break;
+      case "player-bio": if (store.state.ui.sellPlayers.selectedPlayerId != null) store.openPlayerBio(store.state.ui.sellPlayers.selectedPlayerId); break;
+      case "confirm-listing": store.sellPlayersConfirmListing(); break;
+      case "back":
+        if (store.state.ui.sellPlayers.pricePrompt) store.sellPlayersCancelListingPrompt();
+        else if (store.state.ui.sellPlayers.actionMenuOpen) store.sellPlayersCloseActionMenu();
+        else store.closeOverlay();
+        break;
+    }
+  });
+
+  // F4: TRANSFER NEGOTIATIONS ledger.
+  negotiationsledgerBodyEl.addEventListener("click", (e) => {
+    const rowEl = e.target.closest(".tn-listrow[data-row]");
+    if (rowEl) { store.selectNegotiationsLedgerRow(Number(rowEl.dataset.row)); return; }
+  });
+  footerNegotiationsledger.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    switch (el.dataset.action) {
+      case "sort": store.sortNegotiationsLedger(); break;
+      case "player-bio": {
+        const selRowEl = negotiationsledgerBodyEl.querySelector(".tn-listrow.is-sel[data-player]");
+        if (selRowEl) store.openPlayerBio(Number(selRowEl.dataset.player));
+        break;
+      }
       case "back": store.closeOverlay(); break;
     }
-  }
-  sl2DetailEl.addEventListener("click", (e) => {
-    const el = e.target.closest("[data-action]");
-    if (el) handleSellListAction(el.dataset.action);
   });
-  footerSelllist.addEventListener("click", (e) => {
+
+  // F4: TRANSFER HISTORY.
+  transferhistoryBodyEl.addEventListener("click", (e) => {
+    const tabEl = e.target.closest(".th-tab");
+    if (tabEl) { store.setTransferHistoryTab(tabEl.dataset.tab); return; }
+    const rowEl = e.target.closest("tr[data-row]");
+    if (rowEl) store.selectTransferHistoryRow(Number(rowEl.dataset.row));
+  });
+  footerTransferhistory.addEventListener("click", (e) => {
+    if (e.target.closest("[data-action='back']")) store.closeOverlay();
+  });
+
+  // F4: FINANCES / BUDGET ALLOCATION.
+  footerFinances.addEventListener("click", (e) => {
     const el = e.target.closest("[data-action]");
-    if (el) handleSellListAction(el.dataset.action);
+    if (!el) return;
+    switch (el.dataset.action) {
+      case "accept": store.budgetAllocationAccept(); break;
+      case "modify": store.budgetAllocationBeginModify(); break;
+      case "back":
+        if (store.state.ui.budgetAllocation.modifying) store.budgetAllocationCancelModify();
+        else store.closeOverlay();
+        break;
+    }
   });
 
   // Request Funds (M7): amount stepper + Ask The Board / reallocate wage<->transfer.
@@ -1507,6 +1610,71 @@ export function initRouter(store) {
         if ((e.key === "Enter" || e.key === "a" || e.key === "A") && st.selectedPlayerId != null) { store.shortlistOpenActionMenu(); return; }
       }
     }
+    // F4: SELL PLAYERS.
+    if (store.state.ui.overlay === "sellplayers") {
+      const s = store.state.ui.sellPlayers;
+      if (s.actionMenuOpen && s.pricePrompt) {
+        if (e.key === "ArrowLeft") { store.sellPlayersAdjustListingPrice(-0.05); return; }
+        if (e.key === "ArrowRight") { store.sellPlayersAdjustListingPrice(0.05); return; }
+        if (e.key === "Enter" || e.key === "a" || e.key === "A") { store.sellPlayersConfirmListing(); return; }
+      } else if (s.actionMenuOpen) {
+        const rows = Array.prototype.slice.call(document.querySelectorAll("#sellplayers-body .fx-actions__row"));
+        if (e.key === "ArrowDown") { store.sellPlayersActionMenuFocus(Math.min(rows.length - 1, s.actionMenuIndex + 1)); return; }
+        if (e.key === "ArrowUp") { store.sellPlayersActionMenuFocus(Math.max(0, s.actionMenuIndex - 1)); return; }
+        if (e.key === "Enter" || e.key === "a" || e.key === "A") {
+          const row = rows[s.actionMenuIndex];
+          if (row && row.dataset.action) {
+            if (row.dataset.action === "offer-contract") store.sellPlayersOfferContract();
+            else if (row.dataset.action === "toggle-disallow") store.sellPlayersToggleDisallowBids();
+            else if (row.dataset.action === "list-transfer") store.sellPlayersBeginListing("transfer");
+            else if (row.dataset.action === "list-loan-season") store.sellPlayersBeginListing("loan-season");
+            else if (row.dataset.action === "list-loan-short") store.sellPlayersBeginListing("loan-short");
+            else if (row.dataset.action === "release") store.sellPlayersRelease();
+          }
+          return;
+        }
+      } else {
+        // Keyboard walks the *displayed* (sorted) row order, read straight
+        // off the DOM rather than re-deriving ui/sellplayersui.js's own sort
+        // — same rationale as the negotiations ledger's player-bio handler.
+        const ids = Array.prototype.slice.call(document.querySelectorAll("#sellplayers-body tr[data-row-id]")).map((el) => Number(el.dataset.rowId));
+        const idx = ids.indexOf(s.selectedPlayerId);
+        if (e.key === "ArrowDown") { const n = ids[Math.min(ids.length - 1, idx + 1)]; if (n != null) store.selectSellPlayersRow(n); return; }
+        if (e.key === "ArrowUp") { const n = ids[Math.max(0, idx - 1)]; if (n != null) store.selectSellPlayersRow(n); return; }
+        // §A4 LT/RT alternate (Z/C, F3's own precedent) — "Page Up/Down".
+        if (e.key === "z" || e.key === "Z") { const n = ids[Math.max(0, idx - 5)]; if (n != null) store.selectSellPlayersRow(n); return; }
+        if (e.key === "c" || e.key === "C") { const n = ids[Math.min(ids.length - 1, idx + 5)]; if (n != null) store.selectSellPlayersRow(n); return; }
+        if (e.key === "x" || e.key === "X") { store.sortSellPlayersStatus(); return; }
+        if (e.key === "r" || e.key === "R") { if (s.selectedPlayerId != null) store.openPlayerBio(s.selectedPlayerId); return; }
+        if ((e.key === "Enter" || e.key === "a" || e.key === "A") && s.selectedPlayerId != null) { store.sellPlayersOpenActionMenu(); return; }
+      }
+    }
+    // F4: TRANSFER NEGOTIATIONS ledger — §A4 LB/RB alternate (Q/E): the
+    // first screen in this codebase to ever need LB/RB on a keyboard
+    // (nothing else claims Q/E yet — logged in plan2-decisions.md F4).
+    if (store.state.ui.overlay === "negotiationsledger") {
+      const n = store.state.ui.negotiationsLedger;
+      if (e.key === "q" || e.key === "Q") { store.cycleNegotiationsLedgerTab(-1); return; }
+      if (e.key === "e" || e.key === "E") { store.cycleNegotiationsLedgerTab(1); return; }
+      const rowEls = Array.prototype.slice.call(document.querySelectorAll("#negotiationsledger-body .tn-listrow[data-row]"));
+      const key = ["receivedIndex", "sentIndex", "successfulIndex", "unsuccessfulIndex"][n.tab];
+      if (e.key === "ArrowDown") { store.selectNegotiationsLedgerRow(Math.min(rowEls.length - 1, n[key] + 1)); return; }
+      if (e.key === "ArrowUp") { store.selectNegotiationsLedgerRow(Math.max(0, n[key] - 1)); return; }
+      if (e.key === "x" || e.key === "X") { store.sortNegotiationsLedger(); return; }
+      if (e.key === "Enter" || e.key === "a" || e.key === "A") { store.negotiationsLedgerOpenRow(); return; }
+    }
+    // F4: FINANCES / BUDGET ALLOCATION — §A4 alternate for (LS) Modify
+    // Allocation: "V" (team sheet's own Change View precedent already reuses
+    // this key for a different, unrelated overlay — safe, same "one key,
+    // scoped per active overlay" pattern already used throughout this file).
+    if (store.state.ui.overlay === "finances") {
+      const b = store.state.ui.budgetAllocation;
+      if (e.key === "Enter" || e.key === "a" || e.key === "A") { store.budgetAllocationAccept(); return; }
+      if (b.modifying) {
+        if (e.key === "ArrowLeft") { store.budgetAllocationStep(-1); return; }
+        if (e.key === "ArrowRight") { store.budgetAllocationStep(1); return; }
+      } else if (e.key === "v" || e.key === "V") { store.budgetAllocationBeginModify(); return; }
+    }
     // F3: Negotiation's [LT][RT] BUY/LOAN toggle — §A4 alternate (Z/C, first
     // screen in this codebase to ever need LT/RT on a keyboard; nothing else
     // claims Z/C yet).
@@ -1546,6 +1714,18 @@ export function initRouter(store) {
         }
         else if (store.state.ui.overlay === "shortlist") {
           if (store.state.ui.shortlist.actionMenuOpen) store.shortlistCloseActionMenu();
+          else store.closeOverlay();
+        }
+        // F4: Sell Players/Finances both have their own nested "peel back
+        // one step at a time" state before actually leaving the screen.
+        else if (store.state.ui.overlay === "sellplayers") {
+          const s = store.state.ui.sellPlayers;
+          if (s.pricePrompt) store.sellPlayersCancelListingPrompt();
+          else if (s.actionMenuOpen) store.sellPlayersCloseActionMenu();
+          else store.closeOverlay();
+        }
+        else if (store.state.ui.overlay === "finances") {
+          if (store.state.ui.budgetAllocation.modifying) store.budgetAllocationCancelModify();
           else store.closeOverlay();
         }
         // Team Sheet: (B)/Esc steps back through its own nested modes

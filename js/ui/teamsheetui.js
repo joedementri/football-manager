@@ -31,13 +31,16 @@ import { renderTacticsTab, renderRolesTab } from "./rolestacticsui.js";
 // the pics show them on Physical/Mental instead (as "Att. Position"/
 // "Vision"); pics win per §A1 (plan2-decisions.md F1 logs the correction).
 // "Stand Tackle"/"Slide Tackle" (not "Standing"/"Sliding") are also pic-exact.
-const PHYSICAL_ATTRS = [
+// F4: exported for reuse by ui/sellplayersui.js's SELL PLAYERS player-selected
+// attribute mini-panel (top-6-by-value across every attribute — see that
+// file's own header for why).
+export const PHYSICAL_ATTRS = [
   ["acceleration", "Acceleration"], ["sprintSpeed", "Sprint Speed"], ["agility", "Agility"],
   ["balance", "Balance"], ["jumping", "Jumping"], ["stamina", "Stamina"], ["strength", "Strength"],
   ["reactions", "Reactions"], ["aggression", "Aggression"], ["interceptions", "Interceptions"],
   ["positioning", "Att. Position"], ["vision", "Vision"],
 ];
-const SKILL_ATTRS = [
+export const SKILL_ATTRS = [
   ["ballControl", "Ball Control"], ["crossing", "Crossing"], ["dribbling", "Dribbling"],
   ["finishing", "Finishing"], ["fkAccuracy", "FK Acc."], ["headingAcc", "Heading Acc."],
   ["longPass", "Long Pass"], ["shortPass", "Short Pass"], ["marking", "Marking"],

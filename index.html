@@ -469,19 +469,40 @@
             </div>
           </div>
         </div>
-        <div class="tile has-photo tr-sell is-link" data-open="selllist">
-          <div class="tile__title">Sell<br>Players</div>
-          <div class="tile__desc">Make players available for transfer or loan</div>
-          <div class="dots"><i class="on"></i><i></i><i></i></div>
+        <!-- F4 (fable-plans/plan2.md, reconciled against ms_TRANSFERS_SCREEN_
+             SELL_PLAYERS_HOVER.png / ..._TRANSFER_NEGOTIATIONS_HOVER.png per
+             F3's own ledger note): 2-page carousel — Sell Players -> Transfer
+             Negotiations. -->
+        <div class="tile has-photo tr-sell" data-carousel>
+          <div class="cpages">
+            <div class="cpage is-active is-link" data-open="sellplayers">
+              <div class="tile__title">Sell<br>Players</div>
+              <div class="tile__desc">Make players available for transfer or loan</div>
+            </div>
+            <div class="cpage is-link" data-open="negotiationsledger">
+              <div class="tile__title">Transfer<br>Negotiations</div>
+              <div class="tile__desc">View ongoing and past transfer talks</div>
+            </div>
+          </div>
         </div>
         <div class="tile has-photo tr-gtn is-link" data-open="gtn">
           <div class="tile__title">Global Transfer<br>Network</div>
           <div class="tile__desc">Find players worldwide by building your transfer network</div>
         </div>
-        <div class="tile tr-fin">
-          <div class="tile__title">Finances</div>
-          <div class="fin-line">Remaining Transfer Budget: <b>&pound;401,500</b></div>
-          <div class="fin-line">Weekly Wage Budget: <b>&pound;16,750</b></div>
+        <!-- F4: 2-page carousel — Finances -> Transfer History (F3's own
+             ledger note: "Transfer History is actually page 2 of the
+             Finances tile"). -->
+        <div class="tile tr-fin" data-carousel>
+          <div class="cpages">
+            <div class="cpage is-active is-link" data-open="finances">
+              <div class="tile__title">Finances</div>
+              <div class="fin-line">Remaining Transfer Budget: <b>&pound;401,500</b></div>
+              <div class="fin-line">Weekly Wage Budget: <b>&pound;16,750</b></div>
+            </div>
+            <div class="cpage is-link" data-open="transferhistory">
+              <div class="tile__title">Transfer History</div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -773,17 +794,26 @@
         <div class="ng-body" id="ng-body"><!-- built by ui/transfersui.js --></div>
       </div>
 
-      <!-- =====================  SELL / LOAN LIST OVERLAY  ============= -->
-      <div id="selllist-overlay">
-        <div class="news-crumb">
-          <span class="crumb-prev">TRANSFERS</span>
-          <span class="crumb-sep">&rsaquo;</span>
-          <span class="crumb-cur">SELL / LOAN LIST</span>
-        </div>
-        <div class="sl2-body">
-          <div id="sl2-list"><!-- built by ui/transfersui.js --></div>
-          <div id="sl2-detail"><!-- built by ui/transfersui.js --></div>
-        </div>
+      <!-- =====================  SELL PLAYERS OVERLAY  ================== -->
+      <!-- F4 (fable-plans/plan2.md, ms_SELL_PLAYERS_SCREEN*.png) — replaces
+           the old M7 Sell/Loan List above. -->
+      <div id="sellplayers-overlay">
+        <div id="sellplayers-body"><!-- built by ui/sellplayersui.js --></div>
+      </div>
+
+      <!-- =====================  TRANSFER NEGOTIATIONS OVERLAY  ========== -->
+      <div id="negotiationsledger-overlay">
+        <div id="negotiationsledger-body"><!-- built by ui/negotiationsui.js --></div>
+      </div>
+
+      <!-- =====================  TRANSFER HISTORY OVERLAY  =============== -->
+      <div id="transferhistory-overlay">
+        <div id="transferhistory-body"><!-- built by ui/transferhistoryui.js --></div>
+      </div>
+
+      <!-- =====================  FINANCES / BUDGET ALLOCATION OVERLAY  === -->
+      <div id="finances-overlay">
+        <div id="finances-body"><!-- built by ui/financesui.js --></div>
       </div>
 
       <!-- =====================  REQUEST FUNDS OVERLAY  ================ -->
@@ -992,7 +1022,10 @@
       <footer class="footer" id="footer-search" hidden><!-- built by ui/searchui.js (prompts change with stage/selection) --></footer>
       <footer class="footer" id="footer-shortlist" hidden><!-- built by ui/searchui.js --></footer>
       <footer class="footer" id="footer-negotiation" hidden><!-- built by ui/transfersui.js (prompts change per phase) --></footer>
-      <footer class="footer" id="footer-selllist" hidden><!-- built by ui/transfersui.js (prompts change with selection) --></footer>
+      <footer class="footer" id="footer-sellplayers" hidden><!-- built by ui/sellplayersui.js (prompts change with selection) --></footer>
+      <footer class="footer" id="footer-negotiationsledger" hidden><!-- built by ui/negotiationsui.js --></footer>
+      <footer class="footer" id="footer-transferhistory" hidden><!-- built by ui/transferhistoryui.js --></footer>
+      <footer class="footer" id="footer-finances" hidden><!-- built by ui/financesui.js --></footer>
       <footer class="footer" id="footer-requestfunds" hidden><!-- built by ui/transfersui.js --></footer>
       <footer class="footer" id="footer-gtn" hidden><!-- built by ui/gtnui.js (prompts change per view) --></footer>
       <footer class="footer" id="footer-youth" hidden><!-- built by ui/youthui.js (prompts change per view) --></footer>

@@ -25,6 +25,13 @@ import {
   evaluateSeasonEnd, buildSeasonEndEmail, buildMidSeasonReviewEmail,
   leagueObjectiveText, cupObjectiveText,
 } from "./objectives.js";
+import { tierIndex, LEAGUE_OBJ_INDEX } from "../config/objectives.js";
+import {
+  boardStrictnessPct, carryOverPct, CARRY_OVER_BUDGET_PERCENT,
+  TRANSFER_LEAGUE_RESULT_BONUS_PCT, OVERACHIEVED_INDEX_MARGIN, SIGNIFICANTLY_OVERACHIEVED_INDEX_MARGIN,
+} from "../config/budget.js";
+import { snapshotSeasonFinances } from "./finances.js";
+import { squadWageBill } from "./wage.js";
 import { recordSeasonHistory } from "./career.js";
 import { applyGrowthToWorld } from "./growth.js";
 import { announceRetirements, applyRetirementsAndRegens } from "./retirement.js";
@@ -254,11 +261,32 @@ export function rolloverSeason(state) {
    *      cpuContractRenewalDate) — resolveExpiredContracts here is the
    *      safety net for anyone still expired, chiefly the user's own
    *      unrenewed players ("a CPU club signs your Bosman if ignored"). ---- */
-  state.finances = { transferBudget: state.club.baseTransferBudget, wageCeiling: computeWageCeiling(state.club, state.league) };
+  // F4 (fable-plans/plan2.md, config/budget.js): "budgets reset" is no longer
+  // a flat reset to baseTransferBudget — it's baseTransferBudget plus (a) a
+  // league-objective performance bonus, (b) a banded carry-over of whatever
+  // transfer budget went unspent, and (c) the board's own sales-return % of
+  // whatever the club made selling players this season. Wage budget carries
+  // its own unspent surplus forward at the flat CARRY_OVER_BUDGET_PERCENT.
+  const objTier = LEAGUE_OBJ_INDEX[tierIndex(state.club.boardExpectationTier)];
+  const objMargin = userLeagueIdx - objTier.check3.lo;
+  const objBonusPct = objMargin >= SIGNIFICANTLY_OVERACHIEVED_INDEX_MARGIN ? TRANSFER_LEAGUE_RESULT_BONUS_PCT.significantlyOverachieved
+    : objMargin >= OVERACHIEVED_INDEX_MARGIN ? TRANSFER_LEAGUE_RESULT_BONUS_PCT.overachieved : 0;
+  const objectiveBonus = Math.round(state.club.baseTransferBudget * objBonusPct / 100);
+  const unspentTransfer = Math.max(0, state.finances.transferBudget);
+  const unspentCarry = Math.round(unspentTransfer * carryOverPct(unspentTransfer) / 100);
+  const salesCarry = Math.round((state.finances.seasonSalesIncome || 0) * boardStrictnessPct(state.club) / 100);
+  const newTransferBudget = state.club.baseTransferBudget + objectiveBonus + unspentCarry + salesCarry;
+
+  const wageSurplus = Math.max(0, state.finances.wageCeiling - squadWageBill(state.squad.roster));
+  const wageCarry = Math.round(wageSurplus * CARRY_OVER_BUDGET_PERCENT / 100);
+  const newWageCeiling = computeWageCeiling(state.club, state.league) + wageCarry;
+
+  state.finances = { transferBudget: newTransferBudget, wageCeiling: newWageCeiling };
   // M7: every CPU club's own transfer budget resets alongside the user's own
   // (same "budgets reset" rollover bullet) — resetAllClubBudgets just clears
   // the map, so the next getClubBudget() call for any club lazily reseeds
-  // from baseTransferBudget rather than carrying last season's spend forward.
+  // from baseTransferBudget (floored at its league's own minimum, config/
+  // budget.js) rather than carrying last season's spend forward.
   resetAllClubBudgets(state);
   const bosmanDepartures = resolveExpiredContracts(state);
   state.inbox.emails.unshift(...buildBosmanDepartureEmailsForUser(state, bosmanDepartures, clubsByIdThisSeason));
@@ -278,4 +306,9 @@ export function rolloverSeason(state) {
     state.playersByClub.get(p.clubId).push(p);
   }
   state.squad.roster = (state.playersByClub.get(state.club.id) || []).slice().sort((a, b) => b.overall - a.overall);
+
+  // F4: snapshot the new season's Budget Allocation baseline now that the
+  // roster (Bosman departures/retirements/regens above may have changed it)
+  // has settled — resets seasonPurchases/seasonSalesIncome for the new season.
+  snapshotSeasonFinances(state);
 }

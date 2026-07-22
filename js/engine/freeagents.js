@@ -25,6 +25,7 @@ import { positionInfo } from "../config/positions.js";
 import { computeSigningAsk, decisionChance } from "./playerdecision.js";
 import { scheduleResponse, resolvedSquadRole } from "./negotiation.js";
 import { buildFreeAgentNewsArticle, pushTransferNews } from "./transfernews.js";
+import { pushNegotiationLogEntry, currentContractSnapshot } from "./negotiationlog.js";
 
 /** Players anywhere (never the user's own squad) whose contract expires next
  * July and who haven't already pre-agreed a move — the Free Agents overlay's
@@ -60,6 +61,7 @@ export function startApproach(state, playerId) {
     lastContractResponse: null, loanLength: null, result: null,
     exchangePlayerId: null, exchangeCreditApplied: 0, exchangeRejectedNote: false,
     loanBonusPerGoal: 0, loanFutureFee: null,
+    everSubmitted: false,
   };
 }
 
@@ -72,6 +74,8 @@ function applyApproachResolution(state, playerId, contractOffer, promisedRole) {
   const rng = new RngStream(deriveSeed(state.seed, `approach-${state.seasonStartYear}-${playerId}-${contractOffer.wage}`));
   const accepted = rng.chance(chance);
   n.lastContractResponse = accepted ? "accepted" : "rejected";
+  const currentSnapshot = currentContractSnapshot(state, player);
+  const offeredSnapshot = { wage: contractOffer.wage, years: contractOffer.years, bonus: contractOffer.bonusPerGoal || 0 };
   if (accepted) {
     player.contract.preAgreedClubId = state.club.id;
     player.contract.preAgreedTerms = {
@@ -79,10 +83,20 @@ function applyApproachResolution(state, playerId, contractOffer, promisedRole) {
       signingBonus: contractOffer.signingOnFee || 0,
     };
     pushTransferNews(state, buildFreeAgentNewsArticle({ player, toClub: state.club, today: state.calendar.today }));
+    pushNegotiationLogEntry(state, {
+      source: "sent", dealType: "free-agent", playerId, fromClubId: sourceClub.id, toClubId: state.club.id,
+      outcome: "success", negStatus: "Completed", transferFee: 0, estimatedWorth: player.value,
+      current: currentSnapshot, offered: offeredSnapshot, date: state.calendar.today,
+    });
     n.phase = "completed";
     n.result = "completed";
   } else {
     n.phase = "rejected";
+    pushNegotiationLogEntry(state, {
+      source: "sent", dealType: "free-agent", playerId, fromClubId: sourceClub.id, toClubId: state.club.id,
+      outcome: "fail", negStatus: "Rejected", transferFee: 0, estimatedWorth: player.value,
+      current: currentSnapshot, offered: offeredSnapshot, date: state.calendar.today,
+    });
   }
 }
 
@@ -98,6 +112,7 @@ export function submitApproach(state) {
   const contractOffer = { ...n.contractOffer };
   const isDeadline = deadlineDays(state.seasonStartYear).some((d) => isSameDate(d, state.calendar.today));
   n.phase = "approach-waiting";
+  n.everSubmitted = true;
   if (isDeadline) applyApproachResolution(state, playerId, contractOffer, promisedRole);
   else scheduleResponse(state, state.calendar.today, "approach-response", { playerId, contractOffer, promisedRole });
   return { ok: true };

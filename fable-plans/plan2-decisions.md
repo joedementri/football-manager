@@ -1054,3 +1054,245 @@ Transfer Sum → Submit Offer → back out to the hub → reach My Shortlist via
 page → select a shortlisted player → open its action menu), zero console/page errors throughout
 after the fixes above landed. §A5.4 regression (new game as Portsmouth, advance 10 days
 incl. auto-simmed match days, open all 5 hubs) also clean.
+
+## F4 — 2026-07-22
+
+Transfers: SELL PLAYERS, TRANSFER NEGOTIATIONS ledger, TRANSFER HISTORY, FINANCES/BUDGET
+ALLOCATION. New files: `js/config/budget.js`, `js/engine/negotiationlog.js`,
+`js/ui/sellplayersui.js`, `js/ui/negotiationsui.js`, `js/ui/transferhistoryui.js`,
+`js/ui/financesui.js`. Rewritten: `js/ui/panelkit.js`'s `fxPlayerCard` (see its own entry below).
+Retired: the old M7 Sell/Loan List (`renderSellList`, `.sl2-*` CSS, `#selllist-overlay`) — fully
+replaced. Extended: `js/core/store.js`, `js/core/router.js`, `js/core/db.js`, `js/engine/
+contracts.js`, `js/engine/clubbudget.js`, `js/engine/finances.js`, `js/engine/season.js`,
+`js/engine/negotiation.js`, `js/engine/freeagents.js`, `js/engine/transferai.js`, `js/engine/
+jobs.js`, `js/ui/squadreportui.js`, `js/ui/teamsheetui.js`, `js/ui/transfersui.js`, `css/
+transfers.css`, `css/panels.css`, `index.html`. This session had no interactive browser either —
+same headless-Chromium-via-Playwright approach as F1-F3 (Python's `playwright` package,
+`p.chromium.launch()` against the machine's own Chrome binary), plus a plain `python -m
+http.server` since no local dev server was already running.
+
+**Reference-pic reconciliation — the plan's own build note guessed wrong on Transfer History:**
+- [PLAN-TEXT CORRECTION] plan2.md's own F4.3 build note guessed a §B1 fx-panel with an
+  `[LB][RB]` season selector and a per-window spend/income totals row. `ms_TRANSFER_HISTORY_
+  SCREEN.png` shows a completely different, much simpler screen instead: two plain text tabs
+  (`MY CLUB` / `ALL CLUBS`, no shoulder-button glyph shown next to them at all — not even a
+  generic hint), directly over the stadium backdrop (no dark rounded `.fx-panel`), a flat
+  `DATE NAME FROM TO DETAILS` table with no visible sort caret on any column, and the exact
+  empty-state string `"There are no transfers available"` (singular framing, distinct from
+  every other F3/F4 ledger's own `"None"`). No season selector and no totals row exist in the
+  pic anywhere. Built to match the pic exactly (`ui/transferhistoryui.js`); the plan's own
+  guess is preserved here only as a record of what was originally expected.
+- The pic's own EA-online chrome (`PRESS THE START BUTTON TO RE-CONNECT` banner) is never
+  reproduced, per §A4 — confirmed excluded.
+- [SCOPE DECISION] The pic only captures the **empty** state — no populated-row example exists
+  anywhere in `REFERENCE_PICS/` for this screen. Row content (crests in FROM/TO, DETAILS text
+  format) is therefore authored, not pic-verified: DETAILS shows the transfer fee for a
+  Purchase, the literal word `"Loan"` for a loan, `"Free Transfer"` for a free-agent signing.
+  Logged rather than silently invented.
+- [NEW DATA SOURCE] `ALL CLUBS` needs a worldwide (not just user-involved) completed-transfer
+  list, which nothing before F4 tracked in structured (playerId/fromClub/toClub/fee) form —
+  `engine/transfernews.js`'s own articles are prose-only, too fragile to parse a NAME/FROM/TO
+  table back out of. Rather than build a second, parallel structured log, `engine/transferai.js`'s
+  `runWeeklyTransferActivity` (CPU↔CPU deals) now also calls `engine/negotiationlog.js`'s
+  `pushNegotiationLogEntry` with `source: "cpu"` — the *same* log F4's own TRANSFER NEGOTIATIONS
+  ledger uses, filtered differently per screen (see below). Capped at 300 entries
+  (`MAX_LOG_ENTRIES`, same "bound a growing list" idiom as `MAX_TRANSFER_NEWS`) since ~40
+  CPU deals/window × 2 windows/season adds up over a long career (plan2.md F9's own save-size
+  budget) — logged as a [SCOPE DECISION], not silently sized.
+
+**TRANSFER NEGOTIATIONS ledger — the persisted log only ever holds terminal states:**
+- [DESIGN DECISION] This engine only ever has one live outgoing deal
+  (`state.transfers.negotiation`) and incoming CPU bids already live as `state.inbox.emails`'
+  `transfer-bid` actions — so "Transfer Offers Sent" (0 or 1 row) and "Transfer Offers Received"
+  (0+ rows) are both **derived live** from those (`engine/negotiationlog.js`'s `sentLedgerRow`/
+  `receivedLedgerRows`), never persisted separately. `state.transfers.negotiations` is only a
+  log of *terminal* snapshots (Completed/Rejected/Withdrawn), written exactly once per deal at
+  the moment it resolves — matching the milestone's own test spec verbatim ("negotiations log
+  gains exactly one terminal state per deal"). Both `successfulEntries`/`unsuccessfulEntries`
+  (this ledger's own two tabs) exclude `source:"cpu"` entries — that scope belongs to Transfer
+  History's `worldwideCompletedEntries` only, since the Negotiations screen is user-scoped
+  throughout (Received/Sent are inherently so already, being derived from the user's own
+  inbox/live negotiation).
+- `n.everSubmitted` (new field on the negotiation object, all three start* functions in
+  `negotiation.js`/`freeagents.js`) gates when "Sent" shows at all — a negotiation that's been
+  opened but never actually submitted isn't "sent" yet. Once a counter-offer comes back
+  (`n.phase` reverts to `"fee"` with `n.lastFeeResponse === "countered"`), Sent's own Neg.
+  Status reads "Counter Received" rather than treating it as back-to-the-editing-stage.
+- [PIC-GUESS] Received's `"Club Reviewing Offer"` Neg. Status text is pic-verbatim
+  (`ms_TRANSFER_NEGOTIATIONS_OFFERS_RECEIVED.png`) but doesn't match plan2.md's own inline
+  vocabulary guess (`"Awaiting Response"`) — the pic wins per §A1. Sent's own three live
+  statuses (`"Awaiting Response"`/`"Counter Received"`/`"Contract Talks"`) are *not*
+  pic-verified (the one captured Sent example was empty — `"None"`) — reconstructed from the
+  plan's own listed vocabulary, logged as [PIC-GUESS]/[TUNED].
+- [NEW MECHANIC] Incoming bids now have a real expiry countdown, ported from `transfers.ini
+  [TRANSFERS_TRANSFER_TIMING]`'s own `MIN_DAYS_TO_EXPIRE_OFFER=7` (already sitting unused in
+  `config/negotiation.js` since M7) — `engine/transferai.js`'s `pushIncomingBidEmail` now
+  stamps `action.expiresDate`, and a new daily hook, `expirePendingBids` (wired into
+  `core/store.js`'s `_processCalendarDay`), withdraws an unanswered bid past that date, logging
+  a terminal `"Withdrawn"` entry (Unsuccessful Negotiations) rather than leaving it in the inbox
+  forever. `core/db.js`'s `serializeEmail`/`deserializeEmail` gained the same epoch-day
+  round-trip for this new nested `action.expiresDate` Date field.
+- [JUDGMENT CALL] Sell Players' Status column priority when more than one condition could
+  apply at once (no pic shows a combined case): `Bids Disallowed` > `Retiring at Contract End`
+  > `Transfer/Loan Listed` > `None`.
+
+**config/budget.js — cmsettings.ini [BUDGET] + transfer.ini MIN_PLAYERS_POSITION_*:**
+- [PLAN-TEXT CORRECTION] plan2.md's own F4.1 build note guessed a "16 total" squad floor with
+  no INI citation — `cmsettings.ini [DEFAULTS]` actually has a real one, `MIN_SQUAD_SIZE = 18`
+  (and `MAX_SQUAD_SIZE = 52`, used as the "PLAYERS IN SQUAD" header's `n/NN` denominator). The
+  real INI value wins over the plan's own guess per §A1/§A2 — `SQUAD_FLOOR_TOTAL = 18`, logged.
+- [JUDGMENT CALL] `BOARD_FINANCIAL_STRICTNESS`'s (85/75/60) club-prestige direction: a small/
+  lower-league club's board is LENIENT (85% of a sale returns to the transfer budget — every
+  sale matters, the board wants the manager reinvesting it); a big, wealthy club's board is
+  STRICT (60% — sale proceeds aren't purely the manager's to keep re-spending). Bucketed off
+  `club.prestige` (1-10) using the same `>=8/>=4/else` threshold shape `config/transferai.js`'s
+  own `leagueTier()` already established, rather than inventing a new banding style.
+- [TUNED] `BUDGET_SPLIT_RATE = 208` (52 weeks × a "split factor" of 4, itself
+  `TRANSFER_WAGE_SPLIT_PERCENT=80 / (100-80)`) — the Budget Allocation Slider's own £-for-£/week
+  conversion rate, derived (not a literal INI field) per plan2.md F4.4's own literal wording
+  ("1 unit weekly wage ↔ 52-week × split factor of transfer money"). Asserted in `dev/tests.js`.
+- [JUDGMENT CALL] `CARRY_OVER_BUDGET_PERCENT=25` (a flat single figure) vs. the separate,
+  8-band `BUDGET_CARRY_OVER_AMOUNT_LIMIT_n`/`PERCENT_n` table — both exist in the same
+  `[BUDGET]` section with no cross-reference explaining which applies to what. Read as two
+  different mechanics: the banded table (bigger leftover transfer pots carry over a *smaller*
+  percentage — a brake on runaway budgets) governs the **unspent transfer budget** carry-over
+  at rollover (its own naming, "BUDGET_CARRY_OVER_*", is the more specific match); the flat 25%
+  governs the **wage** side's own unspent surplus carry-over, since nothing else in this
+  section names a wage-specific table.
+- [TUNED] "Overachieved"/"significantly overachieved" league-finish thresholds (for
+  `TRANSFER_LEAGUE_RESULT_OVERACHIEVED=5`/`SIGNIFICANTLY_OVERACHIEVED=10`, the only two numbers
+  the INI actually gives): margin over the club's own `LEAGUE_OBJ_INDEX` `check3.lo` threshold
+  of ≥10 index points = overachieved, ≥25 = significantly overachieved. No INI table defines
+  these margins themselves — `engine/season.js`'s `rolloverSeason` already had `userLeagueIdx`
+  and the threshold on hand from `evaluateSeasonEnd`'s own inputs, reused rather than
+  re-derived.
+- [SCOPE DECISION] `LEAGUE_BUDGET_MAX_*` is ported (for reference) but **not** enforced as a
+  live ceiling anywhere — several already-authored `data/clubs.json` entries (Portsmouth's own
+  League Two budget, a deliberate parachute-payment-sized figure for its division) sit above
+  it, and clamping it live would silently nerf that already-audited, characterful world data.
+  `LEAGUE_BUDGET_MIN_*` **is** enforced, but only as a floor (`engine/clubbudget.js`'s
+  `getClubBudget` lazy-seed), never lowering an already-generous budget. `leagueBudgetMin`
+  keys directly off `data/leagues.json`'s own `iniLeagueId` field (already present from
+  world-authoring time — contrary to `config/transferai.js`'s own header note claiming no INI
+  league-id mapping exists in this project; that note is now stale for this specific table).
+- Release-guard groups (`RELEASE_GUARD_GROUPS`, transfer.ini's `MIN_PLAYERS_POSITION_GK/RB/CB/
+  LB/RM/CM/LM/ST`): the INI names literal FIFA position labels, not this project's own `area`/
+  `overallGroup` groupings, so a fresh 8-group table covering all 28 position codes exactly
+  once was authored (RB=RWB+RB, CB=SW+RCB+CB+LCB, LB=LWB+LB, RM=RM+RW, CM=9 central codes,
+  LM=LM+LW, ST=6 forward codes) rather than reusing either existing coarser grouping. The 8
+  minimums (2/2/4/2/2/4/2/3) sum to 21, matching `config/transferai.js`'s own area-level
+  `MIN_PLAYERS_PER_AREA` totals (GK2+DEF8+MID8+ATT3=21) — a real generated 24-man squad can
+  still fail an *individual* fine-grained sub-group's own floor even though the coarser area
+  total clears it (e.g. a squad with plenty of DEF overall but only one true LB-coded player) —
+  this is a legitimate, intentional guard result, not a bug (confirmed via a dedicated
+  hand-crafted-roster test after a live-Store test first exposed exactly this on a real
+  generated squad).
+- [TUNED] `RELEASE_PAYOFF_PCT = 50` is plan2.md's own literal F4.1 spec ("releasing pays off
+  50% of remaining contract"), applied as `wage × weeks-remaining × 50%`, deducted from the
+  transfer budget. Release always succeeds in finding the player a new (never the user's own)
+  club — reuses `engine/contracts.js`'s existing private `rollSigningClub` (the same roll a
+  lapsed Bosman departure uses), since this engine has no idle `clubId=null` free-agent state
+  anywhere (see that file's own header).
+
+**Sell Players / Finances mechanics + engine bugs found during this pass:**
+- [JUDGMENT CALL] "Listing price: prompt with default = adjusted value" (plan2.md F4.1) is
+  built as a real two-step flow — picking "Add to Transfer/Loan List" opens an asking-price
+  stepper sub-view (seeded from `player.value`, or the existing listing's own price if
+  re-listing at the same type) with its own `(A) Confirm`/`(B) Cancel` footer — no reference
+  pic shows this specific sub-step (the two SELL_PLAYERS pics never capture it mid-flow), so
+  the exact shape is authored, not pic-verified.
+- [TUNED] Budget Allocation's `snapshotSeasonFinances` (new `engine/finances.js` fields:
+  `seasonStartTransferBudget`/`seasonPurchases`/`seasonStartWageBill`/`seasonSalesIncome`) reads
+  `state.playersByClub.get(state.club.id)` directly rather than `state.squad.roster` — the
+  latter isn't guaranteed fresh at every call site (see the `acceptJob` bug below), so this
+  sidesteps that ordering hazard entirely rather than depending on caller discipline.
+- [ENGINE FIX] `engine/jobs.js`'s `acceptJob` never refreshed `state.squad.roster` at all — a
+  genuine **pre-existing gap** (predates F4), surfaced when this milestone's own
+  `snapshotSeasonFinances` test (driven through a full `runFullSeasonRolloverTest` that
+  auto-accepts a job offer on a sacking) compared `state.finances.seasonStartWageBill` against
+  `squadWageBill(state.squad.roster)` and got a real mismatch — every other roster-membership-
+  changing path in this codebase (`negotiation.js`/`transferai.js`/`contracts.js`/`season.js`)
+  already re-derives `state.squad.roster` from `playersByClub` immediately after mutating squad
+  membership; `acceptJob` (the whole squad changing at once) was simply missing that one line.
+  Fixed; not something a static code read would have caught.
+- [ENGINE FIX] `ui/sellplayersui.js`'s own first draft called `cmToFtIn(player.heightCm)` as if
+  it returned `{feet, inches}` — it actually returns an already-formatted string
+  (`5'11"`, per `ui/playerbio.js`'s own signature) — producing a literal `"undefined'undefined""`
+  height on the Player Selected card. Caught by the first manual-QA screenshot, not a code read;
+  fixed to use the string directly.
+- [ENGINE FIX, real CSS bug] Every one of F4's 4 new overlay body wrappers
+  (`#sellplayers-body`/`#negotiationsledger-body`/`#transferhistory-body`/`#finances-body`) was
+  originally given its own `position:absolute; top:0; bottom:90px;` (reserving footer space) —
+  but every `.fx-panel`/`.fx-playercard-wrap` already carries that *exact same* `top:90px;
+  bottom:90px` reservation baked in globally (used by every pre-F4 overlay in this codebase,
+  which all leave their own "-body" div completely unstyled, letting the absolutely-positioned
+  child resolve straight against `#stage`). Nesting a second identical 90px offset inside the
+  first double-subtracted it, silently shrinking every F4 panel's real content height by 90px
+  and clipping the bottom of every one of them (Sell Players' action menu showed only 2 of 6
+  rows; Finances cut off the whole "Current Budget Split" line; Negotiations cut off the entire
+  "Negotiation Information" section). Not visible from a static code read — caught by measuring
+  real `getBoundingClientRect()`s during manual QA after the first screenshot looked visibly
+  wrong, then confirmed against a *working* pre-F4 screen (`kitnumbers.css`) to find the actual
+  convention being violated. Fixed by removing the redundant body-wrapper rule entirely.
+- Even after that fix, `.fx-playercard`'s own default content (portrait, name, club, age,
+  height, foot, stats, 2 icon rows, tagline, up to 6 action rows) still didn't fit its
+  540px-tall box at the primitive's original F0 font sizes/paddings/gaps/portrait size — this
+  primitive had **zero real consumers before F4** (built in F0, only ever rendered on
+  `dev/kit.html`; F3's own Search Results/My Shortlist action menus both grew bespoke card
+  markup instead of using it) — Sell Players is its first production consumer, so its sizing
+  was tightened for real (portrait 84→46px, card/row gaps and paddings trimmed ~30-40%) via
+  iterative `getBoundingClientRect()`/`scrollHeight` measurement until content and box height
+  matched exactly, rather than guessing.
+- [ENGINE/FIDELITY FIX] `fxPlayerCard` (`js/ui/panelkit.js`) is rewritten to actually match
+  §B3's own original spec (icon rows for morale/fitness — a plain 😐/🔧 emoji + word each, no
+  "Morale: X Fitness: Y" label line) and the pic (`ms_SELL_PLAYERS_SCREEN_PLAYER_SELECTED.png`),
+  since its F0 implementation never matched either and nothing depended on the old shape (see
+  above — zero prior consumers). Also gained an optional `attrHtml` slot for the pic's right-
+  side attribute mini-panel and a `crestHref` param (club crest next to the club name, matching
+  the pic) neither of which existed before. Logged as a primitive-level fix, not just a
+  screen-level one, since any future screen reusing `fxPlayerCard` inherits the corrected shape.
+- [TUNED] The Player Selected card's right-side attribute mini-panel (`ui/sellplayersui.js`'s
+  `topAttrRowsHtml`) shows the player's **top 6 attributes by value, descending** — reconstructed
+  from the one worked example (`ms_SELL_PLAYERS_SCREEN_PLAYER_SELECTED.png`'s GK: 68/67/63/63/
+  61/58, a strictly-descending top-6, which lines up exactly with "his 6 highest attributes")
+  rather than a fixed per-position attribute list — no other pic shows an outfield player's own
+  version of this panel to check the reconstruction against, and it needs no new per-position
+  config at all (purely computed from `player.attrs`), logged as [TUNED]/[JUDGMENT CALL].
+- Keyboard: §A4's Q/E (LB/RB) alternate is used for the first time in this codebase
+  (TRANSFER NEGOTIATIONS' `[LB][RB]` tab cycling — every earlier LB/RB-bearing screen, e.g.
+  Season's Team/Player Stats, only ever wired mouse clicks). Z/C (LT/RT) is reused for Sell
+  Players' "Page Up/Down" (a 5-row jump through the displayed, currently-sorted row order, read
+  straight off the DOM rather than re-deriving `ui/sellplayersui.js`'s own sort). "V" (Finances'
+  own `(LS) Modify Allocation`) is reused from Team Sheet's *different* LS binding (Change
+  View) — safe, since only one of the two overlays is ever active at a time, same "one key,
+  scoped per active overlay" pattern this file already uses throughout.
+- [JUDGMENT CALL] "Offer New Contract" (Sell Players → Contracts) closes the Sell Players
+  overlay *before* opening Contracts, rather than nesting Contracts on top of it — `(B)` from
+  Contracts then returns straight to the Transfers hub (where Sell Players was opened from)
+  instead of back through Sell Players first. Reuses the pre-existing (pre-F6-fidelity)
+  `ui/contractsui.js` Contracts screen as-is, per plan2.md F4.1's own text ("→ F6 negotiation
+  panel" — F6 hasn't restyled Contracts into the shared CONTRACT NEGOTIATION panel yet).
+
+Testing: `dev/tests.js` extended with ~13 new groups (release-guard group coverage + squad-
+floor boundary, `releasePlayer` on a real generated squad, Sell Players status-per-action via
+a live Store, negotiations-log terminal-state-exactly-once for both a rejection and a
+completion, incoming-bid accept/reject/expiry all appending exactly one log entry each +
+`seasonSalesIncome` crediting, Sent/Received live derivation, `worldwideCompletedEntries` vs.
+`successfulEntries` scoping, Budget Allocation slider round-trip, `carryOverPct`/
+`boardStrictnessPct`/`leagueBudgetMin` band spot-checks, and a `core/db.js` round-trip for the
+new negotiations log + disallowedBids + an email action's own `expiresDate`) plus 5 new
+assertions on the existing full-season rollover integration test (season-snapshot resets +
+sane post-rollover budget) — 641/641 total, all green (2 genuine failures caught and fixed
+along the way: the `acceptJob` roster-refresh bug above, and a fragile test that assumed the
+squad's *lowest-overall* player specifically would always clear every release-guard floor).
+Manual QA via headless Playwright (no interactive browser in this environment either — same
+`p.chromium.launch()` approach as F1-F3): new game as Portsmouth (League Two) → opened all 5
+hubs → Transfers → Sell Players (24-row table, sort caret, select → action menu → all 6 rows
+incl. Release's guard-disabled state where applicable → price-prompt stepper → Confirm →
+status column updated to "Transfer Listed") → Transfer Negotiations ledger (all 4 tabs, empty-
+state "None", crest From/To pair) → Finances/Budget Allocation (`(LS) Modify Allocation` →
+slider step → value changes → `(A) Accept`) → Transfer History (MY CLUB/ALL CLUBS tabs, empty-
+state "There are no transfers available") → "Offer New Contract" → real Contracts screen with
+the right player pre-selected → back to the Transfers hub — zero console/page errors at any
+point. §A5.4 regression (new game as Portsmouth, advance 10 days incl. an auto-simmed match
+day, re-open all 5 hubs and re-open every F4 screen post-advance) also clean.

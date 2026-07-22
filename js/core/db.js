@@ -244,12 +244,17 @@ const SAVE_FORMAT_VERSION = 1;
 
 /** Inbox emails (engine/objectives.js's day-1 board emails, more from M5+)
  * carry a real Date and are otherwise plain JSON — no need for db.js's
- * compact-array treatment (there are dozens, not thousands, of these). */
+ * compact-array treatment (there are dozens, not thousands, of these).
+ * F4: a "transfer-bid" action also carries its own nested Date
+ * (action.expiresDate, engine/transferai.js's pushIncomingBidEmail) that
+ * needs the same epoch-day round-trip as the email's own top-level date. */
 function serializeEmail(e) {
-  return { ...e, date: toEpochDay(e.date) };
+  const action = e.action && e.action.expiresDate ? { ...e.action, expiresDate: toEpochDay(e.action.expiresDate) } : e.action;
+  return { ...e, date: toEpochDay(e.date), action };
 }
 function deserializeEmail(e) {
-  return { ...e, date: fromEpochDay(e.date) };
+  const action = e.action && e.action.expiresDate != null ? { ...e.action, expiresDate: fromEpochDay(e.action.expiresDate) } : e.action;
+  return { ...e, date: fromEpochDay(e.date), action };
 }
 
 /** engine/comps/cup.js's CupRuntime is otherwise plain JSON (strings/
@@ -575,6 +580,12 @@ export function serializeSave(state) {
     // epoch day the same way every other persisted Date in this file is.
     transferShortlist: (state.transfers?.shortlist || []).map((s) => ({ playerId: s.playerId, dateAdded: toEpochDay(s.dateAdded) })),
     transferEnquiries: [...(state.transfers?.enquiries || new Map()).entries()].map(serializeEnquiryEntry),
+    // F4: TRANSFER NEGOTIATIONS ledger's persisted terminal-outcome log
+    // (engine/negotiationlog.js) + Sell Players' "Disallow Transfer Bids"
+    // per-player flag set — both plain JSON/epoch-day, no Map/Set left after
+    // this (Set -> array, same idiom as clubTransferBudgets' Map -> array above).
+    transferNegotiationsLog: (state.transfers?.negotiations || []).map((e) => ({ ...e, date: toEpochDay(e.date) })),
+    transferDisallowedBids: [...(state.transfers?.disallowedBids || new Set())],
     // M7: state.news.transfer is the one part of core/store.js's M0-era
     // NEWS_DATA stub this milestone starts writing real articles into
     // (engine/transferai.js/negotiation.js/freeagents.js's pushTransferNews)
@@ -633,6 +644,8 @@ export function deserializeSave(saved) {
     clubTransferBudgets: new Map(saved.clubTransferBudgets || []),
     transferShortlist: (saved.transferShortlist || []).map((s) => ({ playerId: s.playerId, dateAdded: fromEpochDay(s.dateAdded) })),
     transferEnquiries: (saved.transferEnquiries || []).map(deserializeEnquiryEntry),
+    transferNegotiationsLog: (saved.transferNegotiationsLog || []).map((e) => ({ ...e, date: fromEpochDay(e.date) })),
+    transferDisallowedBids: saved.transferDisallowedBids || [],
     newsTransfer: saved.newsTransfer,
     gtn: saved.gtn ? deserializeGtnState(saved.gtn) : null,
     academy: saved.academy ? deserializeAcademyState(saved.academy) : null,

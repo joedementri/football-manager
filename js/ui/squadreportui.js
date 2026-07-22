@@ -27,7 +27,7 @@ function sortedRosterByPosition(state) {
   return [...state.squad.roster].sort((a, b) => (a.position < b.position ? -1 : a.position > b.position ? 1 : 0) * dir);
 }
 
-function injuryStatusLabel(player) {
+export function injuryStatusLabel(player) {
   if (!player.injury) return "Match Fit";
   const label = player.injury.type.charAt(0).toUpperCase() + player.injury.type.slice(1);
   return `${label} injury — ${player.injury.daysLeft}d left`;
