@@ -246,11 +246,14 @@ export function fxPlayerCard({
 /**
  * actions: [{ label, action, disabled?: bool, why?: string }]
  * selectedAction: currently-highlighted action's `action` key (gold row + (A) glyph).
+ * `data-index` (F4-fixes) lets callers wire a mousemove listener that moves
+ * the highlight to follow the pointer (own index survives disabled rows
+ * lacking `data-action`, which click-only delegation can't target).
  */
 export function fxActionList(actions, selectedAction) {
-  return `<div class="fx-actions">` + actions.map((a) => (
+  return `<div class="fx-actions">` + actions.map((a, i) => (
     `<div class="fx-actions__row${a.action === selectedAction ? " is-sel" : ""}${a.disabled ? " is-disabled" : ""}" ` +
-    `${a.disabled ? "" : `data-action="${a.action}"`}>` +
+    `data-index="${i}" ${a.disabled ? "" : `data-action="${a.action}"`}>` +
       (a.action === selectedAction ? glyphPill("a") : "") +
       `<span>${a.label}</span>` +
       (a.disabled && a.why ? `<span class="fx-actions__why">${a.why}</span>` : "") +

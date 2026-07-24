@@ -105,3 +105,14 @@
 .ct-result { margin-top: 14px; padding: 10px 12px; border-radius: 6px; font-family: var(--font-ui); font-size: 14px; font-weight: 600; }
 .ct-result--accepted { background: rgba(89, 193, 77, 0.15); border: 1px solid rgba(89, 193, 77, 0.35); color: #a7e6a0; }
 .ct-result--rejected { background: rgba(224, 71, 60, 0.15); border: 1px solid rgba(224, 71, 60, 0.35); color: #ffb3a7; }
+.ct-result--pending { background: rgba(242, 193, 78, 0.12); border: 1px solid rgba(242, 193, 78, 0.3); color: var(--gold); }
+
+/* F4-fixes: renewal offers now take a real 3-6 day round trip — this is the
+   Contracts detail pane's own "in flight" view, shown instead of the
+   editable offer form while player.contract.pendingOffer is set. */
+.ct-pending { margin-top: 14px; }
+.ct-pending__title { font-family: var(--font-cond); font-size: 16px; font-weight: 700; color: var(--gold); margin-bottom: 8px; }
+.ct-row__pending {
+  font-family: var(--font-ui); font-size: 10px; font-weight: 700; letter-spacing: 0.03em;
+  color: var(--gold); border: 1px solid rgba(242, 193, 78, 0.4); border-radius: 8px; padding: 1px 6px;
+}

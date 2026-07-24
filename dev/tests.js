@@ -39,6 +39,7 @@ import { computeWage, computeWageCeiling, squadWageBill } from "../js/engine/wag
 import {
   computeAsk, acceptanceChance, renewUserContract, applyCpuContractRenewals,
   resolveExpiredContracts, checkContractExpiryWarnings, releaseGuardReason, releasePlayer,
+  submitRenewalOffer, resolveRenewalOfferEntry,
 } from "../js/engine/contracts.js";
 import { decisionCurveY } from "../js/config/negotiation.js";
 import { computeWantedFee, feeDecisionChances, rollThreeWay, computeCounterFee } from "../js/engine/teamdecision.js";
@@ -748,6 +749,54 @@ async function run() {
     const rejectPlayer = roster[roster.length - 1];
     const rejected = renewUserContract(fakeState, rejectPlayer.id, { wage: 1, years: 1 });
     assert("a wage offer of £1 is always rejected", rejected.accepted === false);
+  }
+
+  group("engine/contracts.js — delayed renewal offers (F4-fixes: submitRenewalOffer/resolveRenewalOfferEntry)");
+  {
+    const club = world.clubs.find((c) => c.id === sampleClubId);
+    const roster2 = world.squadsByClub.get(sampleClubId).map((p) => ({ ...p, contract: { ...p.contract, pendingOffer: null } }));
+    const today = new Date(2014, 6, 1);
+    const rnState = {
+      seed, seasonStartYear: 2014, club, manager: { name: "Bob Jackson" },
+      calendar: { today }, clubsById: new Map(world.clubs.map((c) => [c.id, c])),
+      playersById: new Map(roster2.map((p) => [p.id, p])),
+      finances: { transferBudget: 5000000, wageCeiling: 999999999 },
+      transfers: { pendingOffers: [] }, inbox: { emails: [] },
+    };
+
+    const player = roster2[0];
+    const before = rnState.transfers.pendingOffers.length;
+    const submitResult = submitRenewalOffer(rnState, player.id, { wage: player.contract.wage * 2, years: 4 });
+    assert("submitRenewalOffer succeeds and returns a dueDate", submitResult.ok === true && submitResult.dueDate instanceof Date);
+    assert("submitting queues exactly one pendingOffers entry", rnState.transfers.pendingOffers.length === before + 1);
+    assert("the queued entry's dueDate is 3-6 days out (transfers.ini MIN/MAX_DAYS_TO_RESPOND)",
+      toEpochDay(submitResult.dueDate) - toEpochDay(today) >= 3 && toEpochDay(submitResult.dueDate) - toEpochDay(today) <= 6);
+    assert("the player's own contract.pendingOffer is set", !!player.contract.pendingOffer);
+    assert("submitting again for the same player is refused while one is pending",
+      submitRenewalOffer(rnState, player.id, { wage: player.contract.wage * 3, years: 5 }).error === "already-pending");
+
+    const entry = rnState.transfers.pendingOffers[0];
+    resolveRenewalOfferEntry(rnState, entry);
+    assert("resolving clears the player's pendingOffer flag", player.contract.pendingOffer === null);
+    assert("resolving pushes exactly one inbox email", rnState.inbox.emails.length === 1);
+
+    // Acceptance is a genuine probabilistic roll (same "never literally 100%"
+    // caveat the M6 "user renewal negotiation" group above already documents)
+    // — sample several players with a maximally generous offer (2x ask, 5yr)
+    // until one accepts, same retry pattern that group already established.
+    let accepted = false;
+    for (const p of roster2.slice(1, 9)) {
+      const wageBefore = p.contract.wage;
+      const r = submitRenewalOffer(rnState, p.id, { wage: Math.round(computeAsk(p).wage * 2), years: 5 });
+      resolveRenewalOfferEntry(rnState, rnState.transfers.pendingOffers.find((o) => o.playerId === p.id));
+      if (p.contract.wage !== wageBefore) { accepted = true; break; }
+    }
+    assert("a maximally generous delayed renewal offer is accepted for at least one of 8 sampled squad players", accepted);
+
+    // Stale-guard: resolving an already-resolved entry again is a no-op.
+    const emailsBefore = rnState.inbox.emails.length;
+    resolveRenewalOfferEntry(rnState, entry);
+    assert("resolving an already-resolved (stale) entry is a silent no-op", rnState.inbox.emails.length === emailsBefore);
   }
 
   group("engine/contracts.js — expiry warnings (60-day, plan1.md verbatim)");
@@ -2687,7 +2736,10 @@ async function run() {
     spStore.openSellPlayers();
     const player = spState.squad.roster[0];
     spStore.selectSellPlayersRow(player.id);
-    assert("a freshly-opened, untouched player's status is 'None'", statusLabel(spState, player) === "None");
+    // F4-fixes (owner request): the default status is now the player's real
+    // remaining contract length ("N Year(s) M Month(s)"), not a bare "None".
+    assert("a freshly-opened, untouched player's status reads their real contract length remaining",
+      /^\d+ Years? \d+ Months?$/.test(statusLabel(spState, player)));
 
     spStore.sellPlayersBeginListing("transfer");
     assert("beginning a listing seeds the price prompt draft from the player's own value", spState.ui.sellPlayers.pricePrompt.draft === player.value);
@@ -2713,7 +2765,15 @@ async function run() {
     assert("toggling Disallow again reverts to the underlying listing status", statusLabel(spState, player) === "Loan Listed (Short)");
 
     spStore.sellPlayersUnlist();
-    assert("Remove Listing reverts the status to 'None'", statusLabel(spState, player) === "None");
+    assert("Remove Listing reverts the status back to the contract-remaining fallback",
+      /^\d+ Years? \d+ Months?$/.test(statusLabel(spState, player)));
+
+    // F4-fixes: a pending renewal offer takes priority over that fallback.
+    const submitResult = submitRenewalOffer(spState, player.id, { wage: player.contract.wage + 1000, years: 3 });
+    assert("submitRenewalOffer queues successfully for an untouched player", submitResult.ok === true);
+    assert("a pending renewal offer's status shows the offered terms", statusLabel(spState, player).startsWith("Offered"));
+    assert("submitRenewalOffer refuses a second offer while one is already pending",
+      submitRenewalOffer(spState, player.id, { wage: player.contract.wage + 2000, years: 2 }).error === "already-pending");
 
     spStore.sellPlayersBeginListing("transfer");
     spStore.sellPlayersCancelListingPrompt();

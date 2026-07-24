@@ -145,8 +145,22 @@
 
 /* ----- F4: TRANSFER NEGOTIATIONS ledger (ms_TRANSFER_NEGOTIATIONS_*.png) ----- */
 .tn-panel { width: 92%; }
-.tn-panel .fx-panel__body { padding: 0; overflow: hidden; }
-.tn-body { display: grid; grid-template-columns: 46% 1fr; height: 100%; }
+/* F4-fixes: .tn-tabnav (the LB/RB replacement) now lives *inside*
+   .fx-panel__body (bodyHtml), not as a sibling .fx-panel__selectors the way
+   fxPanel's own selectorRows param would place it — flex column layout lets
+   .tn-body size itself off the *remaining* space (flex:1) instead of a
+   height:100% that would double-count the tabnav's own height and clip the
+   bottom of .tn-body the same way an earlier F4 pass already got bitten by
+   (see plan2-decisions.md F4's "double-counted 90px footer offset" entry). */
+.tn-panel .fx-panel__body { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.tn-tabnav { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 12px; }
+.tn-tabnav__value { font-family: var(--font-cond); font-size: 16px; font-weight: 700; color: var(--ink); }
+/* Same "always legible, not hover-to-reveal" override css/teamsheet.css's
+   .sqts-pagernav already gives its own standalone (non-carousel-tile) .cnav
+   pair — .cnav's base 0.35 opacity only brightens under [data-carousel]:hover. */
+.tn-tabnav .cnav { position: static; opacity: 0.7; }
+.tn-tabnav .cnav:hover, .tn-tabnav .cnav:focus-visible { opacity: 1; }
+.tn-body { display: grid; grid-template-columns: 46% 1fr; flex: 1 1 auto; min-height: 0; }
 .tn-list { overflow-y: auto; border-right: 1px solid rgba(255, 255, 255, 0.06); }
 .tn-listrow {
   display: flex; align-items: center; gap: 10px; padding: 10px 16px; cursor: pointer;
@@ -210,9 +224,28 @@
 .ba-sliderrow__side { min-width: 160px; font-family: var(--font-ui); font-size: 13px; }
 .ba-sliderrow__side--right { text-align: right; }
 .ba-sliderrow__side .v { display: block; font-family: var(--font-cond); font-size: 20px; font-weight: 700; }
-.ba-bar { flex: 1; height: 16px; border-radius: 8px; overflow: hidden; display: flex; background: rgba(255, 255, 255, 0.08); }
-.ba-bar__transfer { background: #e8c227; height: 100%; }
-.ba-bar__wage { background: #2f7fd1; height: 100%; }
+/* F4-fixes (owner report: "the bar ... should be a slider the user can grab
+   and move 0:100" — it was purely visual before, no mouse interaction at
+   all). overflow is visible (not hidden) now so .ba-bar__thumb can protrude
+   above/below the bar itself as a real grab handle; the coloured fill
+   strips get their own clipped wrapper instead. Padding widens the real
+   hit-box vertically without changing the bar's visual (16px) height — under
+   this codebase's global box-sizing:border-box reset, "height" already
+   includes padding, so the box needs to be 32px (16 visual + 8+8 padding)
+   for the top:8/bottom:8 children below to still resolve to a real 16px,
+   not 0; the -8px/0 margin cancels the extra 16px back out of the flex
+   row's own layout height. */
+.ba-bar { position: relative; flex: 1; height: 32px; padding: 8px 0; margin: -8px 0; cursor: pointer; }
+.ba-bar::before { content: ""; position: absolute; left: 0; right: 0; top: 8px; bottom: 8px; border-radius: 8px; overflow: hidden; background: rgba(255, 255, 255, 0.08); }
+.ba-bar__transfer, .ba-bar__wage { position: absolute; top: 8px; bottom: 8px; }
+.ba-bar__transfer { left: 0; background: #e8c227; border-radius: 8px 0 0 8px; }
+.ba-bar__wage { right: 0; background: #2f7fd1; border-radius: 0 8px 8px 0; }
+.ba-bar__thumb {
+  position: absolute; top: 50%; width: 18px; height: 26px;
+  background: #fff; border-radius: 4px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  transform: translate(-50%, -50%); cursor: grab; z-index: 1;
+}
+.ba-bar__thumb:active, .ba-bar:active .ba-bar__thumb { cursor: grabbing; }
 .ba-splitlabel { text-align: center; font-family: var(--font-ui); font-size: 14px; color: var(--ink-dim); margin-top: 10px; }
 .ba-splitlabel b { font-family: var(--font-cond); font-size: 22px; color: var(--ink); }
 

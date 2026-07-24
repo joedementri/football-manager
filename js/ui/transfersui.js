@@ -30,8 +30,9 @@ function prompt(glyphClass, glyphLabel, action, label) {
  * `seasonStart(endYear)` boundary engine/contracts.js's own expiry-warning
  * check (`checkContractExpiryWarnings`) uses, just expressed as a calendar
  * Y/M breakdown instead of a day count (ms_APPROACH_TRANSFER_OFFER_SCREEN.png/
- * ms_CONTRACTS_SCREEN_CONTRACT_NEGOTIATION.png both show "Years: n, Months: n"). */
-function remainingContractYM(state, endYear) {
+ * ms_CONTRACTS_SCREEN_CONTRACT_NEGOTIATION.png both show "Years: n, Months: n").
+ * F4-fixes: exported for reuse by ui/sellplayersui.js's own Status column. */
+export function remainingContractYM(state, endYear) {
   const today = state.calendar.today;
   const expiry = seasonStart(endYear);
   let months = (expiry.getFullYear() - today.getFullYear()) * 12 + (expiry.getMonth() - today.getMonth());

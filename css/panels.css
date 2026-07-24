@@ -194,7 +194,7 @@
   position: absolute;
   left: 40px; top: 90px; bottom: 90px;
   width: 300px;
-  background: rgba(15, 18, 22, 0.96);
+  background: #0d0f12;
   border-radius: 6px;
   padding: 12px;
   display: flex;
@@ -229,7 +229,7 @@
 .fx-playercard-wrap .fx-playercard { position: static; left: auto; top: auto; bottom: auto; }
 .fx-playercard__attrpanel {
   width: 260px;
-  background: rgba(15, 18, 22, 0.96);
+  background: #0d0f12;
   border-radius: 6px;
   padding: 16px;
   overflow: auto;

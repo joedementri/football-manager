@@ -23,8 +23,9 @@
 //     action (renewal here; M7 adds buying/loans).
 
 import { RngStream, deriveSeed } from "../core/rng.js";
-import { toEpochDay } from "../core/clock.js";
+import { toEpochDay, addDays } from "../core/clock.js";
 import { seasonStart } from "../config/calendar.js";
+import { pickResponseDayOffset, MIN_DAYS_TO_RESPOND } from "../config/negotiation.js";
 import { bracketVal } from "../config/value.js";
 import { clubOverallTarget } from "../config/playergen.js";
 import { computeWage, recomputeWage } from "./wage.js";
@@ -98,6 +99,65 @@ export function renewUserContract(state, playerId, offer) {
     recomputeValue(player, state.clubsById.get(player.clubId), state.seasonStartYear);
   }
   return { accepted, chance, ask };
+}
+
+/* ============================================================================
+ * F4-fixes (fable-plans/plan2-decisions.md): renewal offers now take a real
+ * 3-6 day round trip (same MIN_DAYS_TO_RESPOND/pickResponseDayOffset window
+ * every other deal type in this codebase already uses — buy-side fee/
+ * contract talks, loans, free-agent approaches) instead of resolving the
+ * instant they're sent. `renewUserContract` above is unchanged (still a pure
+ * synchronous roll-and-apply, still exactly what dev/tests.js's own M6 unit
+ * test exercises) — resolveRenewalOfferEntry just calls it once the delay
+ * elapses, so this is additive, not a rewrite of the underlying acceptance
+ * math. Needed so Sell Players' Status column has something real to observe
+ * ("Offered: ..." while pending) rather than a state that's already resolved
+ * by the time any other screen could show it.
+ * ========================================================================== */
+
+let nextRenewalOfferId = 1;
+
+/** Submits a renewal offer for `playerId` — queues a delayed response rather
+ * than resolving synchronously. Refuses if that player already has one in
+ * flight (guards against stacking offers on the same player). */
+export function submitRenewalOffer(state, playerId, offer) {
+  const player = state.playersById.get(playerId);
+  if (!player) return { error: "not-found" };
+  if (player.contract.pendingOffer) return { error: "already-pending" };
+  const today = state.calendar.today;
+  const wage = Math.round(offer.wage);
+  const years = Math.round(offer.years);
+  const rng = new RngStream(deriveSeed(state.seed, `renewalsched-${toEpochDay(today)}-${playerId}`));
+  const dueDate = addDays(today, MIN_DAYS_TO_RESPOND + pickResponseDayOffset(rng));
+  player.contract.pendingOffer = { wage, years, dueDate };
+  state.transfers.pendingOffers.push({ id: nextRenewalOfferId++, type: "renewal-response", playerId, dueDate, offer: { wage, years } });
+  return { ok: true, dueDate };
+}
+
+function buildRenewalResponseEmail({ club, managerName, player, accepted, today }) {
+  return {
+    from: "ASSISTANT MANAGER", to: toField(managerName), cc: "Assistant Manager", crest: `crest-${club.id}`,
+    date: new Date(today), read: false,
+    subject: `[Contract] ${player.commonName}'s renewal talks`,
+    body: accepted
+      ? [`Boss,`, `${player.commonName} has agreed to sign a new contract with us.`]
+      : [`Boss,`, `${player.commonName} has turned down the terms we offered. You can go back to him with a new offer any time.`],
+  };
+}
+
+/** Resolves a queued `{type:"renewal-response", playerId, offer}` entry —
+ * `core/store.js`'s `_resolvePendingTransferOffers` calls this once `dueDate`
+ * arrives. Stale-guarded (matches every other resolver in this codebase): if
+ * the pending flag is somehow already gone (shouldn't happen — nothing else
+ * clears it), this is a no-op. */
+export function resolveRenewalOfferEntry(state, entry) {
+  const player = state.playersById.get(entry.playerId);
+  if (!player || !player.contract.pendingOffer) return;
+  const result = renewUserContract(state, entry.playerId, entry.offer);
+  player.contract.pendingOffer = null;
+  state.inbox.emails.unshift(buildRenewalResponseEmail({
+    club: state.club, managerName: state.manager.name, player, accepted: result.accepted, today: state.calendar.today,
+  }));
 }
 
 /* ============================================================================

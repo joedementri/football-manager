@@ -51,7 +51,11 @@ export function renderFinances(state) {
       `<div class="ba-col__head">Budget Allocation Slider</div>` +
       `<div class="ba-sliderrow">` +
         `<div class="ba-sliderrow__side"><span class="k">New Transfer Budget:</span><span class="v">${money(shownTransfer)}</span></div>` +
-        `<div class="ba-bar"><i class="ba-bar__transfer" style="width:${transferPct}%"></i><i class="ba-bar__wage" style="width:${wagePct}%"></i></div>` +
+        `<div class="ba-bar" data-action="ba-bar">` +
+          `<i class="ba-bar__transfer" style="width:${transferPct}%"></i>` +
+          `<i class="ba-bar__wage" style="width:${wagePct}%"></i>` +
+          `<i class="ba-bar__thumb" style="left:${transferPct}%"></i>` +
+        `</div>` +
         `<div class="ba-sliderrow__side ba-sliderrow__side--right"><span class="k">New Wage Budget:</span><span class="v">${money(shownSurplus)}</span></div>` +
       `</div>` +
       `<div class="ba-splitlabel">Current Budget Split:<br><b>${transferPct}:${wagePct}</b></div>` +

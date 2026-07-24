@@ -173,6 +173,14 @@ export function serializePlayer(p) {
     // arrays end here) still deserializes fine via ArrayCursor's undefined-
     // past-the-end reads below.
     p.scouting.assignedDate ? toEpochDay(p.scouting.assignedDate) : -1, p.scouting.totalDays ?? -1,
+    // F4-fixes: engine/contracts.js's delayed renewal offer (null outside one) —
+    // must survive a reload, or a save made mid-wait would leave its matching
+    // state.transfers.pendingOffers entry resolving into a silent no-op
+    // (resolveRenewalOfferEntry's own stale-guard checks this flag first).
+    p.contract.pendingOffer ? 1 : 0,
+    p.contract.pendingOffer ? p.contract.pendingOffer.wage : 0,
+    p.contract.pendingOffer ? p.contract.pendingOffer.years : 0,
+    p.contract.pendingOffer ? toEpochDay(p.contract.pendingOffer.dueDate) : -1,
   ];
 }
 
@@ -206,6 +214,7 @@ export function deserializePlayer(arr) {
   const hasPreAgreed = c.next(), preAgreedClubId = c.next();
   const preAgreedWage = c.next(), preAgreedYears = c.next(), preAgreedRoleIdx = c.next();
   const assignedDateRaw = c.next(), totalDaysRaw = c.next();
+  const hasPendingOffer = c.next(), pendingOfferWage = c.next(), pendingOfferYears = c.next(), pendingOfferDueRaw = c.next();
 
   return {
     id, firstName, lastName, commonName, nationId, clubId, natTeamId,
@@ -215,6 +224,7 @@ export function deserializePlayer(arr) {
       wage, endYear, signingBonus, squadRole, warnedExpiry: !!warnedExpiry,
       preAgreedClubId: hasPreAgreed ? preAgreedClubId : null,
       preAgreedTerms: hasPreAgreed ? { wage: preAgreedWage, years: preAgreedYears, squadRole: SQUAD_ROLE_CODES[preAgreedRoleIdx] } : null,
+      pendingOffer: hasPendingOffer ? { wage: pendingOfferWage, years: pendingOfferYears, dueDate: fromEpochDay(pendingOfferDueRaw) } : null,
     },
     value, form, morale, fitness,
     injury: hasInjury ? { type: injuryType, daysLeft: injuryDaysLeft } : null,

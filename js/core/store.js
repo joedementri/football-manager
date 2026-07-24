@@ -32,15 +32,15 @@ import { applyBoardReview, applyMidSeasonGrowth, rolloverSeason } from "../engin
 import { acceptJob } from "../engine/jobs.js";
 import { computeWageCeiling, squadWageBill } from "../engine/wage.js";
 import {
-  checkContractExpiryWarnings, applyCpuContractRenewals, computeAsk, renewUserContract,
-  releasePlayer, releaseGuardReason,
+  checkContractExpiryWarnings, applyCpuContractRenewals, computeAsk,
+  releasePlayer, releaseGuardReason, submitRenewalOffer, resolveRenewalOfferEntry,
 } from "../engine/contracts.js";
 import * as negotiation from "../engine/negotiation.js";
 import * as freeagents from "../engine/freeagents.js";
 import * as transferai from "../engine/transferai.js";
 import {
   reallocateBudget, requestFundsFromBoard, snapshotSeasonFinances,
-  budgetSplitStepAmounts, budgetSplitPct, applyBudgetSplitStep,
+  budgetSplitPct, budgetSplitFromPct,
 } from "../engine/finances.js";
 import { successfulEntries, unsuccessfulEntries, sentLedgerRow, receivedLedgerRows } from "../engine/negotiationlog.js";
 import * as gtnEngine from "../engine/gtn.js";
@@ -292,8 +292,10 @@ function createUiDefaults(today) {
     natlSquad: { selectedPlayerId: null, lastError: null },
     // Contracts overlay (M6, ui/contractsui.js): selected squad player + the
     // in-progress offer (wage/years) the user is building before submitting
-    // it to engine/contracts.js's renewUserContract. lastResult is
-    // 'accepted'|'rejected'|null, shown as a banner until the next selection.
+    // it to engine/contracts.js's submitRenewalOffer. lastResult is
+    // 'pending'|null now (F4-fixes: renewals take a real 3-6 day round trip —
+    // see submitContractOffer's own header — the actual accept/reject outcome
+    // arrives as an inbox email, not a synchronous banner here anymore).
     contracts: { selectedPlayerId: null, offerWage: 0, offerYears: 3, lastResult: null },
 
     // F3 (fable-plans/plan2.md, ui/searchui.js): PLAYER SEARCH filter tiles ->
@@ -337,7 +339,7 @@ function createUiDefaults(today) {
     // default = adjusted value" step (plan2.md F4.1) shown after picking
     // "Add to Transfer/Loan List" — no reference pic shows this specific
     // sub-step, [JUDGMENT CALL] logged in plan2-decisions.md F4.
-    sellPlayers: { selectedPlayerId: null, sortDir: "desc", actionMenuOpen: false, actionMenuIndex: 0, pricePrompt: null },
+    sellPlayers: { selectedPlayerId: null, sortKey: "status", sortDir: "desc", actionMenuOpen: false, actionMenuIndex: 0, pricePrompt: null },
     // F4 (ms_TRANSFER_NEGOTIATIONS_*.png): [LB][RB] cycles the 4 ledgers;
     // `sortDir` is shared across all 4 tabs (the pic's own list header shows
     // one sortable column, "Ovr▲" — same "one shared sort toggle" convention
@@ -346,11 +348,9 @@ function createUiDefaults(today) {
     // F4 (ms_TRANSFER_HISTORY_SCREEN.png): MY CLUB / ALL CLUBS tabs.
     transferHistory: { tab: "myclub", selectedIndex: -1 },
     // F4 (ms_FINANCES_BUDGET_ALLOCATION.png): `modifying` toggles the live
-    // slider draft on ((LS) Modify Allocation); `draft`/`stepAmounts` are only
-    // meaningful while modifying (seeded fresh every time modify is entered —
-    // see engine/finances.js's budgetSplitStepAmounts header for why the step
-    // size is fixed at that moment, not re-derived per step).
-    budgetAllocation: { modifying: false, draft: null, stepAmounts: null },
+    // slider draft on ((LS) Modify Allocation); `draft` is only meaningful
+    // while modifying (seeded fresh every time modify is entered).
+    budgetAllocation: { modifying: false, draft: null },
     // F3: Negotiation dossier UI-only toggles (never persisted, same footing
     // as state.transfers.negotiation itself) — `editingFeeOffer` swaps the
     // Approach — Transfer Offer's "Offered Transfer Sum" row into a live
@@ -1297,6 +1297,7 @@ export class Store {
       else if (entry.type === "loan-response") negotiation.resolveLoanRequestEntry(state, entry);
       else if (entry.type === "approach-response") freeagents.resolveApproachEntry(state, entry);
       else if (entry.type === "enquiry-response") enquiryEngine.resolveEnquiryEntry(state, entry);
+      else if (entry.type === "renewal-response") resolveRenewalOfferEntry(state, entry);
     }
   }
 
@@ -1603,16 +1604,16 @@ export class Store {
     this.emit("contracts", null);
   }
 
-  /** Submits the current offer (engine/contracts.js's renewUserContract) —
-   * single-shot, not iterative fee-talk rounds (see that file's header for
-   * why, same footing as engine/jobs.js's Browse Jobs). */
+  /** Submits the current offer — F4-fixes: now a real 3-6 day round trip
+   * (engine/contracts.js's submitRenewalOffer/resolveRenewalOfferEntry),
+   * matching every other deal type in this codebase, rather than resolving
+   * the instant it's sent (see that file's own header on why). */
   submitContractOffer() {
     const c = this.state.ui.contracts;
     if (c.selectedPlayerId == null) return;
-    const result = renewUserContract(this.state, c.selectedPlayerId, { wage: c.offerWage, years: c.offerYears });
-    c.lastResult = result.accepted ? "accepted" : "rejected";
+    const result = submitRenewalOffer(this.state, c.selectedPlayerId, { wage: c.offerWage, years: c.offerYears });
+    c.lastResult = result.ok ? "pending" : null;
     this.emit("contracts", null);
-    this.emit("advance", null); // reuse Central/Season/Transfers' re-render hook — wage bill/finances changed
   }
 
   /* ----- M11 (engine/career.js): Office ▸ My Career ----- */
@@ -3071,7 +3072,21 @@ export class Store {
     this.emit("sellplayers", null);
   }
 
-  sortSellPlayersStatus() {
+  /** Clicking a column header (F4-fixes, owner request: "sortable by any
+   * column you click"). Switching to a new column defaults it ascending;
+   * clicking the already-active column's header reverses it too (same
+   * result as the dedicated Sort/(X) button below, just reachable either
+   * way). */
+  sellPlayersSortBy(key) {
+    const s = this.state.ui.sellPlayers;
+    if (s.sortKey === key) s.sortDir = s.sortDir === "asc" ? "desc" : "asc";
+    else { s.sortKey = key; s.sortDir = "asc"; }
+    this.emit("sellplayers", null);
+  }
+
+  /** "(X) Sort" footer prompt — reverses whichever column is currently
+   * active, regardless of which one that is. */
+  sellPlayersReverseSort() {
     const s = this.state.ui.sellPlayers;
     s.sortDir = s.sortDir === "asc" ? "desc" : "asc";
     this.emit("sellplayers", null);
@@ -3260,28 +3275,47 @@ export class Store {
   openFinances() {
     this.state.ui.budgetAllocation.modifying = false;
     this.state.ui.budgetAllocation.draft = null;
-    this.state.ui.budgetAllocation.stepAmounts = null;
     this.openOverlay("finances");
   }
 
   /** "(LS) Modify Allocation" — enters the live slider: seeds a draft copy of
-   * {transferBudget, wageCeiling} plus a *fixed* step-amount pair (see
-   * engine/finances.js's budgetSplitStepAmounts header for why it's computed
-   * once here, not per-step). */
+   * {transferBudget, wageCeiling}. */
   budgetAllocationBeginModify() {
     const b = this.state.ui.budgetAllocation;
-    b.stepAmounts = budgetSplitStepAmounts(this.state);
     b.draft = { transferBudget: this.state.finances.transferBudget, wageCeiling: this.state.finances.wageCeiling };
     b.modifying = true;
     this.emit("finances", null);
   }
 
-  /** direction: +1 (toward transfer) | -1 (toward wage). */
+  /** Left/Right-arrow "nudge the slider one 1% step" (F4-fixes owner report:
+   * keyboard parity with the mouse drag/click, which already snaps to whole
+   * percentage points — see budgetSplitFromPct's own header). direction: +1
+   * (toward transfer) | -1 (toward wage). Steps off the currently *displayed*
+   * split rather than a separately-computed dollar amount (budgetSplitStep
+   * Amounts/applyBudgetSplitStep's fixed-£ step, still used nowhere else),
+   * so it can't drift from what the bar's own colouring shows, and — like
+   * budgetAllocationSetSplitPct — auto-enters modify mode so arrowing works
+   * the moment the page opens, without "(LS) Modify Allocation" first. */
   budgetAllocationStep(direction) {
     const b = this.state.ui.budgetAllocation;
-    if (!b.modifying || !b.draft) return;
+    if (!b.modifying || !b.draft) this.budgetAllocationBeginModify();
+    const roster = this.state.squad.roster;
+    const [transferPct] = budgetSplitPct(b.draft.transferBudget, b.draft.wageCeiling, roster);
+    const minWageCeiling = squadWageBill(roster);
+    budgetSplitFromPct(b.draft, roster, transferPct + direction, minWageCeiling);
+    this.emit("finances", null);
+  }
+
+  /** F4-fixes (owner report: "the bar ... should be a slider the user can
+   * grab and move 0:100") — a click/drag directly on the bar jumps straight
+   * to that position rather than stepping. Auto-enters modify mode first if
+   * it isn't already active, so grabbing the bar works without having to
+   * press "(LS) Modify Allocation" separately beforehand. */
+  budgetAllocationSetSplitPct(pct) {
+    const b = this.state.ui.budgetAllocation;
+    if (!b.modifying || !b.draft) this.budgetAllocationBeginModify();
     const minWageCeiling = squadWageBill(this.state.squad.roster);
-    applyBudgetSplitStep(b.draft, direction, b.stepAmounts, minWageCeiling);
+    budgetSplitFromPct(b.draft, this.state.squad.roster, pct, minWageCeiling);
     this.emit("finances", null);
   }
 
@@ -3294,7 +3328,6 @@ export class Store {
     }
     b.modifying = false;
     b.draft = null;
-    b.stepAmounts = null;
     this.emit("finances", null);
     this.emit("advance", null); // Transfers hub Finances tile + Contracts' Rem. Wage Budget line reflect it
   }
@@ -3306,7 +3339,6 @@ export class Store {
     const b = this.state.ui.budgetAllocation;
     b.modifying = false;
     b.draft = null;
-    b.stepAmounts = null;
     this.emit("finances", null);
   }
 

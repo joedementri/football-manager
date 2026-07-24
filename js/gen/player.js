@@ -188,6 +188,12 @@ export function generatePlayer(opts) {
     // agent approach is accepted (see engine/contracts.js's signWithNewClub).
     preAgreedClubId: null,
     preAgreedTerms: null,
+    // F4-fixes: engine/contracts.js's delayed renewal offer — null until the
+    // user sends one (submitRenewalOffer). Explicit here (not left
+    // undefined) so a fresh player's own contract shape already matches
+    // deserializePlayer's output — db.js's own round-trip test compares the
+    // two directly and undefined/null aren't interchangeable there.
+    pendingOffer: null,
   };
   const value = computeValue({ overall, potential, age, position: positionCode, form: 5, contract }, club, seasonStartYear);
 

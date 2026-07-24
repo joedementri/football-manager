@@ -92,6 +92,7 @@ export function initRouter(store) {
   const transferhistoryBodyEl = document.getElementById("transferhistory-body");
   const footerFinances = document.getElementById("footer-finances");
   const financesOverlay = document.getElementById("finances-overlay");
+  const financesBodyEl = document.getElementById("finances-body");
   const footerRequestfunds = document.getElementById("footer-requestfunds");
   const requestfundsOverlay = document.getElementById("requestfunds-overlay");
   const rfBodyEl = document.getElementById("rf-body");
@@ -154,6 +155,7 @@ export function initRouter(store) {
     if (name === "email") {
       emailOverlay.classList.toggle("is-active", open);
       footerEmail.hidden = !open;
+      if (open) { renderEmailTabs(store.state); renderEmailList(store.state); renderEmailDetail(store.state); }
     } else if (name === "news") {
       newsOverlay.classList.toggle("is-active", open);
       footerNews.hidden = !open;
@@ -339,6 +341,9 @@ export function initRouter(store) {
     // the user's own nation's standing.
     if (store.state.ui.overlay === "ntjobs") renderNtJobsOverlay(store.state);
     if (store.state.ui.overlay === "natlsquad") renderNatlSquad(store.state);
+    // F4-fixes: a renewal offer sent from Contracts now resolves days later
+    // (engine/contracts.js's resolveRenewalOfferEntry) — refresh if still open.
+    if (store.state.ui.overlay === "contracts") renderContracts(store.state);
   });
   store.on("contracts", () => renderContracts(store.state));
   store.on("search", () => renderSearch(store.state));
@@ -1091,7 +1096,7 @@ export function initRouter(store) {
       return;
     }
     const thEl = e.target.closest("th[data-sort]");
-    if (thEl) { store.sortSellPlayersStatus(); return; }
+    if (thEl) { store.sellPlayersSortBy(thEl.dataset.sort); return; }
     const el = e.target.closest("[data-action]");
     if (!el) return;
     switch (el.dataset.action) {
@@ -1111,11 +1116,23 @@ export function initRouter(store) {
         break;
     }
   });
+  // F4-fixes (owner report: "the offer new contract option is stuck as
+  // always highlighted"): mousemove (not mouseover — see core/router.js's
+  // own F1-era precedent on why a stationary cursor can spoof mouseover
+  // after a re-render) moves the gold highlight to follow the pointer,
+  // mirroring keyboard Up/Down's existing sellPlayersActionMenuFocus call.
+  sellplayersBodyEl.addEventListener("mousemove", (e) => {
+    if (!store.state.ui.sellPlayers.actionMenuOpen || store.state.ui.sellPlayers.pricePrompt) return;
+    const row = e.target.closest(".fx-actions__row[data-index]");
+    if (!row) return;
+    const idx = Number(row.dataset.index);
+    if (store.state.ui.sellPlayers.actionMenuIndex !== idx) store.sellPlayersActionMenuFocus(idx);
+  });
   footerSellplayers.addEventListener("click", (e) => {
     const el = e.target.closest("[data-action]");
     if (!el) return;
     switch (el.dataset.action) {
-      case "sort": store.sortSellPlayersStatus(); break;
+      case "sort": store.sellPlayersReverseSort(); break;
       case "player-bio": if (store.state.ui.sellPlayers.selectedPlayerId != null) store.openPlayerBio(store.state.ui.sellPlayers.selectedPlayerId); break;
       case "confirm-listing": store.sellPlayersConfirmListing(); break;
       case "back":
@@ -1130,6 +1147,11 @@ export function initRouter(store) {
   negotiationsledgerBodyEl.addEventListener("click", (e) => {
     const rowEl = e.target.closest(".tn-listrow[data-row]");
     if (rowEl) { store.selectNegotiationsLedgerRow(Number(rowEl.dataset.row)); return; }
+    // F4-fixes: replaces the old LB/RB glyph pills with clickable cnav arrows.
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    if (el.dataset.action === "tab-prev") store.cycleNegotiationsLedgerTab(-1);
+    else if (el.dataset.action === "tab-next") store.cycleNegotiationsLedgerTab(1);
   });
   footerNegotiationsledger.addEventListener("click", (e) => {
     const el = e.target.closest("[data-action]");
@@ -1169,6 +1191,32 @@ export function initRouter(store) {
         break;
     }
   });
+  // F4-fixes (owner report: "I can't interact with it with a mouse") — click
+  // anywhere on the bar to jump the split there, or press-and-drag the thumb
+  // to slide it. Percentage is read straight off the bar's own rendered width
+  // each time rather than cached, so it stays correct across re-renders mid-
+  // drag. Snapped to whole percentage points (owner report: "only in 1%
+  // increments") rather than left continuous.
+  let baDragging = false;
+  function baPctFromEvent(e) {
+    const bar = financesBodyEl.querySelector(".ba-bar");
+    if (!bar) return null;
+    const rect = bar.getBoundingClientRect();
+    if (rect.width <= 0) return null;
+    return Math.round(Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100)));
+  }
+  financesBodyEl.addEventListener("mousedown", (e) => {
+    if (!e.target.closest(".ba-bar")) return;
+    baDragging = true;
+    const pct = baPctFromEvent(e);
+    if (pct != null) store.budgetAllocationSetSplitPct(pct);
+  });
+  document.addEventListener("mousemove", (e) => {
+    if (!baDragging) return;
+    const pct = baPctFromEvent(e);
+    if (pct != null) store.budgetAllocationSetSplitPct(pct);
+  });
+  document.addEventListener("mouseup", () => { baDragging = false; });
 
   // Request Funds (M7): amount stepper + Ask The Board / reallocate wage<->transfer.
   function handleRequestFundsAction(action) {
@@ -1644,7 +1692,7 @@ export function initRouter(store) {
         // §A4 LT/RT alternate (Z/C, F3's own precedent) — "Page Up/Down".
         if (e.key === "z" || e.key === "Z") { const n = ids[Math.max(0, idx - 5)]; if (n != null) store.selectSellPlayersRow(n); return; }
         if (e.key === "c" || e.key === "C") { const n = ids[Math.min(ids.length - 1, idx + 5)]; if (n != null) store.selectSellPlayersRow(n); return; }
-        if (e.key === "x" || e.key === "X") { store.sortSellPlayersStatus(); return; }
+        if (e.key === "x" || e.key === "X") { store.sellPlayersReverseSort(); return; }
         if (e.key === "r" || e.key === "R") { if (s.selectedPlayerId != null) store.openPlayerBio(s.selectedPlayerId); return; }
         if ((e.key === "Enter" || e.key === "a" || e.key === "A") && s.selectedPlayerId != null) { store.sellPlayersOpenActionMenu(); return; }
       }
@@ -1667,13 +1715,18 @@ export function initRouter(store) {
     // Allocation: "V" (team sheet's own Change View precedent already reuses
     // this key for a different, unrelated overlay — safe, same "one key,
     // scoped per active overlay" pattern already used throughout this file).
+    // F4-fixes (owner report: arrows should "nudge the bar one step at a
+    // time" on this page): Left/Right always nudge — scoped to this overlay
+    // so they don't fall through to the global ArrowLeft/Right page-nav
+    // below — and auto-enter modify mode the same way a mouse drag does
+    // (store.budgetAllocationStep's own header), so they work the instant
+    // the page opens without pressing "V"/(LS) first.
     if (store.state.ui.overlay === "finances") {
       const b = store.state.ui.budgetAllocation;
       if (e.key === "Enter" || e.key === "a" || e.key === "A") { store.budgetAllocationAccept(); return; }
-      if (b.modifying) {
-        if (e.key === "ArrowLeft") { store.budgetAllocationStep(-1); return; }
-        if (e.key === "ArrowRight") { store.budgetAllocationStep(1); return; }
-      } else if (e.key === "v" || e.key === "V") { store.budgetAllocationBeginModify(); return; }
+      if (e.key === "ArrowLeft") { store.budgetAllocationStep(-1); return; }
+      if (e.key === "ArrowRight") { store.budgetAllocationStep(1); return; }
+      if (!b.modifying && (e.key === "v" || e.key === "V")) { store.budgetAllocationBeginModify(); return; }
     }
     // F3: Negotiation's [LT][RT] BUY/LOAN toggle — §A4 alternate (Z/C, first
     // screen in this codebase to ever need LT/RT on a keyboard; nothing else

@@ -14,6 +14,7 @@ import { formWord, moraleWord } from "./searchui.js";
 import { injuryStatusLabel } from "./squadreportui.js";
 import { cmToFtIn } from "./playerbio.js";
 import { GK_ATTRS, PHYSICAL_ATTRS, SKILL_ATTRS } from "./teamsheetui.js";
+import { remainingContractYM } from "./transfersui.js";
 import { releaseGuardReason } from "../engine/contracts.js";
 import { MAX_SQUAD_SIZE } from "../config/budget.js";
 
@@ -23,24 +24,50 @@ function flagSpan(code) {
 
 const LISTING_LABEL = { transfer: "Transfer List", "loan-season": "Loan List for Season Loan", "loan-short": "Loan List for Short Loan" };
 
+function pluralize(n, word) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+/** "1 Year 6 Months" / "0 Years 6 Months" — owner request: the Status
+ * column's default (nothing else applies) reads the player's actual
+ * remaining contract length rather than a bare "None". */
+function contractRemainingLabel(state, player) {
+  const rem = remainingContractYM(state, player.contract.endYear);
+  return `${pluralize(rem.years, "Year")} ${pluralize(rem.months, "Month")}`;
+}
+
 /** Status column text (single value — see plan2-decisions.md F4 for the
  * chosen priority when more than one condition could apply at once).
- * Exported for dev/tests.js's own "status column reflects each action". */
+ * Exported for dev/tests.js's own "status column reflects each action".
+ * F4-fixes (owner request): a pending renewal offer (engine/contracts.js's
+ * submitRenewalOffer) takes priority over the plain contract-remaining
+ * fallback, and that fallback is now real "N Year(s) M Month(s)" text
+ * instead of "None". */
 export function statusLabel(state, player) {
   if (state.transfers.disallowedBids.has(player.id)) return "Bids Disallowed";
   if (player.retiringAnnounced) return "Retiring at Contract End";
   const listing = state.transfers.listings.get(player.id);
   if (listing) return listing.type === "transfer" ? "Transfer Listed" : listing.type === "loan-season" ? "Loan Listed (Season)" : "Loan Listed (Short)";
-  return "None";
+  if (player.contract.pendingOffer) return `Offered ${money(player.contract.pendingOffer.wage)}/wk, ${pluralize(player.contract.pendingOffer.years, "Year")}`;
+  return contractRemainingLabel(state, player);
 }
 
-function statusSortKey(state, player) {
-  const label = statusLabel(state, player);
-  // "None" sorts first (alphabetically-adjacent statuses group together
-  // otherwise) — no pic evidence for the exact sort order beyond the column
-  // being sortable at all ([TUNED], logged).
-  return label === "None" ? "" : label;
-}
+/* ============================================================================
+ * Sorting — every column is sortable (owner request); clicking a header
+ * switches to that column (default ascending, or reverses if it's already
+ * the active column); the footer/keyboard (X) reverses whichever column is
+ * currently active without needing to re-click its header.
+ * ========================================================================== */
+
+const SORT_ACCESSORS = {
+  pos: (state, p) => `${AREAS.indexOf(positionInfo(p.position).area)}_${p.position}`,
+  player: (state, p) => p.commonName,
+  age: (state, p) => p.age,
+  ovr: (state, p) => p.overall,
+  price: (state, p) => p.value,
+  wage: (state, p) => p.contract.wage,
+  status: (state, p) => statusLabel(state, p),
+};
 
 /* ============================================================================
  * Player-selected action menu (§B3 playercard)
@@ -126,16 +153,20 @@ function renderActionMenu(state) {
 function rosterTableHtml(state) {
   const s = state.ui.sellPlayers;
   const dir = s.sortDir === "asc" ? 1 : -1;
-  const rows = [...state.squad.roster].sort((a, b) => statusSortKey(state, a) < statusSortKey(state, b) ? -dir : statusSortKey(state, a) > statusSortKey(state, b) ? dir : 0);
+  const accessor = SORT_ACCESSORS[s.sortKey] || SORT_ACCESSORS.status;
+  const rows = [...state.squad.roster].sort((a, b) => {
+    const av = accessor(state, a), bv = accessor(state, b);
+    return av < bv ? -dir : av > bv ? dir : 0;
+  });
   return fxTable({
     columns: [
-      { key: "pos", label: "Pos" }, { key: "player", label: "Player" },
-      { key: "age", label: "Age", numeric: true }, { key: "ovr", label: "OVR", numeric: true },
-      { key: "price", label: "Price", numeric: true }, { key: "wage", label: "Wage", numeric: true },
+      { key: "pos", label: "Pos", sortable: true }, { key: "player", label: "Player", sortable: true },
+      { key: "age", label: "Age", numeric: true, sortable: true }, { key: "ovr", label: "OVR", numeric: true, sortable: true },
+      { key: "price", label: "Price", numeric: true, sortable: true }, { key: "wage", label: "Wage", numeric: true, sortable: true },
       { key: "status", label: "Status", numeric: true, sortable: true },
     ],
     rows,
-    sortKey: "status", sortDir: s.sortDir,
+    sortKey: s.sortKey, sortDir: s.sortDir,
     rowClass: (p) => p.id === s.selectedPlayerId ? "is-sel" : "",
     cellHtml: (col, p) => {
       if (col.key === "pos") return `${posBar(positionInfo(p.position).area)}${p.position}`;

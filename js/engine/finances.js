@@ -93,6 +93,26 @@ export function applyBudgetSplitStep(draft, direction, stepAmounts, minWageCeili
   return true;
 }
 
+/** F4-fixes (owner report: "the bar ... should be a slider the user can grab
+ * and move 0:100"): sets the split directly to an arbitrary percentage,
+ * unlike applyBudgetSplitStep's fixed-amount steps — a click/drag position
+ * has no "round-trip must be bit-exact" requirement the way repeated
+ * stepping does, so recomputing straight from the pool total each call is
+ * fine (and simpler than trying to reuse a fixed step size for an arbitrary
+ * jump). Clamped the same way applyBudgetSplitStep is: wageCeiling never
+ * drops below the roster's own committed wage bill. */
+export function budgetSplitFromPct(draft, roster, pct, minWageCeiling) {
+  const wageBill = squadWageBill(roster);
+  const wageSurplus = draft.wageCeiling - wageBill;
+  const total = draft.transferBudget + wageSurplus * BUDGET_SPLIT_RATE;
+  const clampedPct = Math.max(0, Math.min(100, pct));
+  const nextTransfer = Math.max(0, Math.round((total * clampedPct) / 100));
+  const nextWageSurplus = (total - nextTransfer) / BUDGET_SPLIT_RATE;
+  const nextWageCeiling = Math.max(minWageCeiling, wageBill + nextWageSurplus);
+  draft.transferBudget = nextTransfer;
+  draft.wageCeiling = nextWageCeiling;
+}
+
 /* ============================================================================
  * F4: season-long trackers behind the Budget Allocation screen's "Starting
  * Transfer Budget / Players Purchased / Starting Weekly Wages / Change This

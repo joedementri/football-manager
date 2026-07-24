@@ -9,7 +9,7 @@
 // directly — safe from a UI module since neither mutates state, same as
 // e.g. ui/playerbio.js computing cm->ft'in display math inline.
 
-import { money, number } from "../core/format.js";
+import { money, number, dateSlash } from "../core/format.js";
 import { computeAsk, acceptanceChance, renewalTierFor } from "../engine/contracts.js";
 import { NUM_DAYS_FOR_RUNNING_OUT_WARNING } from "../config/contract.js";
 
@@ -30,7 +30,7 @@ function listRow(player, state, selectedId) {
       `<span class="ct-row__wage num">${money(player.contract.wage)}/w</span>` +
       `<span class="ct-row__years num">${yearsLeft}yr</span>` +
       `<span class="ct-row__role">${player.contract.squadRole}</span>` +
-      `<span class="ct-row__status">${urgencyIcon(player, state.seasonStartYear)}</span>` +
+      `<span class="ct-row__status">${player.contract.pendingOffer ? `<span class="ct-row__pending">Pending</span>` : urgencyIcon(player, state.seasonStartYear)}</span>` +
     `</div>`
   );
 }
@@ -55,16 +55,9 @@ function renderDetail(state, player) {
   const chanceInfo = chanceLabel(chance);
   const yearsLeft = player.contract.endYear - state.seasonStartYear;
   const daysLeft = yearsLeft <= 2 ? Math.max(0, yearsLeft * 365) : null;
+  const pending = player.contract.pendingOffer;
 
-  const resultBanner = c.lastResult
-    ? `<div class="ct-result ct-result--${c.lastResult}">` +
-        (c.lastResult === "accepted"
-          ? `${player.commonName} has signed a new deal!`
-          : `${player.commonName} turned the offer down. Try again with better terms.`) +
-      `</div>`
-    : "";
-
-  panel.innerHTML =
+  const headHtml =
     `<div class="ct-detail__head">` +
       `<svg class="crest crest--sm"><use href="#crest-${player.clubId}"></use></svg>` +
       `<div class="ct-detail__name">${player.commonName}</div>` +
@@ -75,7 +68,29 @@ function renderDetail(state, player) {
       `<div class="ct-fact"><span class="k">Contract</span><span class="v">${yearsLeft} year${yearsLeft === 1 ? "" : "s"} remaining</span></div>` +
       `<div class="ct-fact"><span class="k">Squad Role</span><span class="v">${player.contract.squadRole}</span></div>` +
       `<div class="ct-fact"><span class="k">Player's Ask</span><span class="v">${money(ask.wage)} / week</span></div>` +
-    `</div>` +
+    `</div>`;
+
+  // F4-fixes: renewals now take a real 3-6 day round trip (engine/
+  // contracts.js's submitRenewalOffer) — while one's in flight for this
+  // player, show its terms + due date instead of the editable offer form
+  // (nothing to adjust until the club actually responds).
+  if (pending) {
+    panel.innerHTML =
+      headHtml +
+      `<div class="ct-pending">` +
+        `<div class="ct-pending__title">Offer Sent — Awaiting Response</div>` +
+        `<div class="ct-fact"><span class="k">Offered Wage</span><span class="v">${money(pending.wage)} / week</span></div>` +
+        `<div class="ct-fact"><span class="k">Offered Length</span><span class="v">${pending.years} yr${pending.years === 1 ? "" : "s"}</span></div>` +
+        `<div class="ct-fact"><span class="k">Expected By</span><span class="v">${dateSlash(pending.dueDate)}</span></div>` +
+      `</div>`;
+    return;
+  }
+
+  const resultBanner = c.lastResult === "pending"
+    ? `<div class="ct-result ct-result--pending">Offer sent — awaiting a response.</div>` : "";
+
+  panel.innerHTML =
+    headHtml +
     (daysLeft != null && daysLeft <= NUM_DAYS_FOR_RUNNING_OUT_WARNING
       ? `<div class="ct-warning">Contract expiring soon — act now or risk losing him for nothing.</div>` : "") +
     `<div class="ct-offer">` +

@@ -145,7 +145,22 @@ export function renderTransferNegotiations(state) {
       )).join("")
     : `<div class="empty"><span class="lbl">None</span></div>`;
 
+  // F4-fixes (owner report: "LB/RB don't make sense for a web app") —
+  // replaced with the same cnav prev/next arrow buttons every carousel tile
+  // in this codebase already uses (js/carousel.js), not the Xbox glyph
+  // pills — a mouse/web-native control makes more sense here than the
+  // controller-button pills fxSelectorRow renders everywhere else this
+  // codebase actually needs LB/RB (this screen was fxSelectorRow's only
+  // real consumer, see plan2-decisions.md F4's own note on that primitive).
+  const tabNavHtml =
+    `<div class="fx-panel__selectors tn-tabnav">` +
+      `<button type="button" class="cnav prev" data-action="tab-prev" aria-label="Previous">&lsaquo;</button>` +
+      `<span class="tn-tabnav__value">${TABS[n.tab]}</span>` +
+      `<button type="button" class="cnav next" data-action="tab-next" aria-label="Next">&rsaquo;</button>` +
+    `</div>`;
+
   const bodyHtml =
+    tabNavHtml +
     `<div class="tn-body">` +
       `<div class="tn-list">${listHtml}</div>` +
       (rows.length ? detailPanelHtml(state, rows[selIndex]) : emptyDetailHtml()) +
@@ -154,7 +169,6 @@ export function renderTransferNegotiations(state) {
   body.innerHTML = fxPanel({
     title: "TRANSFER NEGOTIATIONS",
     context: `Date ${dateSlash(state.calendar.today)}`,
-    selectorRows: [[{ glyphs: ["lb", "rb"], value: TABS[n.tab] }]],
     bodyHtml,
     extraClass: "tn-panel",
   });
